@@ -1,0 +1,56 @@
+{
+  "name": "tashkalinskaya-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Система внутреннего контроля Ташкалинской кондитерской фабрики",
+  "engines": {
+    "node": ">=24.14.0",
+    "npm": ">=10.9.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:packages && npm run build:apps",
+    "build:apps": "npm run build -w @tashkalinskaya/api && npm run build -w @tashkalinskaya/worker && npm run build -w @tashkalinskaya/web",
+    "build:packages": "npm run build -w @tashkalinskaya/contracts && npm run build -w @tashkalinskaya/database",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
+    "db:migrate": "npm run migrate -w @tashkalinskaya/database",
+    "dev": "npm run build:packages && concurrently --kill-others-on-fail --names web,api,worker --prefix-colors cyan,green,magenta \"npm run dev:web\" \"npm run dev:api\" \"npm run dev:worker\"",
+    "dev:api": "npm run dev -w @tashkalinskaya/api",
+    "dev:web": "npm run dev -w @tashkalinskaya/web",
+    "dev:worker": "npm run dev -w @tashkalinskaya/worker",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "start:api": "npm run start -w @tashkalinskaya/api",
+    "start:web": "npm run start -w @tashkalinskaya/web",
+    "start:worker": "npm run start -w @tashkalinskaya/worker",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@nestjs/cli": "^11.0.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.16.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^10.0.4",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.9",
+    "js-yaml": "5.2.2",
+    "minimatch": "10.2.6",
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
+  }
+}

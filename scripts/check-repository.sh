@@ -45,4 +45,8 @@ bash scripts/check-sensitive-files.sh
 node --check prototypes/ux/app.js
 node scripts/check-links.mjs
 
+if [[ -f package.json ]]; then
+  npm run check
+fi
+
 echo "Repository checks passed."

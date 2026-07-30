@@ -1,0 +1,94 @@
+name: tashkalinskaya-control
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tashkalinskaya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-only-password}
+      POSTGRES_USER: ${POSTGRES_USER:-tashkalinskaya}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.worker
+    command:
+      - node
+      - packages/database/dist/migrate.js
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      API_PORT: 4000
+      CORS_ORIGINS: http://localhost:3000
+      DATABASE_REQUIRED: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
+      NODE_ENV: production
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:4000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)})
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_REQUIRED: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
+      NODE_ENV: production
+      WORKER_POLL_INTERVAL_MS: 5000
+    restart: unless-stopped
+
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
