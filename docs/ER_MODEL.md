@@ -88,8 +88,14 @@ erDiagram
 
 ```mermaid
 erDiagram
+    CALENDAR_VERSION ||--|{ PRODUCTION_DISPATCH_LINK : "публикует"
+    PRODUCTION_DISPATCH_LINK ||--o{ PLAN_INPUT_SNAPSHOT : "задает даты"
+    NORM_CHANGE_REQUEST ||--|{ NORM_CHANGE_REQUEST_LINE : "содержит"
+    NORM_TEMPLATE_VERSION ||--o{ NORM_CHANGE_REQUEST_LINE : "является базой"
     PLAN_RUN ||--|| PLAN_INPUT_SNAPSHOT : "фиксирует"
     PLAN_RUN ||--o{ PRODUCTION_PLAN : "создает версии"
+    PLAN_INPUT_SNAPSHOT ||--|{ PLAN_DEMAND_LINE : "рассчитывает"
+    PLAN_DEMAND_LINE }o--|| PRODUCTION_PLAN_LINE : "агрегируется"
     PRODUCTION_PLAN ||--|{ PRODUCTION_PLAN_LINE : "содержит"
     PRODUCT ||--o{ PRODUCTION_PLAN_LINE : "планируется"
     WORKSHOP ||--o{ PRODUCTION_PLAN_LINE : "исполняет"
@@ -104,8 +110,13 @@ erDiagram
 
 | Сущность | Назначение | Ключевые ограничения |
 |---|---|---|
-| `PlanRun` | Идемпотентный запуск планирования | один штатный запуск на производственную дату |
+| `CalendarVersion` | Опубликованный календарь | одна версия применяется к дате |
+| `ProductionDispatchLink` | Связь вывоза и производства | одна производственная дата на дату вывоза и область |
+| `NormTemplateVersion` | Постоянная недельная норма | периоды одного ключа не пересекаются |
+| `NormChangeRequestLine` | Предложенное абсолютное значение | хранит base version и решение запроса |
+| `PlanRun` | Идемпотентный запуск планирования | один штатный логический запуск на производственную дату |
 | `PlanInputSnapshot` | Версии всех входов | неизменяем после публикации |
+| `PlanDemandLine` | Расчет направления | формула и все источники количества сохранены |
 | `ProductionPlan` | Версия плана | ровно одна актуальная опубликованная версия |
 | `ProductionPlanLine` | План по товару и цеху | хранит объяснение расчета |
 | `StockAllocation` | Ручное назначение остатка | сумма не превышает доступный остаток |
