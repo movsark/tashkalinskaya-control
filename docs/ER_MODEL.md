@@ -104,12 +104,16 @@ erDiagram
     PRODUCT ||--o{ PRODUCTION_PLAN_LINE : "планируется"
     WORKSHOP ||--o{ PRODUCTION_PLAN_LINE : "исполняет"
     STOCK_ALLOCATION ||--o{ PRODUCTION_PLAN_LINE : "уменьшает потребность"
+    WORKSHOP_PRODUCT_ASSIGNMENT ||--o{ WORKSHOP_TRANSFER_REQUEST : "временно меняется"
     PRODUCTION_PLAN_LINE ||--o{ PRODUCTION_TASK : "порождает"
+    PRODUCTION_TASK ||--o{ PRODUCTION_TASK_ADJUSTMENT : "корректируется"
     PRODUCTION_TASK ||--o{ PRODUCTION_TASK_ASSIGNMENT : "назначается"
     EMPLOYEE ||--o{ PRODUCTION_TASK_ASSIGNMENT : "исполнитель"
     PRODUCTION_TASK ||--o{ PRODUCTION_BATCH : "выпускает"
+    PRODUCTION_TASK ||--o| PRODUCTION_SHORTFALL : "закрывается частично"
     PRODUCTION_BATCH ||--o| WAREHOUSE_RECEIPT : "принимается"
     PRODUCTION_BATCH ||--o{ DEFECT_REPORT : "имеет брак"
+    DEFECT_REPORT ||--o{ DEFECT_ATTACHMENT : "подтверждается фото"
 ```
 
 | Сущность | Назначение | Ключевые ограничения |
@@ -125,10 +129,14 @@ erDiagram
 | `ProductionPlanLine` | План по товару и цеху | хранит объяснение расчета |
 | `StockAllocation` | Ручное назначение остатка | сумма не превышает доступный остаток |
 | `ProductionTask` | Задание цеху | связано с опубликованной строкой плана |
-| `ProductionTaskAssignment` | Назначение кондитеру | количество не превышает остаток задания |
-| `ProductionBatch` | Фактический выпуск | целое положительное количество |
+| `WorkshopTransferRequest` | Временная передача товара | после предложения требует решения администратора |
+| `ProductionTaskAdjustment` | Изменение цели/цеха | не переписывает задания и партии |
+| `ProductionTaskAssignment` | Назначение кондитеру | активная роль, цех и присутствие; один ответственный |
+| `ProductionBatch` | Заявленный годный выпуск | целое положительное количество, idempotency key |
+| `ProductionShortfall` | Закрытие ниже цели | обязательны причина и комментарий |
 | `WarehouseReceipt` | Приемка партии | максимум одна успешная приемка партии |
-| `DefectReport` | Производственный брак | количество, причина, автор; фото необязательно |
+| `DefectReport` | Производственный брак | отдельное решение ответственного/администратора |
+| `DefectAttachment` | Закрытое фото брака | обязательно только по настройке причины |
 
 ## 5. Склад и погрузка
 
