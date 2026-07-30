@@ -63,7 +63,9 @@ erDiagram
     PRODUCT ||--o{ NORM_TEMPLATE : "нормируется"
     NORM_TEMPLATE ||--o{ NORM_CHANGE_REQUEST : "изменяется"
     CALENDAR_EXCEPTION ||--o{ TERRITORY_RUN : "переносит"
-    STORE_ORDER ||--|{ STORE_ORDER_LINE : "содержит"
+    STORE ||--o{ STORE_ORDER : "получает заказы"
+    STORE_ORDER ||--|{ STORE_ORDER_VERSION : "версионируется"
+    STORE_ORDER_VERSION ||--o{ STORE_ORDER_LINE : "содержит"
     PRODUCT ||--o{ STORE_ORDER_LINE : "заказывается"
 ```
 
@@ -82,7 +84,9 @@ erDiagram
 | `CalendarException` | Праздник/перенос | отдельно хранит дату производства и вывоза |
 | `NormTemplate` | Недельная норма | территория + день недели + товар + период действия |
 | `NormChangeRequest` | Постоянная/разовая корректировка | после утверждения исходный запрос не редактируется |
-| `StoreOrder` | Заказ магазина | одна актуальная версия на дату поставки |
+| `Store` | Фирменный магазин | постоянный внутренний код, область продавца |
+| `StoreOrder` | Заказ магазина | один объект на магазин и дату поставки |
+| `StoreOrderVersion` | Отправленная версия | после отправки неизменяема; одна заблокированная версия входит в план |
 
 ## 4. Планирование и производство
 
@@ -141,6 +145,10 @@ erDiagram
     PRODUCT ||--o{ LOADING_LINE : "грузится"
     LOADING_LINE ||--o{ LOADING_LINE_CONFIRMATION : "подтверждается"
     LOADING_SESSION ||--o{ LOADING_COMPLETION : "завершается"
+    STORE_ORDER_VERSION ||--o| STORE_FULFILLMENT : "исполняется"
+    STORE_FULFILLMENT ||--|{ STORE_FULFILLMENT_LINE : "содержит"
+    STORE_FULFILLMENT ||--o{ STORE_FULFILLMENT_CONFIRMATION : "подтверждается"
+    PRODUCT ||--o{ STORE_FULFILLMENT_LINE : "выдается"
     LOADING_SESSION ||--o| INVENTORY_COUNT : "предшествует пересчету"
     INVENTORY_COUNT ||--|{ INVENTORY_COUNT_LINE : "содержит"
     INVENTORY_COUNT_LINE ||--o| INVENTORY_DISCREPANCY : "выявляет"
@@ -156,6 +164,8 @@ erDiagram
 | `LoadingLine` | Товар и количество | новая версия после отклонения |
 | `LoadingLineConfirmation` | Решение водителя | одно актуальное решение на версию строки |
 | `LoadingCompletion` | Финал кладовщика/водителя | завершение только в порядке кладовщик → водитель |
+| `StoreFulfillment` | Выдача фирменному магазину | одна активная выдача на store order/current plan |
+| `StoreFulfillmentConfirmation` | Финал кладовщика/продавца | склад уменьшается после обоих подтверждений |
 | `InventoryCount` | Физический пересчет | один подтвержденный пересчет на контрольный момент |
 | `InventoryDiscrepancy` | Факт минус система | не меняет склад без решения |
 
