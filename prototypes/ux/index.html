@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ташкалинская — UX-прототип B03</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="prototype-bar">
+    <div>
+      <strong>UX-прототип B03</strong>
+      <span>Тестовые данные · без backend</span>
+    </div>
+    <div class="prototype-actions" role="group" aria-label="Выбор устройства">
+      <button class="mode-button is-active" data-mode="phone">Телефон</button>
+      <button class="mode-button" data-mode="tablet">iPad</button>
+      <button class="mode-button" data-mode="office">Офис</button>
+      <button class="network-button" id="network-toggle" aria-pressed="false">
+        <span class="status-dot"></span>
+        Сеть есть
+      </button>
+    </div>
+  </header>
+
+  <main class="prototype-stage">
+    <section class="device-view is-active" id="view-phone" aria-label="Прототип телефона">
+      <div class="device-caption">
+        <b>Личный телефон</b>
+        <span>Портрет · крупные действия · одна активная роль</span>
+      </div>
+      <div class="phone-frame">
+        <div class="phone-status">
+          <span>09:57</span>
+          <span id="phone-network">● В сети</span>
+        </div>
+
+        <section class="phone-screen is-active" id="phone-qr">
+          <header class="app-header">
+            <div>
+              <small>Сотрудник</small>
+              <h1>Мой QR</h1>
+            </div>
+            <button class="icon-button" aria-label="Уведомления">3</button>
+          </header>
+
+          <div class="identity-card">
+            <div class="avatar">АК</div>
+            <div>
+              <strong>Анна Крылова</strong>
+              <span>Кондитер · Цех 2</span>
+            </div>
+          </div>
+
+          <div class="qr-card">
+            <div class="action-chip">Приход</div>
+            <div class="qr-grid" id="qr-grid" aria-label="Демонстрационный QR-код"></div>
+            <strong class="qr-timer">Обновление через <span id="qr-seconds">5</span> сек.</strong>
+            <span>Покажите код зарегистрированному iPad</span>
+          </div>
+
+          <div class="last-event">
+            <span>Последняя отметка</span>
+            <strong>Вчера, уход в 18:12</strong>
+          </div>
+        </section>
+
+        <section class="phone-screen" id="phone-driver">
+          <header class="app-header">
+            <div>
+              <small>Водитель · Территория 4</small>
+              <h1>Погрузка сегодня</h1>
+            </div>
+            <span class="badge badge-warning">1 ожидает</span>
+          </header>
+
+          <div class="route-card">
+            <div><span>Машина</span><strong>А123ВС 56</strong></div>
+            <div><span>Группа</span><strong>№2 · 3 водителя</strong></div>
+          </div>
+
+          <article class="confirmation-card" id="driver-line">
+            <div class="card-heading">
+              <span class="sequence">Строка 8</span>
+              <span class="badge badge-warning">Подтвердите</span>
+            </div>
+            <h2>Торт «Прага»</h2>
+            <div class="quantity">24 <small>шт.</small></div>
+            <dl>
+              <div><dt>Территория</dt><dd>№4</dd></div>
+              <div><dt>Кладовщик</dt><dd>И. Соколов</dd></div>
+            </dl>
+            <button class="primary-button" data-action="driver-confirm">Подтвердить 24 шт.</button>
+            <button class="secondary-button danger-text" data-action="driver-reject">Отклонить строку</button>
+          </article>
+
+          <article class="priority-card">
+            <span class="badge badge-info">Приоритетный блок</span>
+            <strong>Годный возврат на территорию</strong>
+            <span>Медовик — 3 шт. · Наполеон — 2 шт.</span>
+          </article>
+        </section>
+
+        <nav class="phone-nav" aria-label="Нижняя навигация">
+          <button class="phone-nav-button is-active" data-phone-screen="phone-qr">
+            <span>▦</span>Табель
+          </button>
+          <button class="phone-nav-button" data-phone-screen="phone-driver">
+            <span>▤</span>Рейс
+          </button>
+          <button class="phone-nav-button" data-action="show-notifications">
+            <span>●</span>События
+          </button>
+        </nav>
+      </div>
+    </section>
+
+    <section class="device-view" id="view-tablet" aria-label="Прототип iPad">
+      <div class="device-caption">
+        <b>Фабричный iPad</b>
+        <span>Альбом · киоск · склад и погрузка</span>
+      </div>
+      <div class="tablet-frame">
+        <header class="tablet-header">
+          <div>
+            <span class="kiosk-label">Терминал TW-SKLAD-01</span>
+            <h1>Склад готовой продукции</h1>
+          </div>
+          <div class="terminal-status">
+            <span id="tablet-network">● Сервер доступен</span>
+            <strong>31 июля · 09:57</strong>
+          </div>
+        </header>
+
+        <div class="tablet-layout">
+          <aside class="tablet-sidebar">
+            <button class="tablet-tab is-active" data-tablet-screen="tablet-receipt">
+              <span>Приемка</span><b>3</b>
+            </button>
+            <button class="tablet-tab" data-tablet-screen="tablet-loading">
+              <span>Погрузка</span><b>1</b>
+            </button>
+            <button class="tablet-tab" data-action="show-inventory">
+              <span>Пересчет</span><b>!</b>
+            </button>
+            <button class="tablet-tab" data-action="show-returns">
+              <span>Возврат</span><b>12</b>
+            </button>
+          </aside>
+
+          <section class="tablet-screen is-active" id="tablet-receipt">
+            <div class="split-pane">
+              <div class="queue-pane">
+                <div class="section-title">
+                  <div><small>Очередь</small><h2>Ожидают приемки</h2></div>
+                  <span class="badge badge-warning">3 партии</span>
+                </div>
+                <button class="queue-row is-selected" data-batch="napoleon">
+                  <span class="product-icon">Н</span>
+                  <span><strong>Наполеон</strong><small>Ночная партия · Цех 1</small></span>
+                  <b>48</b>
+                </button>
+                <button class="queue-row" data-batch="prague">
+                  <span class="product-icon">П</span>
+                  <span><strong>Прага</strong><small>Анна Крылова · Цех 2</small></span>
+                  <b>24</b>
+                </button>
+                <button class="queue-row" data-batch="honey">
+                  <span class="product-icon">М</span>
+                  <span><strong>Медовик</strong><small>Сергей Петров · Цех 2</small></span>
+                  <b>30</b>
+                </button>
+              </div>
+
+              <div class="detail-pane">
+                <div class="detail-status">
+                  <span class="badge badge-info">Ожидает приемки</span>
+                  <span>Заявлено в 06:42</span>
+                </div>
+                <h2 id="batch-name">Наполеон</h2>
+                <div class="tablet-quantity"><strong id="batch-count">48</strong><span>штук</span></div>
+                <div class="detail-grid">
+                  <div><span>Цех</span><strong id="batch-workshop">Цех 1</strong></div>
+                  <div><span>Исполнитель</span><strong id="batch-worker">Ночная смена</strong></div>
+                  <div><span>План</span><strong id="batch-plan">48 шт.</strong></div>
+                  <div><span>Расхождение</span><strong class="success-text">Нет</strong></div>
+                </div>
+                <div class="notice">
+                  После приемки товар попадет в свободный остаток. Исправление будет возможно только через администратора.
+                </div>
+                <div class="button-row">
+                  <button class="secondary-button" data-action="return-batch">Вернуть на исправление</button>
+                  <button class="primary-button" data-action="accept-batch">Принять 48 шт.</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tablet-screen" id="tablet-loading">
+            <div class="loading-layout">
+              <div class="loading-form">
+                <div class="section-title">
+                  <div><small>Группа №2</small><h2>Погрузка территории 4</h2></div>
+                  <span class="badge badge-info">Открыта</span>
+                </div>
+                <label class="scan-field">
+                  <span>Товар</span>
+                  <div>
+                    <input id="product-search" value="Торт «Прага»" aria-label="Товар">
+                    <button class="scan-button" data-action="scan-product">Сканировать камерой</button>
+                  </div>
+                </label>
+                <div class="stock-hints">
+                  <span>Свободно: <b>86</b></span>
+                  <span>Норма: <b>20</b></span>
+                  <span>Уже принято: <b>0</b></span>
+                </div>
+                <label class="quantity-control">
+                  <span>Количество</span>
+                  <div>
+                    <button data-action="qty-minus" aria-label="Уменьшить">−</button>
+                    <input id="loading-qty" inputmode="numeric" value="24" aria-label="Количество">
+                    <button data-action="qty-plus" aria-label="Увеличить">+</button>
+                  </div>
+                </label>
+                <div class="notice warning-notice">
+                  4 шт. сверх нормы. Допустимо при распределении возврата.
+                </div>
+                <button class="primary-button wide-button" data-action="send-driver">Отправить водителю на подтверждение</button>
+              </div>
+
+              <div class="loading-summary">
+                <div class="section-title">
+                  <div><small>Территория 4</small><h2>Строки погрузки</h2></div>
+                  <strong>96 шт.</strong>
+                </div>
+                <div class="loading-line is-confirmed">
+                  <span>Медовик</span><b>30 шт.</b><em>✓ Водитель подтвердил</em>
+                </div>
+                <div class="loading-line is-confirmed">
+                  <span>Наполеон</span><b>42 шт.</b><em>✓ Водитель подтвердил</em>
+                </div>
+                <div class="loading-line is-pending" id="tablet-pending-line">
+                  <span>Прага</span><b>24 шт.</b><em>○ Ожидает водителя</em>
+                </div>
+                <div class="loading-footer">
+                  <span id="loading-blocker">Ожидается подтверждение 1 строки</span>
+                  <button class="primary-button" id="warehouse-finish" data-action="warehouse-finish" disabled>Я завершил погрузку</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="device-view" id="view-office" aria-label="Прототип офиса">
+      <div class="device-caption">
+        <b>Офисный экран</b>
+        <span>Центр контроля · проблемы прежде показателей</span>
+      </div>
+      <div class="office-frame">
+        <aside class="office-sidebar">
+          <div class="brand-mark">ТКФ</div>
+          <nav>
+            <button class="is-active"><span>⌂</span>Сегодня</button>
+            <button><span>▦</span>План</button>
+            <button><span>▤</span>Производство</button>
+            <button><span>□</span>Склад</button>
+            <button><span>⇄</span>Погрузка</button>
+            <button><span>↩</span>Возврат</button>
+            <button><span>◎</span>Табель</button>
+            <button><span>⚙</span>Настройки</button>
+          </nav>
+          <div class="office-user">
+            <div class="avatar">МА</div>
+            <span><strong>М. Администратор</strong><small>Администратор</small></span>
+          </div>
+        </aside>
+
+        <div class="office-main">
+          <header class="office-header">
+            <div>
+              <small>Пятница, 31 июля · серверное время 09:57</small>
+              <h1>Центр контроля на сегодня</h1>
+            </div>
+            <div class="office-header-actions">
+              <span class="system-health"><i></i> Система работает</span>
+              <button class="secondary-button" data-action="print-control">Печать A4</button>
+            </div>
+          </header>
+
+          <section class="control-cards">
+            <button class="control-card critical" data-control="inventory">
+              <span>Склад</span><b>Пересчет не подтвержден</b><small>План в 10:00 возьмет системный остаток</small>
+            </button>
+            <button class="control-card warning" data-control="loading">
+              <span>Погрузка</span><b>2 отклонения</b><small>Территории 4 и 7</small>
+            </button>
+            <button class="control-card warning" data-control="attendance">
+              <span>Табель</span><b>4 смены не закрыты</b><small>Со вчерашнего дня</small>
+            </button>
+            <button class="control-card neutral" data-control="writeoff">
+              <span>Списание</span><b>3 запроса</b><small>Ожидают решения</small>
+            </button>
+          </section>
+
+          <section class="office-content">
+            <div class="issues-table">
+              <div class="section-title">
+                <div><small>Требуют действия</small><h2>Отклонения</h2></div>
+                <button class="text-button">Показать все 12</button>
+              </div>
+              <div class="table-header">
+                <span>Приоритет</span><span>Процесс</span><span>Проблема</span><span>Ответственный</span><span>Срок</span>
+              </div>
+              <button class="issue-row is-selected" data-control="inventory">
+                <span class="priority high">Высокий</span><span>Склад</span><b>Нет физического пересчета</b><span>И. Соколов</span><span>до 10:00</span>
+              </button>
+              <button class="issue-row" data-control="loading">
+                <span class="priority medium">Средний</span><span>Погрузка</span><b>Водитель отклонил 2 строки</b><span>Группа №2</span><span>сейчас</span>
+              </button>
+              <button class="issue-row" data-control="attendance">
+                <span class="priority medium">Средний</span><span>Табель</span><b>4 незакрытые смены</b><span>Цеха 1–2</span><span>сегодня</span>
+              </button>
+              <button class="issue-row" data-control="writeoff">
+                <span class="priority low">Обычный</span><span>Списание</span><b>3 запроса ожидают решения</b><span>Администратор</span><span>сегодня</span>
+              </button>
+            </div>
+
+            <aside class="control-detail" id="control-detail">
+              <span class="badge badge-danger">Критично</span>
+              <h2>Нет физического пересчета</h2>
+              <p>Кладовщик не отправил ежедневную инвентаризацию. Через 3 минуты план будет рассчитан по системным данным.</p>
+              <dl>
+                <div><dt>Расчетный остаток</dt><dd>1 284 шт.</dd></div>
+                <div><dt>Последний пересчет</dt><dd>Вчера, 09:46</dd></div>
+                <div><dt>Ответственный</dt><dd>Иван Соколов</dd></div>
+              </dl>
+              <button class="primary-button" data-action="open-inventory">Открыть пересчет</button>
+              <button class="secondary-button" data-action="notify-warehouse">Напомнить кладовщику</button>
+            </aside>
+          </section>
+
+          <footer class="office-footer">
+            <span>План: будет сформирован в 10:00</span>
+            <span>Worker: работает</span>
+            <span>Резервная проверка: успешно, 03:12</span>
+          </footer>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="reject-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reject-title">
+      <h2 id="reject-title">Почему строка неверна?</h2>
+      <label><input type="radio" name="reject-reason" checked> Количество не совпадает</label>
+      <label><input type="radio" name="reject-reason"> Неверный товар</label>
+      <label><input type="radio" name="reject-reason"> Неверная территория</label>
+      <div class="button-row">
+        <button class="secondary-button" data-action="cancel-reject">Отмена</button>
+        <button class="primary-button danger-button" data-action="confirm-reject">Отклонить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
