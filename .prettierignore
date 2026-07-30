@@ -1,0 +1,11 @@
+.next
+coverage
+dist
+docs
+node_modules
+package-lock.json
+prototypes
+templates
+*.md
+*.docx
+*.xlsx

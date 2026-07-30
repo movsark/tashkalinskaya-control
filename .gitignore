@@ -15,6 +15,7 @@ dist/
 build/
 coverage/
 *.log
+*.tsbuildinfo
 
 # Временные и приватные данные
 tmp/

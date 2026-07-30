@@ -1,0 +1,17 @@
+.git
+.github
+.next
+backups
+coverage
+data/private
+dist
+docs
+imports/private
+node_modules
+prototypes
+templates
+tmp
+uploads
+*.docx
+*.log
+*.xlsx

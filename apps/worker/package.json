@@ -1,0 +1,17 @@
+{
+  "name": "@tashkalinskaya/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json && node dist/main.js",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tashkalinskaya/contracts": "*",
+    "@tashkalinskaya/database": "*",
+    "zod": "^4.4.3"
+  }
+}
