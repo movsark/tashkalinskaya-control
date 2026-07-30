@@ -142,12 +142,16 @@ erDiagram
 
 ```mermaid
 erDiagram
+    WAREHOUSE ||--o{ STOCK_BALANCE : "ведёт остатки"
     STOCK_MOVEMENT_DOCUMENT ||--|{ STOCK_MOVEMENT : "содержит"
     PRODUCT ||--o{ STOCK_MOVEMENT : "двигается"
     STOCK_BUCKET ||--o{ STOCK_MOVEMENT : "источник"
     STOCK_BUCKET ||--o{ STOCK_MOVEMENT : "получатель"
     PRODUCT ||--o{ STOCK_BALANCE : "имеет остаток"
     STOCK_BUCKET ||--o{ STOCK_BALANCE : "группирует"
+    WAREHOUSE_RECEIPT ||--|| STOCK_MOVEMENT_DOCUMENT : "создаёт поступление"
+    WAREHOUSE_RECEIPT ||--o| RECEIPT_DISCREPANCY : "фиксирует разницу"
+    STOCK_CORRECTION ||--|| STOCK_MOVEMENT_DOCUMENT : "компенсирует"
     TERRITORY_RUN ||--o| LOADING_SESSION : "погружается"
     LOADING_SESSION ||--|{ LOADING_LINE : "содержит"
     PRODUCT ||--o{ LOADING_LINE : "грузится"
@@ -164,10 +168,14 @@ erDiagram
 
 | Сущность | Назначение | Ключевые ограничения |
 |---|---|---|
+| `Warehouse` | Логический склад | в MVP один активный `MAIN_WAREHOUSE` |
+| `WarehouseReceipt` | Физическая приёмка партии | один терминальный результат на партию |
+| `ReceiptDiscrepancy` | Заявлено минус принято | закрытие само не меняет склад |
 | `StockMovementDocument` | Основание атомарной группы движений | тип, автор, бизнес-дата, причина |
 | `StockMovement` | Неизменяемая проводка между корзинами | источник не равен получателю; количество положительное |
 | `StockBalance` | Быстрое представление | сумма обязана совпадать с журналом |
 | `StockReservation` | Резерв плана/погрузки | активный резерв не превышает свободное количество |
+| `StockCorrection` | Компенсирующий документ | причина, автор и ссылка; прошлое движение неизменно |
 | `LoadingSession` | Погрузка конкретного рейса | одна активная сессия на рейс |
 | `LoadingLine` | Товар и количество | новая версия после отклонения |
 | `LoadingLineConfirmation` | Решение водителя | одно актуальное решение на версию строки |
