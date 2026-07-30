@@ -1,0 +1,24 @@
+# Локальная операционная система
+.DS_Store
+
+# Секреты и настройки окружений
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Зависимости и результаты сборки
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.log
+
+# Временные и приватные данные
+tmp/
+uploads/
+backups/
+data/private/
+imports/private/
