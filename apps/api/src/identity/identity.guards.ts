@@ -10,10 +10,12 @@ import { Reflector } from "@nestjs/core";
 import type { RoleCode } from "@tashkalinskaya/contracts";
 
 import { IdentityCryptoService } from "./identity-crypto.service";
+import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityRepository } from "./identity.repository";
 import type { AuthenticatedRequest } from "./identity.types";
 
 export const SESSION_COOKIE_NAME = "tashkalinskaya_session";
+export const TERMINAL_SESSION_COOKIE_NAME = "tashkalinskaya_terminal_session";
 const requiredRolesKey = "required-roles";
 
 export const RequireRoles = (...roles: RoleCode[]) => SetMetadata(requiredRolesKey, roles);
@@ -43,6 +45,27 @@ export class SessionAuthGuard implements CanActivate {
 }
 
 @Injectable()
+export class TerminalSessionAuthGuard implements CanActivate {
+  constructor(
+    private readonly crypto: IdentityCryptoService,
+    private readonly repository: DeviceSecurityRepository,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const sessionToken = readCookie(request.headers.cookie, TERMINAL_SESSION_COOKIE_NAME);
+    if (sessionToken === undefined || sessionToken.length < 40) throw authenticationRequired();
+    const terminal = await this.repository.findTerminalBySessionHash(
+      this.crypto.hashSessionToken(sessionToken),
+      sessionToken,
+    );
+    if (terminal === null) throw authenticationRequired();
+    request.terminal = terminal;
+    return true;
+  }
+}
+
+@Injectable()
 export class CsrfGuard implements CanActivate {
   constructor(
     private readonly crypto: IdentityCryptoService,
@@ -52,16 +75,16 @@ export class CsrfGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
-    const actor = request.actor;
+    const principal = request.actor ?? request.terminal;
     const token = request.header("x-csrf-token");
     if (
-      actor === undefined ||
+      principal === undefined ||
       token === undefined ||
-      !this.crypto.verifyCsrfToken(actor.sessionToken, token)
+      !this.crypto.verifyCsrfToken(principal.sessionToken, token)
     ) {
-      if (actor !== undefined) {
+      if (request.actor !== undefined) {
         await this.repository.recordAccessDenied({
-          actorEmployeeId: actor.employee.id,
+          actorEmployeeId: request.actor.employee.id,
           correlationId: request.correlationId ?? randomUUID(),
           method: request.method,
           path: request.path,

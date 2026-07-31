@@ -80,3 +80,38 @@ export interface EmployeeAccessDetail {
   readonly devices: readonly PersonalDeviceView[];
   readonly employee: EmployeeSummary;
 }
+
+export type AttendanceAction = "ARRIVAL" | "DEPARTURE";
+
+export interface AttendanceEventView {
+  readonly acceptedAt: string;
+  readonly action: AttendanceAction;
+  readonly businessDate: string;
+  readonly captureMethod: "MANUAL" | "QR";
+  readonly id: string;
+}
+
+export interface AttendanceQrView {
+  readonly acceptUntil: string;
+  readonly action: AttendanceAction;
+  readonly businessDate: string;
+  readonly issuedAt: string;
+  readonly lastEvent: AttendanceEventView | null;
+  readonly payload: string;
+  readonly visibleUntil: string;
+}
+
+export interface AttendanceScanResult extends AttendanceEventView {
+  readonly employeeName: string;
+  readonly repeated: boolean;
+  readonly terminalCode: string;
+}
+
+export interface TerminalSessionView {
+  readonly csrfToken: string;
+  readonly departmentId: string | null;
+  readonly locationLabel: string;
+  readonly sessionExpiresAt: string;
+  readonly terminalCode: string;
+  readonly terminalId: string;
+}

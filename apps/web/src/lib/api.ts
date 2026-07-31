@@ -1,5 +1,7 @@
 import type {
   ApiError,
+  AttendanceQrView,
+  AttendanceScanResult,
   AuthenticatedUser,
   EmployeeAccessDetail,
   EmployeeListResponse,
@@ -7,6 +9,7 @@ import type {
   PlatformFamily,
   RoleCode,
   RoleAssignmentView,
+  TerminalSessionView,
 } from "@tashkalinskaya/contracts";
 import type {
   AuthenticationResponseJSON,
@@ -179,9 +182,51 @@ export async function pairTerminal(input: {
   credential: RegistrationResponseJSON;
   pairingCode: string;
   terminalCode: string;
-}): Promise<{ paired: true; terminalId: string }> {
+}): Promise<TerminalSessionView> {
   return request("/terminals/pair", {
     body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export async function terminalLoginOptions(input: {
+  terminalCode: string;
+}): Promise<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
+  return request("/terminals/login/options", {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export async function terminalLogin(input: {
+  challengeId: string;
+  credential: AuthenticationResponseJSON;
+  terminalCode: string;
+}): Promise<TerminalSessionView> {
+  return request("/terminals/login", {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export async function getTerminalSession(): Promise<TerminalSessionView> {
+  return request("/terminals/session");
+}
+
+export async function issueAttendanceQr(csrfToken: string): Promise<AttendanceQrView> {
+  return request("/attendance/me/qr", {
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function scanAttendanceQr(
+  input: { idempotencyKey: string; payload: string },
+  csrfToken: string,
+): Promise<AttendanceScanResult> {
+  return request("/attendance/terminal/scan", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });
 }

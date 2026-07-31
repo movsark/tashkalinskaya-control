@@ -6,7 +6,13 @@ import { EmployeesController } from "./employees.controller";
 import { EmployeesService } from "./employees.service";
 import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
-import { CsrfGuard, RolesGuard, SessionAuthGuard, StepUpGuard } from "./identity.guards";
+import {
+  CsrfGuard,
+  RolesGuard,
+  SessionAuthGuard,
+  StepUpGuard,
+  TerminalSessionAuthGuard,
+} from "./identity.guards";
 import { IdentityRepository } from "./identity.repository";
 import { TerminalsController } from "./terminals.controller";
 import { TerminalsService } from "./terminals.service";
@@ -24,8 +30,10 @@ import { WebAuthnService } from "./webauthn.service";
     RolesGuard,
     SessionAuthGuard,
     StepUpGuard,
+    TerminalSessionAuthGuard,
     TerminalsService,
     WebAuthnService,
   ],
+  exports: [CsrfGuard, IdentityCryptoService, SessionAuthGuard, TerminalSessionAuthGuard],
 })
 export class IdentityModule {}

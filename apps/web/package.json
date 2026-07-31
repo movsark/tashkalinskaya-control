@@ -11,8 +11,13 @@
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",
     "@tashkalinskaya/contracts": "*",
+    "@zxing/browser": "^0.2.1",
     "next": "16.2.12",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }
