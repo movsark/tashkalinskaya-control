@@ -192,6 +192,20 @@ export class PairTerminalDto extends TerminalPairingOptionsDto {
   credential!: Record<string, unknown>;
 }
 
+export class TerminalLoginOptionsDto {
+  @IsString()
+  @Length(1, 40)
+  terminalCode!: string;
+}
+
+export class TerminalLoginDto extends TerminalLoginOptionsDto {
+  @IsUUID()
+  challengeId!: string;
+
+  @IsObject()
+  credential!: Record<string, unknown>;
+}
+
 export class UpdateEmployeeStatusDto {
   @IsIn(["ACTIVE", "SUSPENDED", "DISMISSED", "ARCHIVED"])
   status!: EmploymentStatus;

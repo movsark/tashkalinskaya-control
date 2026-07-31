@@ -42,9 +42,20 @@ export interface AuthenticatedActor {
   readonly stepUpExpiresAt: Date | null;
 }
 
+export interface AuthenticatedTerminal {
+  readonly departmentId: string | null;
+  readonly id: string;
+  readonly locationLabel: string;
+  readonly sessionExpiresAt: Date;
+  readonly sessionId: string;
+  readonly sessionToken: string;
+  readonly terminalCode: string;
+}
+
 export interface AuthenticatedRequest extends Request {
   actor?: AuthenticatedActor;
   correlationId?: string;
+  terminal?: AuthenticatedTerminal;
 }
 
 export interface CreateEmployeeCommand {

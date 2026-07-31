@@ -14,7 +14,11 @@ import type {
 } from "@simplewebauthn/server";
 
 import { API_CONFIG, type ApiConfig } from "../config";
-import { DeviceSecurityRepository, type ChallengePurpose } from "./device-security.repository";
+import {
+  DeviceSecurityRepository,
+  type ChallengePurpose,
+  type FactoryTerminalDeviceRecord,
+} from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
 import type { DeviceRecord } from "./identity.types";
 
@@ -169,6 +173,76 @@ export class WebAuthnService {
           id: input.device.webauthnCredentialId,
           publicKey: new Uint8Array(input.device.webauthnPublicKey),
           transports: input.device.webauthnTransports as AuthenticatorTransportFuture[],
+        },
+        expectedChallenge: (candidate) =>
+          this.crypto.hashChallenge(candidate) === challenge.challengeHash,
+        expectedOrigin: [...this.config.webauthnOrigins],
+        expectedRPID: this.config.webauthnRpId,
+        requireUserVerification: true,
+        response: input.response,
+      });
+      if (!verification.verified) throw authenticationFailed();
+      await this.securityRepository.consumeChallenge(challenge.id);
+      return verification.authenticationInfo.newCounter;
+    } catch (error) {
+      await this.securityRepository.failChallenge(input.challengeId);
+      if (error instanceof UnauthorizedException) throw error;
+      throw authenticationFailed();
+    }
+  }
+
+  async terminalAuthenticationOptions(input: {
+    purpose: "TERMINAL_LOGIN";
+    terminal: FactoryTerminalDeviceRecord;
+  }): Promise<{
+    challengeId: string;
+    options: PublicKeyCredentialRequestOptionsJSON;
+  }> {
+    if (input.terminal.webauthnCredentialId === null) throw authenticationFailed();
+    const options = await generateAuthenticationOptions({
+      allowCredentials: [
+        {
+          id: input.terminal.webauthnCredentialId,
+          transports: input.terminal.webauthnTransports as AuthenticatorTransportFuture[],
+        },
+      ],
+      rpID: this.config.webauthnRpId,
+      timeout: 5 * 60 * 1000,
+      userVerification: "required",
+    });
+    const challengeId = await this.securityRepository.createChallenge({
+      challengeHash: this.crypto.hashChallenge(options.challenge),
+      factoryTerminalId: input.terminal.id,
+      purpose: input.purpose,
+    });
+    return { challengeId, options };
+  }
+
+  async verifyTerminalAuthentication(input: {
+    challengeId: string;
+    purpose: "TERMINAL_LOGIN";
+    response: AuthenticationResponseJSON;
+    terminal: FactoryTerminalDeviceRecord;
+  }): Promise<number> {
+    const challenge = await this.securityRepository.getChallenge(input.challengeId, input.purpose);
+    if (
+      challenge.accountId !== null ||
+      challenge.personalDeviceId !== null ||
+      challenge.factoryTerminalId !== input.terminal.id ||
+      input.terminal.webauthnCredentialId === null ||
+      input.terminal.webauthnPublicKey === null ||
+      input.response.id !== input.terminal.webauthnCredentialId
+    ) {
+      await this.securityRepository.failChallenge(input.challengeId);
+      throw authenticationFailed();
+    }
+    try {
+      const verification = await verifyAuthenticationResponse({
+        credential: {
+          counter: input.terminal.webauthnCounter,
+          id: input.terminal.webauthnCredentialId,
+          publicKey: new Uint8Array(input.terminal.webauthnPublicKey),
+          transports: input.terminal.webauthnTransports as AuthenticatorTransportFuture[],
         },
         expectedChallenge: (candidate) =>
           this.crypto.hashChallenge(candidate) === challenge.challengeHash,

@@ -38,7 +38,9 @@ export default function LoginPage() {
       });
       saveDeviceId(session.deviceId);
       router.push(
-        session.employee.roles.some((role) => role.roleCode === "ADMIN") ? "/employees" : "/",
+        session.employee.roles.some((role) => role.roleCode === "ADMIN")
+          ? "/employees"
+          : "/attendance/me",
       );
     } catch (caught) {
       setError(

@@ -1,12 +1,14 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AppBrand } from "../../components/app-brand";
 import { ApiRequestError, pairTerminal, terminalPairingOptions } from "../../lib/api";
 import { registerDevice } from "../../lib/device-identity";
 
 export default function TerminalPairPage() {
+  const router = useRouter();
   const [terminalCode, setTerminalCode] = useState("");
   const [pairingCode, setPairingCode] = useState("");
   const [error, setError] = useState("");
@@ -27,6 +29,7 @@ export default function TerminalPairPage() {
         terminalCode,
       });
       setPaired(true);
+      router.push("/attendance/terminal");
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError || caught instanceof Error

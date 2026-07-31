@@ -4,9 +4,16 @@ import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/co
 import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
+import type { AuthenticatedTerminal } from "./identity.types";
 
 export type ChallengePurpose =
-  "ACTIVATION" | "LOGIN" | "RECOVERY" | "REFRESH" | "STEP_UP" | "TERMINAL_PAIRING";
+  | "ACTIVATION"
+  | "LOGIN"
+  | "RECOVERY"
+  | "REFRESH"
+  | "STEP_UP"
+  | "TERMINAL_LOGIN"
+  | "TERMINAL_PAIRING";
 
 export interface ChallengeRecord {
   readonly accountId: string | null;
@@ -32,6 +39,23 @@ export interface FactoryTerminalRecord {
   readonly locationLabel: string;
   readonly status: "ACTIVE" | "PENDING" | "REPLACED" | "REVOKED";
   readonly terminalCode: string;
+}
+
+export interface FactoryTerminalDeviceRecord extends FactoryTerminalRecord {
+  readonly webauthnBackedUp: boolean | null;
+  readonly webauthnCounter: number;
+  readonly webauthnCredentialId: string | null;
+  readonly webauthnDeviceType: "multiDevice" | "singleDevice" | null;
+  readonly webauthnPublicKey: Buffer | null;
+  readonly webauthnTransports: string[];
+}
+
+export interface NewTerminalSession {
+  readonly absoluteExpiresAt: Date;
+  readonly accessExpiresAt: Date;
+  readonly id: string;
+  readonly terminalId: string;
+  readonly tokenHash: string;
 }
 
 @Injectable()
@@ -380,6 +404,50 @@ export class DeviceSecurityRepository {
         };
   }
 
+  async findActiveTerminalDevice(
+    terminalCode: string,
+  ): Promise<FactoryTerminalDeviceRecord | null> {
+    const result = await this.database.query<{
+      department_id: string | null;
+      id: string;
+      location_label: string;
+      status: FactoryTerminalRecord["status"];
+      terminal_code: string;
+      webauthn_backed_up: boolean | null;
+      webauthn_counter: string;
+      webauthn_credential_id: string | null;
+      webauthn_device_type: "multiDevice" | "singleDevice" | null;
+      webauthn_public_key: Buffer | null;
+      webauthn_transports: string[];
+    }>(
+      `
+        select
+          id, terminal_code, department_id, location_label, status,
+          webauthn_credential_id, webauthn_public_key, webauthn_counter,
+          webauthn_transports, webauthn_device_type, webauthn_backed_up
+        from identity.factory_terminal
+        where terminal_code = $1 and status = 'ACTIVE'
+      `,
+      [terminalCode],
+    );
+    const row = result.rows[0];
+    return row === undefined
+      ? null
+      : {
+          departmentId: row.department_id,
+          id: row.id,
+          locationLabel: row.location_label,
+          status: row.status,
+          terminalCode: row.terminal_code,
+          webauthnBackedUp: row.webauthn_backed_up,
+          webauthnCounter: Number(row.webauthn_counter),
+          webauthnCredentialId: row.webauthn_credential_id,
+          webauthnDeviceType: row.webauthn_device_type,
+          webauthnPublicKey: row.webauthn_public_key,
+          webauthnTransports: row.webauthn_transports,
+        };
+  }
+
   async validTerminalPairingToken(terminalId: string, tokenHash: string): Promise<boolean> {
     const result = await this.database.query(
       `
@@ -401,6 +469,7 @@ export class DeviceSecurityRepository {
       publicKey: Uint8Array;
       transports: readonly string[];
     };
+    session: NewTerminalSession;
     terminalId: string;
     tokenHash: string;
   }): Promise<void> {
@@ -439,7 +508,85 @@ export class DeviceSecurityRepository {
       await client.query("update identity.access_token set consumed_at = now() where id = $1", [
         token.rows[0]?.id,
       ]);
+      await this.insertTerminalSession(client, input.session);
     });
+  }
+
+  async createTerminalSession(input: {
+    correlationId: string;
+    session: NewTerminalSession;
+  }): Promise<void> {
+    await this.database.transaction(async (client) => {
+      await this.insertTerminalSession(client, input.session);
+      await client.query(
+        `
+          update identity.factory_terminal
+          set last_seen_at = now(), updated_at = now()
+          where id = $1 and status = 'ACTIVE'
+        `,
+        [input.session.terminalId],
+      );
+      await this.audit(client, {
+        action: "FACTORY_TERMINAL_LOGIN_SUCCEEDED",
+        actorEmployeeId: null,
+        correlationId: input.correlationId,
+        metadata: {},
+        objectId: input.session.terminalId,
+        objectType: "FACTORY_TERMINAL",
+      });
+    });
+  }
+
+  async findTerminalBySessionHash(
+    tokenHash: string,
+    sessionToken: string,
+  ): Promise<AuthenticatedTerminal | null> {
+    const result = await this.database.query<{
+      access_expires_at: Date;
+      department_id: string | null;
+      id: string;
+      location_label: string;
+      session_id: string;
+      terminal_code: string;
+    }>(
+      `
+        select
+          ft.id, ft.terminal_code, ft.department_id, ft.location_label,
+          s.id as session_id, s.access_expires_at
+        from identity.factory_terminal ft
+        join identity.session s on s.factory_terminal_id = ft.id
+        where s.token_hash = $1
+          and s.account_id is null
+          and s.revoked_at is null
+          and s.access_expires_at > now()
+          and s.absolute_expires_at > now()
+          and ft.status = 'ACTIVE'
+      `,
+      [tokenHash],
+    );
+    const row = result.rows[0];
+    return row === undefined
+      ? null
+      : {
+          departmentId: row.department_id,
+          id: row.id,
+          locationLabel: row.location_label,
+          sessionExpiresAt: row.access_expires_at,
+          sessionId: row.session_id,
+          sessionToken,
+          terminalCode: row.terminal_code,
+        };
+  }
+
+  async updateTerminalCounter(terminalId: string, counter: number): Promise<void> {
+    await this.database.query(
+      `
+        update identity.factory_terminal
+        set webauthn_counter = $2, last_seen_at = now(), updated_at = now()
+        where id = $1 and status = 'ACTIVE'
+      `,
+      [terminalId, counter],
+    );
   }
 
   async listTerminals(): Promise<FactoryTerminalRecord[]> {
@@ -498,6 +645,27 @@ export class DeviceSecurityRepository {
         objectType: "FACTORY_TERMINAL",
       });
     });
+  }
+
+  private async insertTerminalSession(
+    client: PoolClient,
+    session: NewTerminalSession,
+  ): Promise<void> {
+    await client.query(
+      `
+        insert into identity.session (
+          id, account_id, personal_device_id, factory_terminal_id, token_hash,
+          authorization_version, access_expires_at, refresh_expires_at, absolute_expires_at
+        ) values ($1, null, null, $2, $3, 1, $4, null, $5)
+      `,
+      [
+        session.id,
+        session.terminalId,
+        session.tokenHash,
+        session.accessExpiresAt,
+        session.absoluteExpiresAt,
+      ],
+    );
   }
 
   private async audit(
