@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
-import { ApiRequestError, login } from "../../lib/api";
-import { readDeviceId, saveDeviceId } from "../../lib/device-identity";
+import { ApiRequestError, login, loginOptions } from "../../lib/api";
+import { authenticateDevice, readDeviceId, saveDeviceId } from "../../lib/device-identity";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,7 +27,15 @@ export default function LoginPage() {
     }
     setSubmitting(true);
     try {
-      const session = await login({ deviceId, login: loginValue, password });
+      const ceremony = await loginOptions({ deviceId, login: loginValue });
+      const credential = await authenticateDevice(ceremony.options);
+      const session = await login({
+        challengeId: ceremony.challengeId,
+        credential,
+        deviceId,
+        login: loginValue,
+        password,
+      });
       saveDeviceId(session.deviceId);
       router.push(
         session.employee.roles.some((role) => role.roleCode === "ADMIN") ? "/employees" : "/",
@@ -52,8 +60,8 @@ export default function LoginPage() {
           <p className="eyebrow">Персональный доступ</p>
           <h1>Вход в рабочую систему</h1>
           <p>
-            Используйте выданный логин и свою парольную фразу. Вход разрешен только с одного
-            привязанного личного устройства.
+            Используйте выданный логин и свою парольную фразу, затем подтвердите вход системным PIN
+            или биометрией. Вход разрешен только с одного привязанного личного устройства.
           </p>
           <div className="security-note">
             <strong>Общий аккаунт цеха не используется.</strong>
@@ -83,12 +91,16 @@ export default function LoginPage() {
             </label>
             {error ? <p className="form-error">{error}</p> : null}
             <button className="primary-button" disabled={submitting} type="submit">
-              {submitting ? "Проверяем…" : "Войти"}
+              {submitting ? "Ожидаем подтверждение устройства…" : "Войти"}
             </button>
           </form>
           <div className="auth-card__footer">
-            <span>Первый вход или новое устройство?</span>
+            <span>Первый вход?</span>
             <Link href="/activate">Активировать доступ</Link>
+          </div>
+          <div className="auth-card__footer">
+            <span>Телефон заменен или потерян?</span>
+            <Link href="/recover">Восстановить доступ</Link>
           </div>
         </div>
       </section>

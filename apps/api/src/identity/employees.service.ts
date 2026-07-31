@@ -5,11 +5,13 @@ import type { EmployeeListResponse, EmployeeSummary } from "@tashkalinskaya/cont
 
 import type {
   CreateEmployeeDto,
+  IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
   RoleInputDto,
   UpdateEmployeeStatusDto,
 } from "./identity.dto";
+import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
 import { IdentityRepository } from "./identity.repository";
 
@@ -17,6 +19,7 @@ import { IdentityRepository } from "./identity.repository";
 export class EmployeesService {
   constructor(
     private readonly crypto: IdentityCryptoService,
+    private readonly deviceSecurity: DeviceSecurityRepository,
     private readonly repository: IdentityRepository,
   ) {}
 
@@ -108,6 +111,25 @@ export class EmployeesService {
       deviceId,
       reason: dto.reason.trim(),
     });
+  }
+
+  async issueRecovery(
+    employeeId: string,
+    dto: IssueRecoveryDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ): Promise<{ expiresAt: string; recoveryCode: string }> {
+    const accountId = await this.deviceSecurity.findAccountIdByEmployee(employeeId);
+    const recoveryCode = this.crypto.generateAccessCode();
+    const result = await this.deviceSecurity.issueRecovery({
+      accountId,
+      actorEmployeeId,
+      correlationId,
+      employeeId,
+      reason: dto.reason.trim(),
+      tokenHash: this.crypto.hashAccessCode(recoveryCode),
+    });
+    return { expiresAt: result.expiresAt.toISOString(), recoveryCode };
   }
 }
 

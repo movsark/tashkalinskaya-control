@@ -75,6 +75,12 @@ export class IdentityCryptoService {
     return createHmac("sha256", this.config.authTokenPepper).update(code, "utf8").digest("hex");
   }
 
+  hashChallenge(challenge: string): string {
+    return createHmac("sha256", this.config.authTokenPepper)
+      .update(`webauthn\u0000${challenge}`, "utf8")
+      .digest("hex");
+  }
+
   generateSessionToken(): string {
     return randomBytes(32).toString("base64url");
   }

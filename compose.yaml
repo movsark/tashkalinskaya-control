@@ -50,6 +50,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
       NODE_ENV: production
       SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER:-local-session-pepper-change-me-now}
+      WEBAUTHN_ORIGINS: http://localhost:3000
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_NAME: Ташкалинская фабрика
     healthcheck:
       test:
         - CMD

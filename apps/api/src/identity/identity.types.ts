@@ -23,6 +23,12 @@ export interface DeviceRecord {
   readonly id: string;
   readonly platformFamily: PlatformFamily;
   readonly status: "ACTIVE" | "PENDING" | "REPLACED" | "REVOKED";
+  readonly webauthnBackedUp: boolean | null;
+  readonly webauthnCounter: number;
+  readonly webauthnCredentialId: string | null;
+  readonly webauthnDeviceType: "multiDevice" | "singleDevice" | null;
+  readonly webauthnPublicKey: Buffer | null;
+  readonly webauthnTransports: string[];
 }
 
 export interface AuthenticatedActor {
@@ -33,6 +39,7 @@ export interface AuthenticatedActor {
   readonly sessionExpiresAt: Date;
   readonly sessionId: string;
   readonly sessionToken: string;
+  readonly stepUpExpiresAt: Date | null;
 }
 
 export interface AuthenticatedRequest extends Request {

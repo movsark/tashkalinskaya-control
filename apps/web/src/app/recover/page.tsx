@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
-import { activate, activationOptions, ApiRequestError } from "../../lib/api";
+import { ApiRequestError, recover, recoveryOptions } from "../../lib/api";
 import { detectPlatform, registerDevice, saveDeviceId } from "../../lib/device-identity";
 
-export default function ActivatePage() {
+export default function RecoverPage() {
   const router = useRouter();
   const [loginValue, setLoginValue] = useState("");
-  const [activationCode, setActivationCode] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
   const [deviceLabel, setDeviceLabel] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -27,16 +27,16 @@ export default function ActivatePage() {
     }
     setSubmitting(true);
     try {
-      const ceremony = await activationOptions({ activationCode, login: loginValue });
+      const ceremony = await recoveryOptions({ login: loginValue, recoveryCode });
       const credential = await registerDevice(ceremony.options);
-      const session = await activate({
-        activationCode,
+      const session = await recover({
         challengeId: ceremony.challengeId,
         credential,
         deviceLabel,
         login: loginValue,
         password,
         platformFamily: detectPlatform(),
+        recoveryCode,
       });
       saveDeviceId(session.deviceId);
       router.push(
@@ -46,7 +46,7 @@ export default function ActivatePage() {
       setError(
         caught instanceof ApiRequestError || caught instanceof Error
           ? caught.message
-          : "Не удалось активировать устройство",
+          : "Не удалось восстановить доступ",
       );
     } finally {
       setSubmitting(false);
@@ -57,22 +57,16 @@ export default function ActivatePage() {
     <main className="auth-layout">
       <header className="auth-header">
         <AppBrand />
-        <span className="environment-label">B05 · АКТИВАЦИЯ</span>
+        <span className="environment-label">B05 · ВОССТАНОВЛЕНИЕ</span>
       </header>
       <section className="auth-grid">
         <div className="auth-intro">
-          <p className="eyebrow">Первый вход</p>
-          <h1>Привязка личного устройства</h1>
+          <p className="eyebrow">Замена личного устройства</p>
+          <h1>Восстановление доступа</h1>
           <p>
-            Код действует 24 часа и используется один раз. Постоянную парольную фразу знает только
-            сотрудник.
+            Получите одноразовый код у администратора. После привязки нового телефона старое
+            устройство и все прежние сессии останутся отозванными.
           </p>
-          <ol className="activation-steps">
-            <li>Введите логин и код от администратора.</li>
-            <li>Назовите устройство понятным именем.</li>
-            <li>Создайте парольную фразу не короче 15 символов.</li>
-            <li>Подтвердите системным PIN, Face ID или Touch ID.</li>
-          </ol>
         </div>
         <div className="auth-card auth-card--wide">
           <form onSubmit={submit}>
@@ -87,21 +81,20 @@ export default function ActivatePage() {
                 />
               </label>
               <label>
-                Одноразовый код
+                Код восстановления
                 <input
-                  autoCapitalize="none"
                   autoComplete="one-time-code"
-                  onChange={(event) => setActivationCode(event.target.value)}
+                  onChange={(event) => setRecoveryCode(event.target.value)}
                   required
-                  value={activationCode}
+                  value={recoveryCode}
                 />
               </label>
             </div>
             <label>
-              Название устройства
+              Новое устройство
               <input
                 onChange={(event) => setDeviceLabel(event.target.value)}
-                placeholder="Например: Samsung Марии"
+                placeholder="Например: iPhone Рустама"
                 required
                 value={deviceLabel}
               />
@@ -116,7 +109,6 @@ export default function ActivatePage() {
                 type="password"
                 value={password}
               />
-              <small>От 15 до 128 символов; пробелы и русские буквы разрешены.</small>
             </label>
             <label>
               Повторите парольную фразу
@@ -131,11 +123,11 @@ export default function ActivatePage() {
             </label>
             {error ? <p className="form-error">{error}</p> : null}
             <button className="primary-button" disabled={submitting} type="submit">
-              {submitting ? "Ожидаем подтверждение устройства…" : "Активировать устройство"}
+              {submitting ? "Привязываем новое устройство…" : "Восстановить доступ"}
             </button>
           </form>
           <div className="auth-card__footer">
-            <span>Устройство уже привязано?</span>
+            <span>Устройство доступно?</span>
             <Link href="/login">Вернуться ко входу</Link>
           </div>
         </div>

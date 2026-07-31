@@ -4,11 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadApiConfig } from "../config";
 import { DatabaseService } from "../database.service";
+import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityRepository } from "./identity.repository";
 
 const hasDatabase = typeof process.env.DATABASE_URL === "string";
 const database = new DatabaseService(loadApiConfig(process.env));
 const repository = new IdentityRepository(database);
+const securityRepository = new DeviceSecurityRepository(database);
 const employeeId = randomUUID();
 const accountId = randomUUID();
 const deviceId = randomUUID();
@@ -35,6 +37,9 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   });
 
   afterAll(async () => {
+    await database.query("delete from identity.authentication_challenge where account_id = $1", [
+      accountId,
+    ]);
     await database.query("delete from identity.personal_device where employee_id = $1", [
       employeeId,
     ]);
@@ -71,5 +76,25 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
         [randomUUID(), employeeId],
       ),
     ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("stores a single-use WebAuthn challenge bound to account and device", async () => {
+    const challengeId = await securityRepository.createChallenge({
+      accountId,
+      challengeHash: `hash-${randomUUID()}`,
+      personalDeviceId: deviceId,
+      purpose: "LOGIN",
+    });
+
+    await expect(securityRepository.getChallenge(challengeId, "LOGIN")).resolves.toMatchObject({
+      accountId,
+      id: challengeId,
+      personalDeviceId: deviceId,
+      purpose: "LOGIN",
+    });
+    await securityRepository.consumeChallenge(challengeId);
+    await expect(securityRepository.getChallenge(challengeId, "LOGIN")).rejects.toMatchObject({
+      status: 401,
+    });
   });
 });

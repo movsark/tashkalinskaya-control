@@ -51,6 +51,12 @@ interface DeviceRow {
   readonly id: string;
   readonly platform_family: DeviceRecord["platformFamily"];
   readonly status: DeviceRecord["status"];
+  readonly webauthn_backed_up: boolean | null;
+  readonly webauthn_counter: string;
+  readonly webauthn_credential_id: string | null;
+  readonly webauthn_device_type: DeviceRecord["webauthnDeviceType"];
+  readonly webauthn_public_key: Buffer | null;
+  readonly webauthn_transports: string[];
 }
 
 interface SessionActorRow extends EmployeeRow {
@@ -59,6 +65,18 @@ interface SessionActorRow extends EmployeeRow {
   readonly account_id: string;
   readonly authorization_version: number;
   readonly device_id: string;
+  readonly session_authorization_version: number;
+  readonly session_id: string;
+  readonly step_up_expires_at: Date | null;
+}
+
+interface RefreshSessionRow {
+  readonly absolute_expires_at: Date;
+  readonly account_id: string;
+  readonly authorization_version: number;
+  readonly employee_id: string;
+  readonly personal_device_id: string;
+  readonly refresh_expires_at: Date;
   readonly session_authorization_version: number;
   readonly session_id: string;
 }
@@ -144,7 +162,10 @@ export class IdentityRepository {
   async findActiveDevice(deviceId: string): Promise<DeviceRecord | null> {
     const result = await this.database.query<DeviceRow>(
       `
-        select id, employee_id, platform_family, status
+        select
+          id, employee_id, platform_family, status, webauthn_credential_id,
+          webauthn_public_key, webauthn_counter::text, webauthn_transports,
+          webauthn_device_type, webauthn_backed_up
         from identity.personal_device
         where id = $1 and status = 'ACTIVE'
       `,
@@ -158,6 +179,12 @@ export class IdentityRepository {
           id: row.id,
           platformFamily: row.platform_family,
           status: row.status,
+          webauthnBackedUp: row.webauthn_backed_up,
+          webauthnCounter: Number(row.webauthn_counter),
+          webauthnCredentialId: row.webauthn_credential_id,
+          webauthnDeviceType: row.webauthn_device_type,
+          webauthnPublicKey: row.webauthn_public_key,
+          webauthnTransports: row.webauthn_transports,
         };
   }
 
@@ -280,7 +307,14 @@ export class IdentityRepository {
     employeeId: string;
     passwordHash: string;
     platformFamily: DeviceRecord["platformFamily"];
-    publicKey: string;
+    credential: {
+      backedUp: boolean;
+      counter: number;
+      deviceType: "multiDevice" | "singleDevice";
+      id: string;
+      publicKey: Uint8Array;
+      transports: readonly string[];
+    };
     session: NewSession;
     tokenHash: string;
   }): Promise<void> {
@@ -335,15 +369,23 @@ export class IdentityRepository {
       await client.query(
         `
           insert into identity.personal_device (
-            id, employee_id, public_key, device_label, platform_family, status, paired_at, last_seen_at
-          ) values ($1, $2, $3, $4, $5, 'ACTIVE', now(), now())
+            id, employee_id, public_key, device_label, platform_family, status, paired_at,
+            last_seen_at, webauthn_credential_id, webauthn_public_key, webauthn_counter,
+            webauthn_transports, webauthn_device_type, webauthn_backed_up
+          ) values ($1, $2, $3, $4, $5, 'ACTIVE', now(), now(), $6, $7, $8, $9, $10, $11)
         `,
         [
           input.deviceId,
           input.employeeId,
-          input.publicKey,
+          `webauthn:${input.credential.id}`,
           input.deviceLabel,
           input.platformFamily,
+          input.credential.id,
+          Buffer.from(input.credential.publicKey),
+          input.credential.counter,
+          input.credential.transports,
+          input.credential.deviceType,
+          input.credential.backedUp,
         ],
       );
       await client.query("update identity.access_token set consumed_at = now() where id = $1", [
@@ -497,6 +539,7 @@ export class IdentityRepository {
           s.authorization_version as session_authorization_version,
           s.access_expires_at,
           s.absolute_expires_at,
+          s.step_up_expires_at,
           coalesce(
             jsonb_agg(
               jsonb_build_object(
@@ -541,7 +584,144 @@ export class IdentityRepository {
       sessionExpiresAt: row.access_expires_at,
       sessionId: row.session_id,
       sessionToken,
+      stepUpExpiresAt: row.step_up_expires_at,
     };
+  }
+
+  async updateDeviceCounter(deviceId: string, counter: number): Promise<void> {
+    await this.database.query(
+      `
+        update identity.personal_device
+        set webauthn_counter = $2, last_seen_at = now(), updated_at = now()
+        where id = $1 and status = 'ACTIVE'
+      `,
+      [deviceId, counter],
+    );
+  }
+
+  async markSessionStepUp(
+    sessionId: string,
+    employeeId: string,
+    correlationId: string,
+  ): Promise<Date> {
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await this.database.transaction(async (client) => {
+      await client.query(
+        "update identity.session set step_up_expires_at = $2 where id = $1 and revoked_at is null",
+        [sessionId, expiresAt],
+      );
+      await this.insertAudit(client, {
+        action: "STEP_UP_SUCCEEDED",
+        actorEmployeeId: employeeId,
+        correlationId,
+        metadata: { expiresAt: expiresAt.toISOString() },
+        objectId: sessionId,
+        objectType: "SESSION",
+      });
+    });
+    return expiresAt;
+  }
+
+  async revokeAllSessions(
+    accountId: string,
+    employeeId: string,
+    correlationId: string,
+  ): Promise<void> {
+    await this.database.transaction(async (client) => {
+      await client.query(
+        `
+          update identity.session
+          set revoked_at = now(), revoked_reason = 'USER_LOGOUT_ALL'
+          where account_id = $1 and revoked_at is null
+        `,
+        [accountId],
+      );
+      await this.insertAudit(client, {
+        action: "LOGOUT_ALL",
+        actorEmployeeId: employeeId,
+        correlationId,
+        metadata: {},
+        objectId: accountId,
+        objectType: "SESSION",
+      });
+    });
+  }
+
+  async findRefreshSessionByHash(tokenHash: string): Promise<{
+    absoluteExpiresAt: Date;
+    accountId: string;
+    authorizationVersion: number;
+    employeeId: string;
+    personalDeviceId: string;
+    refreshExpiresAt: Date;
+    sessionId: string;
+  } | null> {
+    const result = await this.database.query<RefreshSessionRow>(
+      `
+        select
+          s.id as session_id,
+          s.account_id,
+          s.personal_device_id,
+          s.authorization_version as session_authorization_version,
+          s.refresh_expires_at,
+          s.absolute_expires_at,
+          ua.authorization_version,
+          e.id as employee_id
+        from identity.session s
+        join identity.user_account ua on ua.id = s.account_id
+        join identity.employee e on e.id = ua.employee_id
+        join identity.personal_device pd on pd.id = s.personal_device_id
+        where s.token_hash = $1
+          and s.revoked_at is null
+          and s.refresh_expires_at > now()
+          and s.absolute_expires_at > now()
+          and ua.status = 'ACTIVE'
+          and e.employment_status = 'ACTIVE'
+          and pd.status = 'ACTIVE'
+      `,
+      [tokenHash],
+    );
+    const row = result.rows[0];
+    if (row === undefined || row.authorization_version !== row.session_authorization_version) {
+      return null;
+    }
+    return {
+      absoluteExpiresAt: row.absolute_expires_at,
+      accountId: row.account_id,
+      authorizationVersion: row.authorization_version,
+      employeeId: row.employee_id,
+      personalDeviceId: row.personal_device_id,
+      refreshExpiresAt: row.refresh_expires_at,
+      sessionId: row.session_id,
+    };
+  }
+
+  async rotateSession(input: {
+    correlationId: string;
+    employeeId: string;
+    previousSessionId: string;
+    session: NewSession;
+  }): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const revoked = await client.query(
+        `
+          update identity.session
+          set revoked_at = now(), revoked_reason = 'SESSION_ROTATED'
+          where id = $1 and revoked_at is null and refresh_expires_at > now()
+        `,
+        [input.previousSessionId],
+      );
+      if (revoked.rowCount !== 1) throw new UnauthorizedException("Сессия уже обновлена");
+      await this.insertSession(client, input.session, input.previousSessionId);
+      await this.insertAudit(client, {
+        action: "SESSION_REFRESHED",
+        actorEmployeeId: input.employeeId,
+        correlationId: input.correlationId,
+        metadata: {},
+        objectId: input.session.id,
+        objectType: "SESSION",
+      });
+    });
   }
 
   async touchSession(sessionId: string): Promise<void> {
@@ -847,13 +1027,17 @@ export class IdentityRepository {
     }
   }
 
-  private async insertSession(client: PoolClient, session: NewSession): Promise<void> {
+  private async insertSession(
+    client: PoolClient,
+    session: NewSession,
+    rotatedFromId: string | null = null,
+  ): Promise<void> {
     await client.query(
       `
         insert into identity.session (
           id, account_id, personal_device_id, token_hash, authorization_version,
-          access_expires_at, refresh_expires_at, absolute_expires_at
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+          access_expires_at, refresh_expires_at, absolute_expires_at, rotated_from_id
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `,
       [
         session.id,
@@ -864,6 +1048,7 @@ export class IdentityRepository {
         session.accessExpiresAt,
         session.refreshExpiresAt,
         session.absoluteExpiresAt,
+        rotatedFromId,
       ],
     );
   }

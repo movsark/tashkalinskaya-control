@@ -1,11 +1,22 @@
 "use client";
 
 import type { AuthenticatedUser, EmployeeSummary, RoleCode } from "@tashkalinskaya/contracts";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
-import { ApiRequestError, createEmployee, getSession, listEmployees } from "../../lib/api";
+import {
+  ApiRequestError,
+  createEmployee,
+  getSession,
+  issueRecovery,
+  listEmployees,
+  logoutAll,
+  stepUp,
+  stepUpOptions,
+} from "../../lib/api";
+import { authenticateDevice } from "../../lib/device-identity";
 
 const roleLabels: Record<RoleCode, string> = {
   ACCOUNTANT: "Бухгалтер по табелю",
@@ -35,6 +46,15 @@ export default function EmployeesPage() {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [activation, setActivation] = useState<{
+    code: string;
+    employeeName: string;
+    expiresAt: string;
+  } | null>(null);
+  const [securityPassword, setSecurityPassword] = useState("");
+  const [securityReadyUntil, setSecurityReadyUntil] = useState<string | null>(null);
+  const [securityMessage, setSecurityMessage] = useState("");
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [recovery, setRecovery] = useState<{
     code: string;
     employeeName: string;
     expiresAt: string;
@@ -94,13 +114,60 @@ export default function EmployeesPage() {
     setShowCreate(false);
   }
 
+  async function confirmSensitiveOperations() {
+    if (session === null) return;
+    setSecurityBusy(true);
+    setSecurityMessage("");
+    try {
+      const ceremony = await stepUpOptions(session.csrfToken);
+      const credential = await authenticateDevice(ceremony.options);
+      const result = await stepUp(
+        { challengeId: ceremony.challengeId, credential, password: securityPassword },
+        session.csrfToken,
+      );
+      setSecurityReadyUntil(result.expiresAt);
+      setSecurityPassword("");
+      setSecurityMessage("Опасные операции разрешены на 5 минут.");
+    } catch (caught) {
+      setSecurityMessage(
+        caught instanceof Error ? caught.message : "Не удалось подтвердить администратора",
+      );
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function createRecovery(employee: EmployeeSummary) {
+    if (session === null) return;
+    const reason = window.prompt("Укажите причину замены или восстановления устройства:");
+    if (reason === null || reason.trim().length < 3) return;
+    try {
+      const result = await issueRecovery(employee.id, reason, session.csrfToken);
+      setRecovery({
+        code: result.recoveryCode,
+        employeeName: employee.fullName,
+        expiresAt: result.expiresAt,
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось выдать код восстановления");
+    }
+  }
+
+  async function closeAllSessions() {
+    if (session === null) return;
+    await logoutAll(session.csrfToken);
+    router.replace("/login");
+  }
+
   return (
     <main className="workspace-layout">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
-          <small>Сотрудники и доступ</small>
+          <small>
+            Сотрудники и доступ · <Link href="/terminals">планшеты</Link>
+          </small>
         </div>
       </header>
 
@@ -113,12 +180,46 @@ export default function EmployeesPage() {
         {canAdminister ? (
           <button
             className="primary-button primary-button--compact"
+            disabled={securityReadyUntil === null || new Date(securityReadyUntil) <= new Date()}
             onClick={() => setShowCreate(true)}
           >
             Добавить сотрудника
           </button>
         ) : null}
       </section>
+
+      {canAdminister ? (
+        <section className="security-admin">
+          <div>
+            <p className="eyebrow">Защищенные операции</p>
+            <h2>Повторное подтверждение администратора</h2>
+            <p>
+              Для замены устройства, ролей и блокировки сотрудника нужны пароль и системный
+              PIN/биометрия. Разрешение действует 5 минут.
+            </p>
+          </div>
+          <div className="security-admin__actions">
+            <input
+              aria-label="Парольная фраза администратора"
+              onChange={(event) => setSecurityPassword(event.target.value)}
+              placeholder="Парольная фраза"
+              type="password"
+              value={securityPassword}
+            />
+            <button
+              className="primary-button"
+              disabled={securityBusy || securityPassword.length === 0}
+              onClick={() => void confirmSensitiveOperations()}
+            >
+              {securityBusy ? "Подтверждаем…" : "Подтвердить"}
+            </button>
+            <button className="secondary-button" onClick={() => void closeAllSessions()}>
+              Выйти из всех сессий
+            </button>
+            {securityMessage ? <small>{securityMessage}</small> : null}
+          </div>
+        </section>
+      ) : null}
 
       {activation ? (
         <section className="activation-result" aria-live="polite">
@@ -131,6 +232,20 @@ export default function EmployeesPage() {
             до {new Date(activation.expiresAt).toLocaleString("ru-RU")}.
           </p>
           <button onClick={() => setActivation(null)}>Я передал код</button>
+        </section>
+      ) : null}
+
+      {recovery ? (
+        <section className="activation-result" aria-live="polite">
+          <div>
+            <span>Код восстановления для {recovery.employeeName}</span>
+            <strong>{recovery.code}</strong>
+          </div>
+          <p>
+            Прежнее устройство и все сессии уже отозваны. Код действует до{" "}
+            {new Date(recovery.expiresAt).toLocaleString("ru-RU")}.
+          </p>
+          <button onClick={() => setRecovery(null)}>Я передал код</button>
         </section>
       ) : null}
 
@@ -172,6 +287,17 @@ export default function EmployeesPage() {
                 >
                   {statusLabel(employee)}
                 </span>
+                {canAdminister ? (
+                  <button
+                    className="row-action"
+                    disabled={
+                      securityReadyUntil === null || new Date(securityReadyUntil) <= new Date()
+                    }
+                    onClick={() => void createRecovery(employee)}
+                  >
+                    Заменить устройство
+                  </button>
+                ) : null}
               </div>
             </article>
           ))}

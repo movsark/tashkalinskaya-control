@@ -16,6 +16,9 @@ const environmentSchema = z.object({
   DATABASE_URL: z.string().trim().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "staging", "production"]).default("development"),
   SESSION_TOKEN_PEPPER: z.string().min(32).default("local-session-pepper-change-me-now"),
+  WEBAUTHN_ORIGINS: z.string().default("http://localhost:3000"),
+  WEBAUTHN_RP_ID: z.string().trim().min(1).default("localhost"),
+  WEBAUTHN_RP_NAME: z.string().trim().min(1).default("Ташкалинская фабрика"),
 });
 
 export interface ApiConfig {
@@ -29,6 +32,9 @@ export interface ApiConfig {
   readonly nodeEnvironment: "development" | "test" | "staging" | "production";
   readonly port: number;
   readonly sessionTokenPepper: string;
+  readonly webauthnOrigins: readonly string[];
+  readonly webauthnRpId: string;
+  readonly webauthnRpName: string;
 }
 
 export const API_CONFIG = Symbol("API_CONFIG");
@@ -37,7 +43,13 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
   const parsed = environmentSchema.parse(environment);
   const databaseUrl = parsed.DATABASE_URL?.trim();
   if (parsed.NODE_ENV === "production" || parsed.NODE_ENV === "staging") {
-    for (const name of ["AUTH_TOKEN_PEPPER", "CSRF_SECRET", "SESSION_TOKEN_PEPPER"] as const) {
+    for (const name of [
+      "AUTH_TOKEN_PEPPER",
+      "CSRF_SECRET",
+      "SESSION_TOKEN_PEPPER",
+      "WEBAUTHN_ORIGINS",
+      "WEBAUTHN_RP_ID",
+    ] as const) {
       if (environment[name] === undefined) {
         throw new Error(`${name} must be provided explicitly in ${parsed.NODE_ENV}`);
       }
@@ -57,5 +69,10 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
     nodeEnvironment: parsed.NODE_ENV,
     port: parsed.API_PORT,
     sessionTokenPepper: parsed.SESSION_TOKEN_PEPPER,
+    webauthnOrigins: parsed.WEBAUTHN_ORIGINS.split(",")
+      .map((origin) => origin.trim().replace(/\/$/, ""))
+      .filter((origin) => origin.length > 0),
+    webauthnRpId: parsed.WEBAUTHN_RP_ID,
+    webauthnRpName: parsed.WEBAUTHN_RP_NAME,
   };
 }

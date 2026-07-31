@@ -14,11 +14,18 @@ import { ApiTags } from "@nestjs/swagger";
 
 import {
   CreateEmployeeDto,
+  IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
   UpdateEmployeeStatusDto,
 } from "./identity.dto";
-import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "./identity.guards";
+import {
+  CsrfGuard,
+  RequireRoles,
+  RolesGuard,
+  SessionAuthGuard,
+  StepUpGuard,
+} from "./identity.guards";
 import type { AuthenticatedRequest } from "./identity.types";
 import { EmployeesService } from "./employees.service";
 
@@ -36,6 +43,7 @@ export class EmployeesController {
 
   @Post()
   @RequireRoles("ADMIN")
+  @UseGuards(StepUpGuard)
   create(@Body() dto: CreateEmployeeDto, @Req() request: AuthenticatedRequest) {
     const actor = requireActor(request);
     return this.employees.create(dto, actor.employee.id, requireCorrelationId(request));
@@ -43,6 +51,7 @@ export class EmployeesController {
 
   @Patch(":employeeId/status")
   @RequireRoles("ADMIN")
+  @UseGuards(StepUpGuard)
   updateStatus(
     @Param("employeeId") employeeId: string,
     @Body() dto: UpdateEmployeeStatusDto,
@@ -59,6 +68,7 @@ export class EmployeesController {
 
   @Put(":employeeId/roles")
   @RequireRoles("ADMIN")
+  @UseGuards(StepUpGuard)
   replaceRoles(
     @Param("employeeId") employeeId: string,
     @Body() dto: ReplaceRolesDto,
@@ -76,6 +86,7 @@ export class EmployeesController {
   @HttpCode(204)
   @Post("devices/:deviceId/revoke")
   @RequireRoles("ADMIN")
+  @UseGuards(StepUpGuard)
   async revokeDevice(
     @Param("deviceId") deviceId: string,
     @Body() dto: RevokeDeviceDto,
@@ -84,6 +95,23 @@ export class EmployeesController {
     const actor = requireActor(request);
     await this.employees.revokeDevice(
       deviceId,
+      dto,
+      actor.employee.id,
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post(":employeeId/recovery")
+  @RequireRoles("ADMIN")
+  @UseGuards(StepUpGuard)
+  issueRecovery(
+    @Param("employeeId") employeeId: string,
+    @Body() dto: IssueRecoveryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const actor = requireActor(request);
+    return this.employees.issueRecovery(
+      employeeId,
       dto,
       actor.employee.id,
       requireCorrelationId(request),
