@@ -11,16 +11,19 @@ import type {
   DriverLogisticsDayView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
+  NormChangeRequestView,
   ImportPreview,
   LogisticsDayView,
   LogisticsSetupView,
   LoadingGroupView,
   PlatformFamily,
+  PlanningSetupView,
   ProductListResponse,
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
   TerritoryDefaultAssignmentView,
+  TerritoryNormWeekView,
   TerritoryRunView,
   TerritoryView,
   VehicleView,
@@ -520,6 +523,71 @@ export async function createExtraTerritoryRun(
   csrfToken: string,
 ): Promise<TerritoryRunView> {
   return request("/logistics/runs/extra", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getPlanningSetup(): Promise<PlanningSetupView> {
+  return request("/planning/setup");
+}
+
+export async function getTerritoryNormWeek(
+  territoryId: string,
+  weekStart: string,
+): Promise<TerritoryNormWeekView> {
+  return request(`/planning/weeks/${territoryId}?start=${encodeURIComponent(weekStart)}`);
+}
+
+export async function listNormChangeRequests(): Promise<readonly NormChangeRequestView[]> {
+  return request("/planning/requests");
+}
+
+export async function createNormChangeRequest(
+  input: {
+    comment?: string;
+    dispatchDate?: string;
+    dispatchWeekday?: number;
+    effectiveFrom?: string;
+    kind: "ONE_OFF" | "PERMANENT";
+    lines: ReadonlyArray<{ productId: string; quantity: number }>;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<NormChangeRequestView> {
+  return request("/planning/requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideNormChangeRequest(
+  requestId: string,
+  input: { comment: string; decision: "APPROVE" | "REJECT"; version: number },
+  csrfToken: string,
+): Promise<NormChangeRequestView> {
+  return request(`/planning/requests/${requestId}/decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createPlanningCalendarLink(
+  input: {
+    comment: string;
+    cutoffAt: string;
+    dispatchDate: string;
+    exceptionType: "EXTRA_WORK" | "HOLIDAY" | "STANDARD";
+    productionDate: string;
+    reasonCode: string;
+    territoryId?: string;
+  },
+  csrfToken: string,
+): Promise<void> {
+  return request("/planning/calendar-links", {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

@@ -359,3 +359,77 @@ export interface LogisticsDayView {
     readonly total: number;
   };
 }
+
+export type NormRequestKind = "ONE_OFF" | "PERMANENT";
+export type NormRequestStatus = "APPROVED" | "MISSED_CUTOFF" | "REJECTED" | "STALE" | "SUBMITTED";
+
+export interface PlanningProductView {
+  readonly code: string;
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface WeeklyNormView {
+  readonly id: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly source: "ADMIN" | "DRIVER_REQUEST" | "IMPORT";
+  readonly territoryId: string;
+  readonly validFrom: string;
+  readonly validUntil: string | null;
+  readonly weekday: number;
+}
+
+export interface CalendarLinkView {
+  readonly calendarVersion: number;
+  readonly comment: string | null;
+  readonly cutoffAt: string;
+  readonly dispatchDate: string;
+  readonly exceptionType: "EXTRA_WORK" | "HOLIDAY" | "STANDARD";
+  readonly id: string;
+  readonly productionDate: string;
+  readonly reasonCode: string;
+  readonly territoryId: string | null;
+  readonly territoryNumber: number | null;
+}
+
+export interface NormChangeRequestLineView {
+  readonly baseQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly proposedQuantity: number;
+}
+
+export interface NormChangeRequestView {
+  readonly decisionComment: string | null;
+  readonly dispatchDate: string | null;
+  readonly dispatchWeekday: number | null;
+  readonly effectiveFrom: string | null;
+  readonly id: string;
+  readonly kind: NormRequestKind;
+  readonly lines: readonly NormChangeRequestLineView[];
+  readonly requesterComment: string | null;
+  readonly requesterEmployeeId: string;
+  readonly requesterName: string;
+  readonly status: NormRequestStatus;
+  readonly submittedAt: string;
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly version: number;
+}
+
+export interface PlanningSetupView {
+  readonly products: readonly PlanningProductView[];
+  readonly territories: readonly TerritoryView[];
+}
+
+export interface TerritoryNormWeekView {
+  readonly calendar: readonly CalendarLinkView[];
+  readonly norms: readonly WeeklyNormView[];
+  readonly requests: readonly NormChangeRequestView[];
+  readonly territoryId: string;
+  readonly weekStart: string;
+}
