@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-export const PLANNING_ENGINE_VERSION = "b09.2-v1";
+export const PLANNING_ENGINE_VERSION = "b10.1-v2";
 
 export interface PlanningSnapshotLine {
   readonly allocatedFreeStock: number;
@@ -14,6 +14,7 @@ export interface PlanningSnapshotLine {
   readonly productId: string;
   readonly productName: string;
   readonly storeOrderQuantity: number;
+  readonly storeOrderVersionId: string | null;
   readonly territoryId: string | null;
   readonly territoryNumber: number | null;
   readonly weeklyNormQuantity: number | null;
@@ -24,11 +25,22 @@ export interface PlanningSnapshotLine {
 export interface PlanningSnapshot {
   readonly adapters: {
     readonly inventory: "PLACEHOLDER_UNCONFIRMED";
-    readonly storeOrder: "PLACEHOLDER_MISSING";
+    readonly storeOrder: "DATABASE" | "PLACEHOLDER_MISSING";
   };
   readonly engineVersion: string;
   readonly lines: readonly PlanningSnapshotLine[];
   readonly productionDate: string;
+  readonly storeOrders: readonly (
+    | { readonly deliveryDate: string; readonly state: "MISSING" }
+    | {
+        readonly deliveryDate: string;
+        readonly inputHash: string;
+        readonly state: "INCLUDED";
+        readonly submittedZero: boolean;
+        readonly versionId: string;
+        readonly versionNo: number;
+      }
+  )[];
   readonly warnings: readonly string[];
 }
 
@@ -246,10 +258,10 @@ export async function publishScheduledPlan(
       await client.query(
         `insert into planning.plan_demand_line (
            id, snapshot_id, dispatch_date, direction_kind, territory_id, product_id, workshop_id,
-           weekly_norm_quantity, one_off_quantity, store_order_quantity,
+           weekly_norm_quantity, one_off_quantity, store_order_quantity, store_order_version_id,
            allocated_free_stock, allocated_good_return, effective_demand,
            new_production, excess_return, explanation
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           randomUUID(),
           snapshotId,
@@ -261,6 +273,7 @@ export async function publishScheduledPlan(
           line.weeklyNormQuantity,
           line.oneOffQuantity,
           line.storeOrderQuantity,
+          line.storeOrderVersionId,
           line.allocatedFreeStock,
           line.allocatedGoodReturn,
           line.effectiveDemand,
@@ -284,6 +297,23 @@ export async function publishScheduledPlan(
            id, plan_id, product_id, workshop_id, quantity
          ) values ($1, $2, $3, $4, $5)`,
         [randomUUID(), planId, line.productId, line.workshopId, line.quantity],
+      );
+    }
+    const storeOrderVersionIds = snapshot.storeOrders.flatMap((order) =>
+      order.state === "INCLUDED" ? [order.versionId] : [],
+    );
+    if (storeOrderVersionIds.length > 0) {
+      await client.query(
+        `update commerce.store_order_version
+         set status = 'INCLUDED_IN_PLAN', locked_at = now(), included_plan_id = $2
+         where id = any($1::uuid[]) and status = 'SUBMITTED'`,
+        [storeOrderVersionIds, planId],
+      );
+      await client.query(
+        `update commerce.store_order o
+         set status = 'INCLUDED_IN_PLAN', updated_at = now()
+         where current_version_id = any($1::uuid[])`,
+        [storeOrderVersionIds],
       );
     }
     await client.query(
@@ -354,12 +384,33 @@ export async function overridePublishedPlan(
     reason: string;
   },
 ): Promise<PublishedPlanView> {
+  return overridePublishedPlanBatch(client, {
+    actorEmployeeId: command.actorEmployeeId,
+    changes: [{ newQuantity: command.newQuantity, productId: command.productId }],
+    correlationId: command.correlationId,
+    idempotencyKey: command.idempotencyKey,
+    productionDate: command.productionDate,
+    reason: command.reason,
+  });
+}
+
+export async function overridePublishedPlanBatch(
+  client: PoolClient,
+  command: {
+    actorEmployeeId: string;
+    changes: readonly { newQuantity: number; productId: string }[];
+    correlationId: string;
+    idempotencyKey: string;
+    productionDate: string;
+    reason: string;
+  },
+): Promise<PublishedPlanView> {
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [
     `planning:override:${command.productionDate}`,
   ]);
   const repeated = await client.query<{ new_plan_id: string }>(
     `select new_plan_id from planning.plan_override
-     where changed_by = $1 and idempotency_key = $2`,
+     where changed_by = $1 and idempotency_key = $2 limit 1`,
     [command.actorEmployeeId, command.idempotencyKey],
   );
   if (repeated.rows[0] !== undefined) return loadPlan(client, repeated.rows[0].new_plan_id);
@@ -376,19 +427,10 @@ export async function overridePublishedPlan(
   );
   const previous = current.rows[0];
   if (previous === undefined) throw planningError("PLAN_NOT_FOUND");
-  const product = await client.query<{
-    primary_workshop_id: string | null;
-  }>(`select primary_workshop_id from catalog.product where id = $1 and status = 'ACTIVE'`, [
-    command.productId,
-  ]);
-  const workshopId = product.rows[0]?.primary_workshop_id;
-  if (workshopId == null) throw planningError("PRODUCT_WORKSHOP_MISSING");
-  const oldLine = await client.query<{ quantity: number }>(
-    `select quantity from planning.production_plan_line
-     where plan_id = $1 and product_id = $2`,
-    [previous.id, command.productId],
-  );
-  const oldQuantity = oldLine.rows[0]?.quantity ?? 0;
+  if (command.changes.length === 0) throw planningError("PLAN_OVERRIDE_EMPTY");
+  if (new Set(command.changes.map((change) => change.productId)).size !== command.changes.length) {
+    throw planningError("PLAN_OVERRIDE_DUPLICATE_PRODUCT");
+  }
   const oldLines = await client.query<{
     product_id: string;
     quantity: number;
@@ -397,11 +439,30 @@ export async function overridePublishedPlan(
     `select product_id, workshop_id, quantity from planning.production_plan_line where plan_id = $1`,
     [previous.id],
   );
+  const changedIds = command.changes.map((change) => change.productId);
+  const products = await client.query<{ id: string; primary_workshop_id: string | null }>(
+    `select id, primary_workshop_id from catalog.product
+     where id = any($1::uuid[]) and status = 'ACTIVE'`,
+    [changedIds],
+  );
+  const workshops = new Map(products.rows.map((row) => [row.id, row.primary_workshop_id]));
+  if (changedIds.some((productId) => workshops.get(productId) == null)) {
+    throw planningError("PRODUCT_WORKSHOP_MISSING");
+  }
+  const oldQuantities = new Map<string, number>();
+  for (const line of oldLines.rows) {
+    oldQuantities.set(line.product_id, (oldQuantities.get(line.product_id) ?? 0) + line.quantity);
+  }
+  const changedSet = new Set(changedIds);
   const resultLines = oldLines.rows
-    .filter((line) => line.product_id !== command.productId)
-    .concat([
-      { product_id: command.productId, quantity: command.newQuantity, workshop_id: workshopId },
-    ])
+    .filter((line) => !changedSet.has(line.product_id))
+    .concat(
+      command.changes.map((change) => ({
+        product_id: change.productId,
+        quantity: change.newQuantity,
+        workshop_id: workshops.get(change.productId)!,
+      })),
+    )
     .sort((a, b) =>
       `${a.workshop_id}:${a.product_id}`.localeCompare(`${b.workshop_id}:${b.product_id}`),
     );
@@ -437,29 +498,33 @@ export async function overridePublishedPlan(
       [randomUUID(), planId, line.product_id, line.workshop_id, line.quantity],
     );
   }
-  await client.query(
-    `insert into planning.plan_override (
-       id, previous_plan_id, new_plan_id, product_id, old_quantity,
-       new_quantity, reason, changed_by, idempotency_key, correlation_id
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [
-      randomUUID(),
-      previous.id,
-      planId,
-      command.productId,
-      oldQuantity,
-      command.newQuantity,
-      command.reason,
-      command.actorEmployeeId,
-      command.idempotencyKey,
-      command.correlationId,
-    ],
-  );
+  for (const change of command.changes) {
+    await client.query(
+      `insert into planning.plan_override (
+         id, previous_plan_id, new_plan_id, product_id, old_quantity,
+         new_quantity, reason, changed_by, idempotency_key, correlation_id
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        randomUUID(),
+        previous.id,
+        planId,
+        change.productId,
+        oldQuantities.get(change.productId) ?? 0,
+        change.newQuantity,
+        command.reason,
+        command.actorEmployeeId,
+        command.idempotencyKey,
+        command.correlationId,
+      ],
+    );
+  }
   await insertAudit(client, command, "PRODUCTION_PLAN_OVERRIDDEN", planId, {
-    newQuantity: command.newQuantity,
+    changes: command.changes.map((change) => ({
+      newQuantity: change.newQuantity,
+      oldQuantity: oldQuantities.get(change.productId) ?? 0,
+      productId: change.productId,
+    })),
     oldPlanId: previous.id,
-    oldQuantity,
-    productId: command.productId,
     productionDate: command.productionDate,
   });
   await insertOutbox(client, "planning.production-plan.overridden", planId, {
@@ -546,35 +611,154 @@ async function buildSnapshot(
      order by k.dispatch_date, k.territory_number, p.product_code`,
     [productionDate],
   );
-  if (links.rowCount === 0) throw planningError("CALENDAR_OR_DEMAND_MISSING");
-  if (links.rows.some((row) => row.primary_workshop_id === null || row.workshop_name === null)) {
+  const store = await client.query<{ id: string }>(
+    `select id from commerce.store where code = 'FACTORY_STORE' and status = 'ACTIVE'`,
+  );
+  const storeId = store.rows[0]?.id ?? null;
+  const storeWindows = await client.query<{
+    cutoff_at: Date;
+    dispatch_date: string;
+    id: string;
+  }>(
+    `select distinct on (l.dispatch_date)
+            l.id, l.dispatch_date::text, l.cutoff_at
+     from planning.production_dispatch_link l
+     join planning.calendar_version v on v.id = l.calendar_version_id
+     where l.territory_id is null and l.production_date = $1
+     order by l.dispatch_date, v.version_number desc`,
+    [productionDate],
+  );
+  if (storeId !== null) {
+    for (const window of storeWindows.rows) {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `store:order:${storeId}:${window.dispatch_date}`,
+      ]);
+    }
+  }
+  const storeVersions =
+    storeId === null || storeWindows.rowCount === 0
+      ? { rows: [] as StoreVersionRow[] }
+      : await client.query<StoreVersionRow>(
+          `select o.delivery_date::text, v.id as version_id, v.version_no,
+                  v.submitted_zero, v.input_hash
+           from commerce.store_order o
+           join commerce.store_order_version v on v.id = o.current_version_id
+           where o.store_id = $1 and o.delivery_date = any($2::date[])
+             and v.status = 'SUBMITTED' and v.is_current
+           order by o.delivery_date`,
+          [storeId, storeWindows.rows.map((window) => window.dispatch_date)],
+        );
+  const storeVersionIds = storeVersions.rows.map((row) => row.version_id);
+  if (storeVersionIds.length > 0) {
+    await client.query(
+      `select id from commerce.store_order_version where id = any($1::uuid[]) for update`,
+      [storeVersionIds],
+    );
+  }
+  const storeLines =
+    storeVersionIds.length === 0
+      ? { rows: [] as StoreLineRow[] }
+      : await client.query<StoreLineRow>(
+          `select o.delivery_date::text, l.order_version_id, l.product_id,
+                  l.product_code_snapshot, l.product_name_snapshot, l.quantity,
+                  p.primary_workshop_id, d.name as workshop_name
+           from commerce.store_order_line l
+           join commerce.store_order_version v on v.id = l.order_version_id
+           join commerce.store_order o on o.id = v.store_order_id
+           join catalog.product p on p.id = l.product_id
+           left join identity.department d on d.id = p.primary_workshop_id
+           where l.order_version_id = any($1::uuid[])
+           order by o.delivery_date, l.product_code_snapshot`,
+          [storeVersionIds],
+        );
+  if (links.rowCount === 0 && storeWindows.rowCount === 0) {
+    throw planningError("CALENDAR_OR_DEMAND_MISSING");
+  }
+  if (
+    links.rows.some((row) => row.primary_workshop_id === null || row.workshop_name === null) ||
+    storeLines.rows.some((row) => row.primary_workshop_id === null || row.workshop_name === null)
+  ) {
     throw planningError("PRODUCT_WORKSHOP_MISSING");
   }
+  const versionByDate = new Map(storeVersions.rows.map((row) => [row.delivery_date, row]));
+  const storeOrders: PlanningSnapshot["storeOrders"] = storeWindows.rows.map((window) => {
+    const version = versionByDate.get(window.dispatch_date);
+    return version === undefined
+      ? { deliveryDate: window.dispatch_date, state: "MISSING" }
+      : {
+          deliveryDate: window.dispatch_date,
+          inputHash: version.input_hash,
+          state: "INCLUDED",
+          submittedZero: version.submitted_zero,
+          versionId: version.version_id,
+          versionNo: version.version_no,
+        };
+  });
+  const missingStoreOrder = storeOrders.some((order) => order.state === "MISSING");
+  const territoryDemandLines: PlanningSnapshotLine[] = links.rows.map((row) => ({
+    allocatedFreeStock: 0,
+    allocatedGoodReturn: 0,
+    dispatchDate: row.dispatch_date,
+    directionKind: "TERRITORY",
+    oneOffQuantity: row.one_off_quantity,
+    productCode: row.product_code,
+    productId: row.product_id,
+    productName: row.product_name,
+    storeOrderQuantity: 0,
+    storeOrderVersionId: null,
+    territoryId: row.territory_id,
+    territoryNumber: row.territory_number,
+    weeklyNormQuantity: row.weekly_quantity,
+    workshopId: row.primary_workshop_id!,
+    workshopName: row.workshop_name!,
+  }));
+  const storeDemandLines: PlanningSnapshotLine[] = storeLines.rows.map((row) => ({
+    allocatedFreeStock: 0,
+    allocatedGoodReturn: 0,
+    dispatchDate: row.delivery_date,
+    directionKind: "STORE",
+    oneOffQuantity: null,
+    productCode: row.product_code_snapshot,
+    productId: row.product_id,
+    productName: row.product_name_snapshot,
+    storeOrderQuantity: row.quantity,
+    storeOrderVersionId: row.order_version_id,
+    territoryId: null,
+    territoryNumber: null,
+    weeklyNormQuantity: null,
+    workshopId: row.primary_workshop_id!,
+    workshopName: row.workshop_name!,
+  }));
   return {
     adapters: {
       inventory: "PLACEHOLDER_UNCONFIRMED",
-      storeOrder: "PLACEHOLDER_MISSING",
+      storeOrder: "DATABASE",
     },
     engineVersion: PLANNING_ENGINE_VERSION,
-    lines: links.rows.map((row) => ({
-      allocatedFreeStock: 0,
-      allocatedGoodReturn: 0,
-      dispatchDate: row.dispatch_date,
-      directionKind: "TERRITORY",
-      oneOffQuantity: row.one_off_quantity,
-      productCode: row.product_code,
-      productId: row.product_id,
-      productName: row.product_name,
-      storeOrderQuantity: 0,
-      territoryId: row.territory_id,
-      territoryNumber: row.territory_number,
-      weeklyNormQuantity: row.weekly_quantity,
-      workshopId: row.primary_workshop_id!,
-      workshopName: row.workshop_name!,
-    })),
+    lines: [...territoryDemandLines, ...storeDemandLines],
     productionDate,
-    warnings: ["INVENTORY_NOT_CONFIRMED", "STORE_ORDER_MISSING"],
+    storeOrders,
+    warnings: ["INVENTORY_NOT_CONFIRMED", ...(missingStoreOrder ? ["STORE_ORDER_MISSING"] : [])],
   };
+}
+
+interface StoreVersionRow {
+  readonly delivery_date: string;
+  readonly input_hash: string;
+  readonly submitted_zero: boolean;
+  readonly version_id: string;
+  readonly version_no: number;
+}
+
+interface StoreLineRow {
+  readonly delivery_date: string;
+  readonly order_version_id: string;
+  readonly primary_workshop_id: string | null;
+  readonly product_code_snapshot: string;
+  readonly product_id: string;
+  readonly product_name_snapshot: string;
+  readonly quantity: number;
+  readonly workshop_name: string | null;
 }
 
 async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPlanView> {
@@ -613,6 +797,7 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
       product_id: string;
       product_name: string;
       store_order_quantity: number;
+      store_order_version_id: string | null;
       territory_id: string | null;
       territory_number: number | null;
       weekly_norm_quantity: number | null;
@@ -622,7 +807,8 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
       `select d.dispatch_date::text, d.direction_kind, d.territory_id, t.territory_number,
               d.product_id, p.product_code, p.name as product_name,
               d.workshop_id, w.name as workshop_name, d.weekly_norm_quantity,
-              d.one_off_quantity, d.store_order_quantity, d.allocated_free_stock,
+              d.one_off_quantity, d.store_order_quantity, d.store_order_version_id,
+              d.allocated_free_stock,
               d.allocated_good_return, d.effective_demand, d.new_production,
               d.excess_return
        from planning.plan_demand_line d
@@ -665,6 +851,7 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
       productId: line.product_id,
       productName: line.product_name,
       storeOrderQuantity: line.store_order_quantity,
+      storeOrderVersionId: line.store_order_version_id,
       territoryId: line.territory_id,
       territoryNumber: line.territory_number,
       weeklyNormQuantity: line.weekly_norm_quantity,

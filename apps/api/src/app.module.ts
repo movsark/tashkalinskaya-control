@@ -10,6 +10,7 @@ import { HealthService } from "./health.service";
 import { IdentityModule } from "./identity/identity.module";
 import { LogisticsModule } from "./logistics/logistics.module";
 import { PlanningModule } from "./planning/planning.module";
+import { StoreModule } from "./store/store.module";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PlanningModule } from "./planning/planning.module";
     IdentityModule,
     LogisticsModule,
     PlanningModule,
+    StoreModule,
   ],
   controllers: [AppController, HealthController],
   providers: [CorrelationIdMiddleware, HealthService],

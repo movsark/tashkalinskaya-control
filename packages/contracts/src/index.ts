@@ -447,6 +447,7 @@ export interface PlanDemandLineView {
   readonly productId: string;
   readonly productName: string;
   readonly storeOrderQuantity: number;
+  readonly storeOrderVersionId: string | null;
   readonly territoryId: string | null;
   readonly territoryNumber: number | null;
   readonly weeklyNormQuantity: number | null;
@@ -475,4 +476,63 @@ export interface ProductionPlanView {
   readonly status: "PUBLISHED";
   readonly version: number;
   readonly warnings: readonly string[];
+}
+
+export interface FactoryStoreView {
+  readonly code: "FACTORY_STORE";
+  readonly displayName: string;
+  readonly id: string;
+  readonly status: "ACTIVE" | "ARCHIVED";
+  readonly version: number;
+}
+
+export interface StoreOrderLineView {
+  readonly comment: string | null;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+}
+
+export interface StoreOrderVersionView {
+  readonly adminReason: string | null;
+  readonly id: string;
+  readonly includedPlanId: string | null;
+  readonly inputHash: string;
+  readonly lines: readonly StoreOrderLineView[];
+  readonly status:
+    "CANCELLED_BY_ADMIN" | "INCLUDED_IN_PLAN" | "LOCKED" | "SUBMITTED" | "SUPERSEDED";
+  readonly submittedAt: string;
+  readonly submittedByName: string;
+  readonly submittedZero: boolean;
+  readonly versionNo: number;
+}
+
+export interface StoreOrderWorkspaceView {
+  readonly cutoffAt: string;
+  readonly deliveryDate: string;
+  readonly draftLines: readonly StoreOrderLineView[];
+  readonly draftVersion: number;
+  readonly orderId: string | null;
+  readonly orderStatus:
+    "DRAFT" | "INCLUDED_IN_PLAN" | "LATE_CHANGE_REQUESTED" | "LOCKED" | "SUBMITTED";
+  readonly products: readonly PlanningProductView[];
+  readonly serverTime: string;
+  readonly store: FactoryStoreView;
+  readonly versions: readonly StoreOrderVersionView[];
+}
+
+export interface StoreLateChangeRequestView {
+  readonly createdOrderVersionId: string | null;
+  readonly createdPlanId: string | null;
+  readonly decisionComment: string | null;
+  readonly deliveryDate: string;
+  readonly id: string;
+  readonly lines: readonly StoreOrderLineView[];
+  readonly requesterName: string;
+  readonly requesterReason: string;
+  readonly status: "APPROVED" | "REJECTED" | "SUBMITTED";
+  readonly submittedAt: string;
+  readonly submittedZero: boolean;
+  readonly version: number;
 }

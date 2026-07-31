@@ -17,6 +17,7 @@ import type { AuthenticatedRequest } from "./identity.types";
 export const SESSION_COOKIE_NAME = "tashkalinskaya_session";
 export const TERMINAL_SESSION_COOKIE_NAME = "tashkalinskaya_terminal_session";
 const requiredRolesKey = "required-roles";
+const factoryOnlyRoles: readonly RoleCode[] = ["ADMIN", "MANAGER", "ACCOUNTANT"];
 
 export const RequireRoles = (...roles: RoleCode[]) => SetMetadata(requiredRolesKey, roles);
 
@@ -119,8 +120,8 @@ export class RolesGuard implements CanActivate {
     const authorized = request.actor?.roles.some(
       (assignment) =>
         requiredRoles.includes(assignment.roleCode) &&
-        assignment.scopeType === "FACTORY" &&
-        assignment.scopeId === null,
+        (!factoryOnlyRoles.includes(assignment.roleCode) ||
+          (assignment.scopeType === "FACTORY" && assignment.scopeId === null)),
     );
     if (!authorized) {
       const actor = request.actor;
