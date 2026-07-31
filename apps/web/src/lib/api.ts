@@ -9,6 +9,8 @@ import type {
   EmployeeListResponse,
   EmployeeSummary,
   DriverLogisticsDayView,
+  StoreLateChangeRequestView,
+  StoreOrderWorkspaceView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
   NormChangeRequestView,
@@ -617,6 +619,84 @@ export async function overrideProductionPlan(
 ): Promise<ProductionPlanView> {
   return request(`/planning/plans/${productionDate}/override`, {
     body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getStoreWorkspace(): Promise<StoreOrderWorkspaceView> {
+  return request("/store/workspace");
+}
+
+export async function getStoreOrder(deliveryDate: string): Promise<StoreOrderWorkspaceView> {
+  return request(`/store/orders/${deliveryDate}`);
+}
+
+export async function saveStoreDraft(
+  deliveryDate: string,
+  input: {
+    draftVersion: number;
+    lines: ReadonlyArray<{ comment?: string; productId: string; quantity: number }>;
+  },
+  csrfToken: string,
+): Promise<StoreOrderWorkspaceView> {
+  return request(`/store/orders/${deliveryDate}/draft`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
+}
+
+export async function submitStoreOrder(
+  deliveryDate: string,
+  input: {
+    baseVersionNo: number;
+    idempotencyKey: string;
+    lines: ReadonlyArray<{ comment?: string; productId: string; quantity: number }>;
+    submittedZero: boolean;
+  },
+  csrfToken: string,
+): Promise<StoreOrderWorkspaceView> {
+  return request(`/store/orders/${deliveryDate}/submit`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createStoreLateRequest(
+  deliveryDate: string,
+  input: {
+    idempotencyKey: string;
+    lines: ReadonlyArray<{ comment?: string; productId: string; quantity: number }>;
+    reason: string;
+    submittedZero: boolean;
+  },
+  csrfToken: string,
+): Promise<StoreLateChangeRequestView> {
+  return request(`/store/orders/${deliveryDate}/late-requests`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function listStoreLateRequests(): Promise<readonly StoreLateChangeRequestView[]> {
+  return request("/store/late-requests");
+}
+
+export async function decideStoreLateRequest(
+  requestId: string,
+  input: {
+    comment: string;
+    decision: "APPROVE" | "REJECT";
+    idempotencyKey: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<StoreLateChangeRequestView> {
+  return request(`/store/late-requests/${requestId}/decision`, {
+    body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });

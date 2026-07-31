@@ -15,7 +15,11 @@ function contextFor(request: Partial<AuthenticatedRequest>): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function actorWithRole(scopeType: "FACTORY" | "WORKSHOP", stepUpExpiresAt: Date | null) {
+function actorWithRole(
+  scopeType: "FACTORY" | "STORE" | "WORKSHOP",
+  stepUpExpiresAt: Date | null,
+  roleCode: "ADMIN" | "STORE_SELLER" = "ADMIN",
+) {
   return {
     accountId: "account-1",
     deviceId: "device-1",
@@ -33,7 +37,7 @@ function actorWithRole(scopeType: "FACTORY" | "WORKSHOP", stepUpExpiresAt: Date 
     roles: [
       {
         id: "role-1",
-        roleCode: "ADMIN" as const,
+        roleCode,
         scopeId: scopeType === "FACTORY" ? null : "11111111-1111-4111-8111-111111111111",
         scopeType,
       },
@@ -71,6 +75,19 @@ describe("administrative guards", () => {
       guard.canActivate(contextFor({ actor: actorWithRole("WORKSHOP", null) })),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(repository.recordAccessDenied).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an operational role in its domain scope", async () => {
+    const reflector = { getAllAndOverride: vi.fn().mockReturnValue(["STORE_SELLER"]) };
+    const repository = { recordAccessDenied: vi.fn() };
+    const guard = new RolesGuard(
+      reflector as unknown as Reflector,
+      repository as unknown as IdentityRepository,
+    );
+
+    await expect(
+      guard.canActivate(contextFor({ actor: actorWithRole("STORE", null, "STORE_SELLER") })),
+    ).resolves.toBe(true);
   });
 
   it("requires a recent step-up for sensitive operations", async () => {

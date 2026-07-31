@@ -12,6 +12,7 @@ const baseLine: PlanningSnapshot["lines"][number] = {
   productId: "21000000-0000-4000-8000-000000000001",
   productName: "Тестовый торт",
   storeOrderQuantity: 0,
+  storeOrderVersionId: null,
   territoryId: "12000000-0000-4000-8000-000000000001",
   territoryNumber: 1,
   weeklyNormQuantity: 12,
@@ -25,6 +26,7 @@ function snapshot(lines: PlanningSnapshot["lines"]): PlanningSnapshot {
     engineVersion: "test",
     lines,
     productionDate: "2035-04-01",
+    storeOrders: [],
     warnings: [],
   };
 }

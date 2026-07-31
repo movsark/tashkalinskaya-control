@@ -1285,7 +1285,9 @@ export class AttendanceRepository {
       throw attendanceError("SCHEDULE_MISSING", "На текущее время сотруднику не назначена смена");
     }
     const equallyPreferred = result.rows.filter(
-      (candidate) => candidate.source_priority === first.source_priority,
+      (candidate) =>
+        candidate.source_priority === first.source_priority &&
+        candidate.business_date === first.business_date,
     );
     if (equallyPreferred.length > 1) {
       throw attendanceError(
