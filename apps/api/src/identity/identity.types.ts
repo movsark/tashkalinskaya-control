@@ -1,0 +1,60 @@
+import type {
+  AccountStatus,
+  EmployeeSummary,
+  EmploymentStatus,
+  PlatformFamily,
+  RoleAssignmentView,
+  RoleCode,
+} from "@tashkalinskaya/contracts";
+import type { Request } from "express";
+
+export interface AccountRecord {
+  readonly accountId: string;
+  readonly accountStatus: AccountStatus;
+  readonly authorizationVersion: number;
+  readonly employeeId: string;
+  readonly employeeStatus: EmploymentStatus;
+  readonly lockedUntil: Date | null;
+  readonly passwordHash: string | null;
+}
+
+export interface DeviceRecord {
+  readonly employeeId: string;
+  readonly id: string;
+  readonly platformFamily: PlatformFamily;
+  readonly status: "ACTIVE" | "PENDING" | "REPLACED" | "REVOKED";
+}
+
+export interface AuthenticatedActor {
+  readonly accountId: string;
+  readonly deviceId: string;
+  readonly employee: EmployeeSummary;
+  readonly roles: readonly RoleAssignmentView[];
+  readonly sessionExpiresAt: Date;
+  readonly sessionId: string;
+  readonly sessionToken: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  actor?: AuthenticatedActor;
+  correlationId?: string;
+}
+
+export interface CreateEmployeeCommand {
+  readonly actorEmployeeId: string;
+  readonly correlationId: string;
+  readonly departmentId?: string;
+  readonly employeeId: string;
+  readonly fullName: string;
+  readonly loginNormalized: string;
+  readonly personnelNumber: string;
+  readonly personnelNumberNormalized: string;
+  readonly roleAssignments: ReadonlyArray<{
+    readonly id: string;
+    readonly roleCode: RoleCode;
+    readonly scopeId: string | null;
+    readonly scopeType: RoleAssignmentView["scopeType"];
+  }>;
+  readonly tokenHash: string;
+  readonly tokenId: string;
+}

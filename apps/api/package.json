@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "bootstrap:admin": "npm run build && node dist/identity/bootstrap-admin.js",
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
@@ -14,6 +15,7 @@
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.28",
     "@nestjs/swagger": "11.4.5",
+    "@node-rs/argon2": "^2.0.2",
     "@tashkalinskaya/contracts": "*",
     "@tashkalinskaya/database": "*",
     "class-transformer": "^0.5.1",

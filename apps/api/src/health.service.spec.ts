@@ -5,11 +5,14 @@ import { HealthService } from "./health.service";
 
 const localConfig: ApiConfig = {
   appVersion: "0.1.0-test",
+  authTokenPepper: "test-auth-token-pepper-32-characters",
   corsOrigins: ["http://localhost:3000"],
+  csrfSecret: "test-csrf-secret-32-characters-ok",
   databaseRequired: false,
   databaseSsl: "disable",
   nodeEnvironment: "test",
   port: 4000,
+  sessionTokenPepper: "test-session-pepper-32-characters",
 };
 
 describe("HealthService", () => {
