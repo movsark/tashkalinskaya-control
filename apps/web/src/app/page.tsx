@@ -2,19 +2,24 @@ import { SystemReadiness } from "../components/system-readiness";
 
 const foundations = [
   {
-    detail: "Парольная фраза · Argon2id · системный PIN или биометрия",
-    state: "B05.2",
-    title: "Персональный вход",
-  },
-  {
-    detail: "9 ролей MVP · фабрика, цех, территория, склад, магазин",
+    detail: "Персональный вход, роли, одно доверенное устройство и отзыв сессий",
     state: "B05",
-    title: "Роли и области",
+    title: "Сотрудники и доступ",
   },
   {
-    detail: "Samsung, iPhone или iPad · WebAuthn · замена через администратора",
-    state: "B05.2",
-    title: "Одно устройство",
+    detail: "Динамический QR, фабричный терминал, ручная отметка и контроль смен",
+    state: "B06",
+    title: "Электронный табель",
+  },
+  {
+    detail: "Безопасный preview Excel, справочник товаров и версионируемые нормы",
+    state: "B07",
+    title: "Товары и нормы",
+  },
+  {
+    detail: "Территории 1–9, машины, водители, рейсы и группы погрузки",
+    state: "B08.1",
+    title: "График логистики",
   },
 ];
 
@@ -36,11 +41,11 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Первый функциональный модуль · B05</p>
-          <h1>Персональный доступ сотрудников</h1>
+          <p className="eyebrow">Разработка MVP · B05–B08</p>
+          <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
-            У каждого сотрудника собственная учетная запись, назначенные роли и одно привязанное
-            личное устройство. Общих аккаунтов цеха нет.
+            Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
+            будут внесены владельцем перед пилотом через готовые интерфейсы.
           </p>
           <div className="hero__actions">
             <a className="primary-link" href="/login">
@@ -48,6 +53,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/activate">
               Активировать устройство
+            </a>
+            <a className="text-link" href="/logistics">
+              Открыть логистику
             </a>
           </div>
         </div>
@@ -75,10 +83,10 @@ export default function HomePage() {
       <section className="content-section" aria-labelledby="foundation-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Контур доступа</p>
-            <h2 id="foundation-title">Сотрудник, роль и устройство</h2>
+            <p className="eyebrow">Готовые рабочие срезы</p>
+            <h2 id="foundation-title">От доступа до графика вывоза</h2>
           </div>
-          <p>Права проверяются сервером при каждом запросе и меняются немедленно.</p>
+          <p>Каждый модуль использует серверные права, аудит и PostgreSQL-транзакции.</p>
         </div>
 
         <div className="foundation-grid">
@@ -96,12 +104,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B05.2 · Защищенные устройства готово</h2>
+          <h2>B08.1 · Ядро логистики</h2>
         </div>
         <p>
-          Криптографический challenge устройства, системный PIN/биометрия, замена телефона и
-          регистрация фабричного iPad вошли в рабочий контур. Следующий блок — B06, табель и
-          динамический QR.
+          Территории, машины, водители, постоянные закрепления, рейсы на дату и группы погрузки
+          объединяются в один управляемый график. Следующий срез завершает ролевые сценарии водителя
+          и кладовщика.
         </p>
       </section>
 
