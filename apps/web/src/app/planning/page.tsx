@@ -103,7 +103,8 @@ export default function PlanningPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Нормы · <Link href="/logistics">логистика</Link> · <Link href="/catalog">товары</Link>
+            Нормы · <Link href="/planning/plan">план производства</Link> ·{" "}
+            <Link href="/logistics">логистика</Link> · <Link href="/catalog">товары</Link>
           </small>
         </div>
       </header>

@@ -2390,6 +2390,68 @@ select:focus {
   color: #914a21;
 }
 
+.planning-plan-empty,
+.planning-plan-warning,
+.planning-plan-meta {
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 20px;
+  margin-top: 20px;
+  padding: 22px;
+}
+
+.planning-plan-empty p,
+.planning-plan-warning p {
+  color: var(--ink-soft);
+}
+
+.planning-plan-warning {
+  background: #fff4df;
+  border: 1px solid #e8c47e;
+}
+
+.planning-plan-meta {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.planning-plan-meta div,
+.planning-plan-line div {
+  display: grid;
+  gap: 4px;
+}
+
+.planning-plan-section {
+  overflow: hidden;
+}
+
+.planning-plan-table {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.planning-plan-line {
+  align-items: center;
+  background: #fff;
+  border: 1px solid rgba(38, 49, 43, 0.12);
+  border-radius: 14px;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.planning-plan-line small {
+  color: var(--ink-soft);
+}
+
+.planning-plan-override {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 90px minmax(180px, 1fr) auto;
+}
+
 @media (max-width: 760px) {
   .role-run-card,
   .role-run-card dl {
@@ -2405,6 +2467,17 @@ select:focus {
   .planning-filters,
   .planning-workspace-grid,
   .planning-request-card {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .planning-plan-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-plan-line,
+  .planning-plan-override {
     align-items: stretch;
     display: flex;
     flex-direction: column;

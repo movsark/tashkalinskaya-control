@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { createDatabasePool, isDatabaseConfigured } from "@tashkalinskaya/database";
-import type { Pool } from "pg";
+import {
+  createDatabasePool,
+  findNextProductionDate,
+  isDatabaseConfigured,
+  publishScheduledPlan,
+} from "@tashkalinskaya/database";
+import type { Pool, PoolClient } from "pg";
 
 import { loadWorkerConfig } from "./config";
 import { log } from "./logger";
@@ -30,6 +35,7 @@ async function runCycle(): Promise<void> {
 
   try {
     const missingExitCount = await markMissingExits(pool);
+    const planning = await publishPlanIfDue(pool);
     const result = await pool.query<{ pending_count: string }>(`
       select count(*)::text as pending_count
       from system.outbox_message
@@ -38,6 +44,10 @@ async function runCycle(): Promise<void> {
     `);
     log("info", "worker.heartbeat", {
       pendingOutboxMessages: Number(result.rows[0]?.pending_count ?? 0),
+      planningCode: planning.code,
+      planningProductionDate: planning.productionDate,
+      planningStatus: planning.status,
+      planningVersion: planning.version,
       newlyFlaggedMissingExits: missingExitCount,
       version: config.appVersion,
     });
@@ -46,6 +56,97 @@ async function runCycle(): Promise<void> {
       message: error instanceof Error ? error.message : "unknown error",
     });
   }
+}
+
+interface PlanningCycleResult {
+  readonly code?: string;
+  readonly productionDate?: string | null;
+  readonly status: string;
+  readonly version?: number;
+}
+
+async function publishPlanIfDue(database: Pool): Promise<PlanningCycleResult> {
+  const client = await database.connect();
+  try {
+    await client.query("begin");
+    const clock = await client.query<{ business_date: string; business_hour: number }>(`
+      select (now() at time zone 'Europe/Moscow')::date::text as business_date,
+             extract(hour from now() at time zone 'Europe/Moscow')::integer as business_hour
+    `);
+    const { business_date: businessDate, business_hour: businessHour } = clock.rows[0]!;
+    if (businessHour < 10) {
+      await client.query("commit");
+      return { status: "BEFORE_CUTOFF" };
+    }
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+      `planning:scheduler:${businessDate}`,
+    ]);
+    const day = await client.query<{ production_date: string | null; status: string }>(
+      `select production_date::text, status from planning.scheduler_day
+       where business_date = $1 for update`,
+      [businessDate],
+    );
+    if (day.rows[0]?.status === "PUBLISHED") {
+      await client.query("commit");
+      return { productionDate: day.rows[0].production_date, status: "ALREADY_PUBLISHED" };
+    }
+    const productionDate = day.rows[0]?.production_date ?? (await findNextProductionDate(client));
+    if (productionDate === null) {
+      await client.query("commit");
+      return { status: "NO_PRODUCTION_DATE" };
+    }
+    await client.query(
+      `insert into planning.scheduler_day (
+         business_date, status, production_date, attempt_count
+       ) values ($1, 'RUNNING', $2, 1)
+       on conflict (business_date) do update
+       set status = 'RUNNING', attempt_count = planning.scheduler_day.attempt_count + 1,
+           last_error_code = null, updated_at = now()`,
+      [businessDate, productionDate],
+    );
+    const result = await publishScheduledPlan(client, {
+      actorEmployeeId: null,
+      allowPlaceholderInputs:
+        config.nodeEnvironment === "development" || config.nodeEnvironment === "test",
+      correlationId: randomUUID(),
+      productionDate,
+      triggerSource: "SCHEDULER",
+    });
+    const run = await client.query<{ id: string }>(
+      `select id from planning.plan_run where production_date = $1 and run_kind = 'SCHEDULED'`,
+      [productionDate],
+    );
+    await finishSchedulerDay(client, businessDate, run.rows[0]?.id ?? null, result);
+    await client.query("commit");
+    return result.status === "FAILED"
+      ? { code: result.code, productionDate, status: "FAILED" }
+      : { productionDate, status: "PUBLISHED", version: result.version };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function finishSchedulerDay(
+  client: PoolClient,
+  businessDate: string,
+  runId: string | null,
+  result: Awaited<ReturnType<typeof publishScheduledPlan>>,
+): Promise<void> {
+  await client.query(
+    `update planning.scheduler_day
+     set status = $2, plan_run_id = $3, last_error_code = $4,
+         completed_at = now(), updated_at = now()
+     where business_date = $1`,
+    [
+      businessDate,
+      result.status === "FAILED" ? "FAILED" : "PUBLISHED",
+      runId,
+      result.status === "FAILED" ? result.code : null,
+    ],
+  );
 }
 
 async function markMissingExits(database: Pool): Promise<number> {

@@ -13,6 +13,13 @@ import type {
   TerritoryNormWeekView,
   WeeklyNormView,
 } from "@tashkalinskaya/contracts";
+import {
+  currentPublishedPlan,
+  overridePublishedPlan,
+  publishScheduledPlan,
+  type PlanRunResult,
+  type PublishedPlanView,
+} from "@tashkalinskaya/database";
 import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
@@ -204,6 +211,33 @@ export class PlanningRepository {
       [territoryId ?? null],
     );
     return result.rows.map(mapRequest);
+  }
+
+  runProductionPlan(command: {
+    actorEmployeeId: string;
+    allowPlaceholderInputs: boolean;
+    correlationId: string;
+    productionDate: string;
+  }): Promise<PlanRunResult> {
+    return this.database.transaction((client) =>
+      publishScheduledPlan(client, { ...command, triggerSource: "ADMIN_RETRY" }),
+    );
+  }
+
+  getProductionPlan(productionDate: string): Promise<PublishedPlanView | null> {
+    return this.database.transaction((client) => currentPublishedPlan(client, productionDate));
+  }
+
+  overrideProductionPlan(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    idempotencyKey: string;
+    newQuantity: number;
+    productId: string;
+    productionDate: string;
+    reason: string;
+  }): Promise<PublishedPlanView> {
+    return this.database.transaction((client) => overridePublishedPlan(client, command));
   }
 
   async createCalendarLink(command: {

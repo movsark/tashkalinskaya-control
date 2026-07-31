@@ -18,6 +18,7 @@ import type {
   LoadingGroupView,
   PlatformFamily,
   PlanningSetupView,
+  ProductionPlanView,
   ProductListResponse,
   RoleCode,
   RoleAssignmentView,
@@ -589,6 +590,33 @@ export async function createPlanningCalendarLink(
 ): Promise<void> {
   return request("/planning/calendar-links", {
     body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getProductionPlan(productionDate: string): Promise<ProductionPlanView> {
+  return request(`/planning/plans/${productionDate}`);
+}
+
+export async function runProductionPlan(
+  productionDate: string,
+  csrfToken: string,
+): Promise<ProductionPlanView> {
+  return request(`/planning/plans/${productionDate}/run`, {
+    body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function overrideProductionPlan(
+  productionDate: string,
+  input: { productId: string; quantity: number; reason: string },
+  csrfToken: string,
+): Promise<ProductionPlanView> {
+  return request(`/planning/plans/${productionDate}/override`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });
