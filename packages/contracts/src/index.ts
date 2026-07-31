@@ -65,3 +65,18 @@ export interface EmployeeListResponse {
   readonly items: readonly EmployeeSummary[];
   readonly total: number;
 }
+
+export interface PersonalDeviceView {
+  readonly deviceLabel: string;
+  readonly id: string;
+  readonly lastSeenAt: string | null;
+  readonly pairedAt: string | null;
+  readonly platformFamily: PlatformFamily;
+  readonly revokedAt: string | null;
+  readonly status: "ACTIVE" | "PENDING" | "REPLACED" | "REVOKED";
+}
+
+export interface EmployeeAccessDetail {
+  readonly devices: readonly PersonalDeviceView[];
+  readonly employee: EmployeeSummary;
+}

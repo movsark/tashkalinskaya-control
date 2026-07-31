@@ -1,6 +1,12 @@
 "use client";
 
-import type { AuthenticatedUser, EmployeeSummary, RoleCode } from "@tashkalinskaya/contracts";
+import type {
+  AuthenticatedUser,
+  EmployeeAccessDetail,
+  EmployeeSummary,
+  EmploymentStatus,
+  RoleCode,
+} from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -9,12 +15,16 @@ import { AppBrand } from "../../components/app-brand";
 import {
   ApiRequestError,
   createEmployee,
+  getEmployeeAccess,
   getSession,
   issueRecovery,
   listEmployees,
   logoutAll,
+  replaceEmployeeRoles,
+  revokePersonalDevice,
   stepUp,
   stepUpOptions,
+  updateEmployeeStatus,
 } from "../../lib/api";
 import { authenticateDevice } from "../../lib/device-identity";
 
@@ -59,6 +69,8 @@ export default function EmployeesPage() {
     employeeName: string;
     expiresAt: string;
   } | null>(null);
+  const [accessDetail, setAccessDetail] = useState<EmployeeAccessDetail | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
 
   const canAdminister = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -137,10 +149,8 @@ export default function EmployeesPage() {
     }
   }
 
-  async function createRecovery(employee: EmployeeSummary) {
+  async function createRecovery(employee: EmployeeSummary, reason: string) {
     if (session === null) return;
-    const reason = window.prompt("Укажите причину замены или восстановления устройства:");
-    if (reason === null || reason.trim().length < 3) return;
     try {
       const result = await issueRecovery(employee.id, reason, session.csrfToken);
       setRecovery({
@@ -151,6 +161,25 @@ export default function EmployeesPage() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось выдать код восстановления");
     }
+  }
+
+  async function openAccess(employeeId: string) {
+    setAccessLoading(true);
+    setError("");
+    try {
+      setAccessDetail(await getEmployeeAccess(employeeId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось загрузить доступ");
+    } finally {
+      setAccessLoading(false);
+    }
+  }
+
+  function applyEmployeeUpdate(employee: EmployeeSummary) {
+    setEmployees((current) => current.map((item) => (item.id === employee.id ? employee : item)));
+    setAccessDetail((current) =>
+      current?.employee.id === employee.id ? { ...current, employee } : current,
+    );
   }
 
   async function closeAllSessions() {
@@ -253,6 +282,19 @@ export default function EmployeesPage() {
         <CreateEmployeePanel onCancel={() => setShowCreate(false)} onCreate={submitEmployee} />
       ) : null}
 
+      {accessDetail && session ? (
+        <EmployeeAccessPanel
+          detail={accessDetail}
+          key={accessDetail.employee.id}
+          onClose={() => setAccessDetail(null)}
+          onIssueRecovery={createRecovery}
+          onRefresh={() => openAccess(accessDetail.employee.id)}
+          onUpdated={applyEmployeeUpdate}
+          securityReady={securityReadyUntil !== null && new Date(securityReadyUntil) > new Date()}
+          session={session}
+        />
+      ) : null}
+
       {error ? <p className="form-error">{error}</p> : null}
       {loading ? (
         <div className="workspace-empty">Загружаем сотрудников…</div>
@@ -290,12 +332,10 @@ export default function EmployeesPage() {
                 {canAdminister ? (
                   <button
                     className="row-action"
-                    disabled={
-                      securityReadyUntil === null || new Date(securityReadyUntil) <= new Date()
-                    }
-                    onClick={() => void createRecovery(employee)}
+                    disabled={accessLoading}
+                    onClick={() => void openAccess(employee.id)}
                   >
-                    Заменить устройство
+                    Управление
                   </button>
                 ) : null}
               </div>
@@ -411,6 +451,298 @@ function CreateEmployeePanel({
       </form>
     </section>
   );
+}
+
+function EmployeeAccessPanel({
+  detail,
+  onClose,
+  onIssueRecovery,
+  onRefresh,
+  onUpdated,
+  securityReady,
+  session,
+}: {
+  readonly detail: EmployeeAccessDetail;
+  readonly onClose: () => void;
+  readonly onIssueRecovery: (employee: EmployeeSummary, reason: string) => Promise<void>;
+  readonly onRefresh: () => Promise<void>;
+  readonly onUpdated: (employee: EmployeeSummary) => void;
+  readonly securityReady: boolean;
+  readonly session: AuthenticatedUser;
+}) {
+  const [status, setStatus] = useState<EmploymentStatus>(detail.employee.employmentStatus);
+  const [statusReason, setStatusReason] = useState("");
+  const [selectedFactoryRoles, setSelectedFactoryRoles] = useState<RoleCode[]>(
+    detail.employee.roles
+      .filter((role) => role.scopeType === "FACTORY")
+      .map((role) => role.roleCode),
+  );
+  const [rolesReason, setRolesReason] = useState("");
+  const [deviceReason, setDeviceReason] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const scopedRoles = detail.employee.roles.filter((role) => role.scopeType !== "FACTORY");
+
+  async function saveStatus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const employee = await updateEmployeeStatus(
+        detail.employee.id,
+        { reason: statusReason, status, version: detail.employee.version },
+        session.csrfToken,
+      );
+      onUpdated(employee);
+      setStatusReason("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось изменить статус");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRoles(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const employee = await replaceEmployeeRoles(
+        detail.employee.id,
+        {
+          reason: rolesReason,
+          roles: [
+            ...scopedRoles.map(({ roleCode, scopeId, scopeType }) => ({
+              roleCode,
+              scopeId,
+              scopeType,
+            })),
+            ...selectedFactoryRoles.map((roleCode) => ({
+              roleCode,
+              scopeId: null,
+              scopeType: "FACTORY" as const,
+            })),
+          ],
+          version: detail.employee.version,
+        },
+        session.csrfToken,
+      );
+      onUpdated(employee);
+      setRolesReason("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось изменить роли");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeDevice(deviceId: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await revokePersonalDevice(deviceId, deviceReason, session.csrfToken);
+      setDeviceReason("");
+      await onRefresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось отозвать устройство");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recoverDevice() {
+    setBusy(true);
+    setError("");
+    try {
+      await onIssueRecovery(detail.employee, deviceReason);
+      setDeviceReason("");
+      await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      className="access-panel"
+      aria-label={`Управление доступом: ${detail.employee.fullName}`}
+    >
+      <div className="create-panel__heading">
+        <div>
+          <p className="eyebrow">Карточка доступа</p>
+          <h2>{detail.employee.fullName}</h2>
+          <small>
+            № {detail.employee.personnelNumber} · {detail.employee.login} · версия{" "}
+            {detail.employee.version}
+          </small>
+          <small>
+            Учетная запись: {accountStatusLabel(detail.employee.accountStatus)} · сотрудник:{" "}
+            {employmentStatusLabel(detail.employee.employmentStatus)}
+          </small>
+        </div>
+        <button onClick={onClose}>Закрыть</button>
+      </div>
+
+      {!securityReady ? (
+        <p className="access-panel__warning">
+          Для изменений сначала выполните повторное подтверждение администратора выше.
+        </p>
+      ) : null}
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="access-panel__grid">
+        <form className="access-section" onSubmit={saveStatus}>
+          <div>
+            <p className="eyebrow">01 · Состояние</p>
+            <h3>Статус сотрудника</h3>
+          </div>
+          <select
+            aria-label="Статус сотрудника"
+            onChange={(event) => setStatus(event.target.value as EmploymentStatus)}
+            value={status}
+          >
+            <option value="ACTIVE">Активен</option>
+            <option value="SUSPENDED">Временно заблокирован</option>
+            <option value="DISMISSED">Уволен</option>
+            <option value="ARCHIVED">В архиве</option>
+          </select>
+          <input
+            minLength={3}
+            onChange={(event) => setStatusReason(event.target.value)}
+            placeholder="Причина изменения"
+            required
+            value={statusReason}
+          />
+          <button className="primary-button" disabled={!securityReady || busy} type="submit">
+            Сохранить статус
+          </button>
+        </form>
+
+        <form className="access-section" onSubmit={saveRoles}>
+          <div>
+            <p className="eyebrow">02 · Права</p>
+            <h3>Общезаводские роли</h3>
+          </div>
+          <div className="role-options">
+            {factoryRoles.map((role) => (
+              <label key={role}>
+                <input
+                  checked={selectedFactoryRoles.includes(role)}
+                  onChange={(event) =>
+                    setSelectedFactoryRoles((current) =>
+                      event.target.checked
+                        ? [...current, role]
+                        : current.filter((item) => item !== role),
+                    )
+                  }
+                  type="checkbox"
+                />
+                <span>{roleLabels[role]}</span>
+              </label>
+            ))}
+          </div>
+          {scopedRoles.length > 0 ? (
+            <p className="access-section__note">
+              Роли областей сохранятся:{" "}
+              {scopedRoles.map((role) => roleLabels[role.roleCode]).join(", ")}.
+            </p>
+          ) : null}
+          <input
+            minLength={3}
+            onChange={(event) => setRolesReason(event.target.value)}
+            placeholder="Причина изменения ролей"
+            required
+            value={rolesReason}
+          />
+          <button
+            className="primary-button"
+            disabled={
+              !securityReady || busy || selectedFactoryRoles.length + scopedRoles.length === 0
+            }
+            type="submit"
+          >
+            Сохранить роли
+          </button>
+        </form>
+
+        <section className="access-section access-section--devices">
+          <div>
+            <p className="eyebrow">03 · Устройство</p>
+            <h3>Личный телефон</h3>
+          </div>
+          <div className="device-list">
+            {detail.devices.map((device) => (
+              <article key={device.id}>
+                <div>
+                  <strong>{device.deviceLabel}</strong>
+                  <small>
+                    {platformLabel(device.platformFamily)} · {device.status}
+                    {device.lastSeenAt
+                      ? ` · был в сети ${new Date(device.lastSeenAt).toLocaleString("ru-RU")}`
+                      : ""}
+                  </small>
+                </div>
+                {device.status === "ACTIVE" ? (
+                  <button
+                    className="secondary-button"
+                    disabled={!securityReady || busy || deviceReason.trim().length < 3}
+                    onClick={() => void revokeDevice(device.id)}
+                    type="button"
+                  >
+                    Отозвать
+                  </button>
+                ) : null}
+              </article>
+            ))}
+            {detail.devices.length === 0 ? <p>Личное устройство еще не привязано.</p> : null}
+          </div>
+          <input
+            minLength={3}
+            onChange={(event) => setDeviceReason(event.target.value)}
+            placeholder="Причина отзыва или замены"
+            required
+            value={deviceReason}
+          />
+          <button
+            className="primary-button"
+            disabled={!securityReady || busy || deviceReason.trim().length < 3}
+            onClick={() => void recoverDevice()}
+            type="button"
+          >
+            Выдать код замены
+          </button>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function platformLabel(
+  platform: EmployeeAccessDetail["devices"][number]["platformFamily"],
+): string {
+  const labels = { ANDROID: "Android", IOS: "iPhone", IPADOS: "iPad", OTHER: "Другое" };
+  return labels[platform];
+}
+
+function accountStatusLabel(status: EmployeeSummary["accountStatus"]): string {
+  const labels = {
+    ACTIVE: "активна",
+    DISABLED: "отключена",
+    INVITED: "ожидает активации",
+    LOCKED: "заблокирована",
+  };
+  return labels[status];
+}
+
+function employmentStatusLabel(status: EmploymentStatus): string {
+  const labels: Record<EmploymentStatus, string> = {
+    ACTIVE: "работает",
+    ARCHIVED: "в архиве",
+    DISMISSED: "уволен",
+    SUSPENDED: "временно заблокирован",
+  };
+  return labels[status];
 }
 
 function initials(fullName: string): string {

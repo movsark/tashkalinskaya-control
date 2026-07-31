@@ -41,6 +41,12 @@ export class EmployeesController {
     return this.employees.list();
   }
 
+  @Get(":employeeId/access")
+  @RequireRoles("ADMIN")
+  access(@Param("employeeId") employeeId: string) {
+    return this.employees.access(employeeId);
+  }
+
   @Post()
   @RequireRoles("ADMIN")
   @UseGuards(StepUpGuard)

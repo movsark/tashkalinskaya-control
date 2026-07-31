@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import type {
   AccountStatus,
+  EmployeeAccessDetail,
   EmployeeSummary,
   EmploymentStatus,
   RoleAssignmentView,
@@ -57,6 +58,16 @@ interface DeviceRow {
   readonly webauthn_device_type: DeviceRecord["webauthnDeviceType"];
   readonly webauthn_public_key: Buffer | null;
   readonly webauthn_transports: string[];
+}
+
+interface DeviceViewRow {
+  readonly device_label: string;
+  readonly id: string;
+  readonly last_seen_at: Date | null;
+  readonly paired_at: Date | null;
+  readonly platform_family: DeviceRecord["platformFamily"];
+  readonly revoked_at: Date | null;
+  readonly status: DeviceRecord["status"];
 }
 
 interface SessionActorRow extends EmployeeRow {
@@ -137,6 +148,34 @@ export class IdentityRepository {
     const row = result.rows[0];
     if (row === undefined) throw new NotFoundException("Сотрудник не найден");
     return mapEmployee(row);
+  }
+
+  async getEmployeeAccess(employeeId: string): Promise<EmployeeAccessDetail> {
+    const employee = await this.getEmployee(employeeId);
+    const result = await this.database.query<DeviceViewRow>(
+      `
+        select
+          id, device_label, platform_family, status, paired_at, last_seen_at, revoked_at
+        from identity.personal_device
+        where employee_id = $1
+        order by
+          case status when 'ACTIVE' then 0 when 'PENDING' then 1 else 2 end,
+          created_at desc
+      `,
+      [employeeId],
+    );
+    return {
+      devices: result.rows.map((row) => ({
+        deviceLabel: row.device_label,
+        id: row.id,
+        lastSeenAt: row.last_seen_at?.toISOString() ?? null,
+        pairedAt: row.paired_at?.toISOString() ?? null,
+        platformFamily: row.platform_family,
+        revokedAt: row.revoked_at?.toISOString() ?? null,
+        status: row.status,
+      })),
+      employee,
+    };
   }
 
   async findAccountByLogin(loginNormalized: string): Promise<AccountRecord | null> {

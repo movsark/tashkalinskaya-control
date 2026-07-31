@@ -28,6 +28,10 @@ export class EmployeesService {
     return { items, total: items.length };
   }
 
+  access(employeeId: string) {
+    return this.repository.getEmployeeAccess(employeeId);
+  }
+
   async create(
     dto: CreateEmployeeDto,
     actorEmployeeId: string,
@@ -142,6 +146,12 @@ function normalizeRoles(roles: RoleInputDto[]) {
     if (role.scopeType !== "FACTORY" && scopeId === null) {
       throw new BadRequestException("Для ограниченной области требуется scopeId");
     }
+    const allowedScopes = roleScopes[role.roleCode];
+    if (!allowedScopes.includes(role.scopeType)) {
+      throw new BadRequestException(
+        `Роль ${role.roleCode} не может иметь область ${role.scopeType}`,
+      );
+    }
     return {
       roleCode: role.roleCode,
       scopeId,
@@ -157,6 +167,18 @@ function normalizeRoles(roles: RoleInputDto[]) {
   }
   return normalized;
 }
+
+const roleScopes: Record<RoleInputDto["roleCode"], ReadonlyArray<RoleInputDto["scopeType"]>> = {
+  ACCOUNTANT: ["FACTORY"],
+  ADMIN: ["FACTORY"],
+  ATTENDANCE_ONLY: ["FACTORY"],
+  CONFECTIONER: ["WORKSHOP"],
+  DRIVER: ["TERRITORY"],
+  MANAGER: ["FACTORY"],
+  STORE_SELLER: ["STORE"],
+  WAREHOUSE_KEEPER: ["FACTORY", "WAREHOUSE"],
+  WORKSHOP_MANAGER: ["WORKSHOP"],
+};
 
 function isUniqueViolation(error: unknown): boolean {
   return (

@@ -844,6 +844,107 @@ select:focus {
   opacity: 0.42;
 }
 
+.access-panel {
+  margin-bottom: 28px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.access-panel__warning {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  color: #774f16;
+  background: #fff0ce;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.access-panel__grid {
+  display: grid;
+  align-items: start;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.access-section {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #faf9f5;
+}
+
+.access-section h3 {
+  margin: 0;
+  color: var(--forest);
+  font-size: 19px;
+}
+
+.access-section--devices {
+  grid-column: 1 / -1;
+}
+
+.access-section__note,
+.device-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.role-options {
+  display: grid;
+  gap: 8px;
+}
+
+.role-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  cursor: pointer;
+  color: var(--forest);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.role-options input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.device-list {
+  display: grid;
+  gap: 8px;
+}
+
+.device-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--forest-soft);
+}
+
+.device-list article div {
+  display: grid;
+  gap: 3px;
+}
+
+.device-list small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 @media (max-width: 900px) {
   .hero {
     min-height: auto;
@@ -892,6 +993,14 @@ select:focus {
   .security-admin {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .access-panel__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-section--devices {
+    grid-column: auto;
   }
 }
 
@@ -994,6 +1103,16 @@ select:focus {
 
   .security-admin__actions small {
     grid-column: auto;
+  }
+
+  .access-panel {
+    padding: 20px 16px;
+  }
+
+  .access-panel .create-panel__heading,
+  .device-list article {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
