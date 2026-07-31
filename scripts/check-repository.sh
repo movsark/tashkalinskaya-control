@@ -20,6 +20,7 @@ required_files=(
   "docs/B07_1_CATALOG_IMPORT_CORE.md"
   "docs/B07_2_MIGRATION_PREPARATION.md"
   "docs/B08_1_LOGISTICS_CORE.md"
+  "docs/B08_2_LOGISTICS_ROLES.md"
   "outputs/019fb497-e0c8-7510-9638-b5134c701636/B07_2_согласование_первой_миграции.xlsx"
   "templates/import/README.md"
   "templates/import/Шаблон_массового_импорта.xlsx"

@@ -3,10 +3,12 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 
 import type {
+  CreateExtraRunDto,
   CreateDefaultAssignmentDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
   GenerateDayDto,
+  MarkRunReadyDto,
   PublishDayDto,
   UpdateRunAssignmentDto,
   UpdateTerritoryDto,
@@ -26,6 +28,16 @@ export class LogisticsService {
   day(dispatchDate: string) {
     assertDate(dispatchDate);
     return this.repository.getDay(dispatchDate);
+  }
+
+  driverDay(dispatchDate: string, driverEmployeeId: string) {
+    assertDate(dispatchDate);
+    return this.repository.getDriverDay(dispatchDate, driverEmployeeId);
+  }
+
+  warehouseDay(dispatchDate: string) {
+    assertDate(dispatchDate);
+    return this.repository.getWarehouseDay(dispatchDate);
   }
 
   updateTerritory(
@@ -208,6 +220,40 @@ export class LogisticsService {
         correlationId,
         dispatchDate,
         runIds: [...new Set(dto.runIds)],
+      }),
+    );
+  }
+
+  markRunReady(
+    runId: string,
+    dto: MarkRunReadyDto,
+    actorEmployeeId: string,
+    activeRole: "ADMIN" | "WAREHOUSE_KEEPER",
+    correlationId: string,
+  ) {
+    return this.withConflictMapping(() =>
+      this.repository.markRunReady({
+        activeRole,
+        actorEmployeeId,
+        correlationId,
+        idempotencyKey: dto.idempotencyKey,
+        runId,
+        version: dto.version,
+      }),
+    );
+  }
+
+  createExtraRun(dto: CreateExtraRunDto, actorEmployeeId: string, correlationId: string) {
+    assertDate(dto.dispatchDate);
+    return this.withConflictMapping(() =>
+      this.repository.createExtraRun({
+        actorEmployeeId,
+        comment: dto.comment.trim(),
+        correlationId,
+        dispatchDate: dto.dispatchDate,
+        idempotencyKey: dto.idempotencyKey,
+        reasonCode: dto.reasonCode.trim().toUpperCase(),
+        territoryId: dto.territoryId,
       }),
     );
   }

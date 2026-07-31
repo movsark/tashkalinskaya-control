@@ -15,6 +15,7 @@ import { AppBrand } from "../../components/app-brand";
 import {
   ApiRequestError,
   createDefaultAssignment,
+  createExtraTerritoryRun,
   createLoadingGroup,
   createVehicle,
   generateLogisticsDay,
@@ -28,6 +29,7 @@ import {
 } from "../../lib/api";
 
 interface RunDraft {
+  readonly comment: string;
   readonly driverEmployeeId: string;
   readonly groupId: string;
   readonly end: string;
@@ -148,11 +150,13 @@ export default function LogisticsPage() {
       await updateTerritoryRun(
         run.id,
         {
+          ...(draft.comment === "" ? {} : { comment: draft.comment }),
           driverEmployeeId: draft.driverEmployeeId,
           loadingGroupId: draft.groupId,
           plannedEndAt: toMoscowIso(dispatchDate, draft.end),
           plannedStartAt: toMoscowIso(dispatchDate, draft.start),
-          reasonCode: "DAILY_ASSIGNMENT",
+          reasonCode:
+            run.status === "SCHEDULED" ? "PUBLISHED_ASSIGNMENT_CHANGE" : "DAILY_ASSIGNMENT",
           sequenceNo: Number(draft.sequenceNo),
           vehicleId: draft.vehicleId,
           version: run.version,
@@ -171,7 +175,9 @@ export default function LogisticsPage() {
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
             Логистика · <Link href="/catalog">товары</Link> ·{" "}
-            <Link href="/attendance/control">табель</Link>
+            <Link href="/attendance/control">табель</Link> ·{" "}
+            <Link href="/logistics/warehouse">экран склада</Link> ·{" "}
+            <Link href="/logistics/today">экран водителя</Link>
           </small>
         </div>
       </header>
@@ -247,6 +253,17 @@ export default function LogisticsPage() {
               })
             }
           />
+          <ExtraRunForm
+            busy={busy}
+            dispatchDate={dispatchDate}
+            onCreate={(input) =>
+              runAction(async () => {
+                await createExtraTerritoryRun(input, session.csrfToken);
+                await reload("Дополнительный рейс создан. Назначьте водителя, машину и группу.");
+              })
+            }
+            setup={setup}
+          />
         </section>
       ) : null}
 
@@ -291,7 +308,7 @@ export default function LogisticsPage() {
                     <span>{run.territoryName}</span>
                     <small>{statusLabel(run.status)}</small>
                   </div>
-                  {isAdmin && run.status === "DRAFT" && draft && setup ? (
+                  {isAdmin && ["DRAFT", "SCHEDULED"].includes(run.status) && draft && setup ? (
                     <>
                       <select
                         aria-label={`Водитель территории ${run.territoryNumber}`}
@@ -330,7 +347,11 @@ export default function LogisticsPage() {
                       >
                         <option value="">Группа</option>
                         {day.groups
-                          .filter((group) => group.status === "DRAFT")
+                          .filter((group) =>
+                            run.status === "SCHEDULED"
+                              ? group.status === "PUBLISHED"
+                              : group.status === "DRAFT",
+                          )
                           .map((group) => (
                             <option key={group.id} value={group.id}>
                               Группа {group.groupNo}
@@ -361,12 +382,27 @@ export default function LogisticsPage() {
                         type="time"
                         value={draft.end}
                       />
+                      <input
+                        aria-label={`Причина изменения территории ${run.territoryNumber}`}
+                        onChange={(event) =>
+                          patchDraft(run.id, { comment: event.target.value }, setDrafts)
+                        }
+                        placeholder={
+                          run.status === "SCHEDULED" ? "Причина изменения" : "Комментарий"
+                        }
+                        required={run.status === "SCHEDULED"}
+                        value={draft.comment}
+                      />
                       <button
                         className="secondary-button"
-                        disabled={busy || !draftReady(draft)}
+                        disabled={
+                          busy ||
+                          !draftReady(draft) ||
+                          (run.status === "SCHEDULED" && draft.comment.trim().length < 3)
+                        }
                         onClick={() => void saveRun(run)}
                       >
-                        Сохранить
+                        {run.status === "SCHEDULED" ? "Изменить с причиной" : "Сохранить"}
                       </button>
                     </>
                   ) : (
@@ -610,6 +646,72 @@ function GroupForm({
   );
 }
 
+function ExtraRunForm({
+  busy,
+  dispatchDate,
+  onCreate,
+  setup,
+}: {
+  busy: boolean;
+  dispatchDate: string;
+  onCreate: (input: {
+    comment: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    reasonCode: string;
+    territoryId: string;
+  }) => Promise<void>;
+  setup: LogisticsSetupView;
+}) {
+  const [territoryId, setTerritoryId] = useState("");
+  const [comment, setComment] = useState("");
+  return (
+    <form
+      className="logistics-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onCreate({
+          comment,
+          dispatchDate,
+          idempotencyKey: `web-extra-${crypto.randomUUID()}`,
+          reasonCode: "EXTRA_DELIVERY",
+          territoryId,
+        }).then(() => setComment(""));
+      }}
+    >
+      <p className="eyebrow">Исключение</p>
+      <h2>Дополнительный рейс</h2>
+      <label>
+        Территория
+        <select
+          required
+          value={territoryId}
+          onChange={(event) => setTerritoryId(event.target.value)}
+        >
+          <option value="">Выберите</option>
+          {setup.territories.filter(active).map((item) => (
+            <option key={item.id} value={item.id}>
+              Территория {item.number}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Причина
+        <textarea
+          minLength={3}
+          required
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+        />
+      </label>
+      <button className="secondary-button" disabled={busy || territoryId === ""}>
+        Создать рейс
+      </button>
+    </form>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <article>
@@ -652,6 +754,7 @@ function makeDrafts(day: LogisticsDayView): Record<string, RunDraft> {
     day.runs.map((run) => [
       run.id,
       {
+        comment: run.comment ?? "",
         driverEmployeeId: run.driverEmployeeId ?? "",
         end: run.plannedEndAt
           ? new Date(run.plannedEndAt).toLocaleTimeString("en-GB", {

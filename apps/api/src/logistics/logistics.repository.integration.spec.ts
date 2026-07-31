@@ -12,6 +12,7 @@ const repository = new LogisticsRepository(database);
 const actorEmployeeId = randomUUID();
 const driverEmployeeId = randomUUID();
 const correlationId = randomUUID();
+const departmentId = randomUUID();
 const territoryOneId = "12000000-0000-4000-8000-000000000001";
 const territoryTwoId = "12000000-0000-4000-8000-000000000002";
 const uniqueOffset = Number.parseInt(actorEmployeeId.slice(0, 6), 16) % 12_000;
@@ -21,6 +22,10 @@ let groupId = "";
 
 describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
   beforeAll(async () => {
+    await database.query(
+      `insert into identity.department (id, code, name) values ($1, $2, 'Тестовый склад B08')`,
+      [departmentId, `B08-${departmentId.slice(0, 12)}`],
+    );
     await database.query(
       `
         insert into identity.employee (
@@ -198,6 +203,146 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
         vehicleId,
         version: territoryTwo.version,
       }),
-    ).rejects.toMatchObject({ code: "23P01" });
+    ).rejects.toMatchObject({ response: { code: "LOGISTICS_TURNAROUND_CONFLICT" } });
+  });
+
+  it("requires the configured turnaround buffer between runs", async () => {
+    const day = await repository.getDay(dispatchDate);
+    const territoryTwo = day.runs.find((run) => run.territoryId === territoryTwoId)!;
+    await expect(
+      repository.updateRun({
+        actorEmployeeId,
+        comment: "Недостаточный буфер",
+        correlationId: randomUUID(),
+        driverEmployeeId,
+        loadingGroupId: null,
+        plannedEndAt: `${dispatchDate}T06:35:00.000Z`,
+        plannedStartAt: `${dispatchDate}T06:05:00.000Z`,
+        reasonCode: "SECOND_RUN",
+        runId: territoryTwo.id,
+        sequenceNo: null,
+        vehicleId,
+        version: territoryTwo.version,
+      }),
+    ).rejects.toMatchObject({ response: { code: "LOGISTICS_TURNAROUND_CONFLICT" } });
+  });
+
+  it("allows an audited assignment correction before loading", async () => {
+    const day = await repository.getDay(dispatchDate);
+    const run = day.runs.find((item) => item.territoryNumber === 1)!;
+    await expect(
+      repository.updateRun({
+        actorEmployeeId,
+        comment: null,
+        correlationId: randomUUID(),
+        driverEmployeeId,
+        loadingGroupId: groupId,
+        plannedEndAt: `${dispatchDate}T06:00:00.000Z`,
+        plannedStartAt: `${dispatchDate}T05:00:00.000Z`,
+        reasonCode: "PUBLISHED_ASSIGNMENT_CHANGE",
+        runId: run.id,
+        sequenceNo: 1,
+        vehicleId,
+        version: run.version,
+      }),
+    ).rejects.toMatchObject({ response: { code: "LOGISTICS_CHANGE_REASON_REQUIRED" } });
+    const changed = await repository.updateRun({
+      actorEmployeeId,
+      comment: "Уточнение опубликованного назначения",
+      correlationId: randomUUID(),
+      driverEmployeeId,
+      loadingGroupId: groupId,
+      plannedEndAt: `${dispatchDate}T06:00:00.000Z`,
+      plannedStartAt: `${dispatchDate}T05:00:00.000Z`,
+      reasonCode: "PUBLISHED_ASSIGNMENT_CHANGE",
+      runId: run.id,
+      sequenceNo: 1,
+      vehicleId,
+      version: run.version,
+    });
+    expect(changed.status).toBe("SCHEDULED");
+    const messages = await database.query<{ count: string }>(
+      `select count(*)::text as count from system.outbox_message
+       where event_name = 'logistics.run.assignment-changed' and aggregate_id = $1`,
+      [run.id],
+    );
+    expect(messages.rows[0]?.count).toBe("1");
+  });
+
+  it("shows only the driver's published runs and verifies attendance before loading", async () => {
+    const driverDay = await repository.getDriverDay(dispatchDate, driverEmployeeId);
+    expect(driverDay.runs).toHaveLength(1);
+    const run = driverDay.runs[0]!;
+
+    await expect(
+      repository.markRunReady({
+        activeRole: "WAREHOUSE_KEEPER",
+        actorEmployeeId,
+        correlationId: randomUUID(),
+        idempotencyKey: `ready-${run.id}`,
+        runId: run.id,
+        version: run.version,
+      }),
+    ).rejects.toMatchObject({ response: { code: "DRIVER_ATTENDANCE_REQUIRED" } });
+
+    await database.query(
+      `
+        insert into attendance.work_shift (
+          id, employee_id, business_date, department_id, status, schedule_snapshot,
+          opened_at, effective_arrival_at
+        ) values ($1, $2, $3, $4, 'OPEN', $5, now(), now())
+      `,
+      [randomUUID(), driverEmployeeId, dispatchDate, departmentId, { source: "B08_TEST" }],
+    );
+
+    const ready = await repository.markRunReady({
+      activeRole: "WAREHOUSE_KEEPER",
+      actorEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: `ready-${run.id}`,
+      runId: run.id,
+      version: run.version,
+    });
+    expect(ready).toMatchObject({ attendanceVerified: true, status: "READY_FOR_LOADING" });
+
+    const repeated = await repository.markRunReady({
+      activeRole: "WAREHOUSE_KEEPER",
+      actorEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: `ready-${run.id}`,
+      runId: run.id,
+      version: run.version,
+    });
+    expect(repeated.id).toBe(run.id);
+    const messages = await database.query<{ count: string }>(
+      `select count(*)::text as count from system.outbox_message
+       where event_name = 'logistics.run.ready' and aggregate_id = $1`,
+      [run.id],
+    );
+    expect(messages.rows[0]?.count).toBe("1");
+  });
+
+  it("creates an extra run idempotently and only with an explicit reason", async () => {
+    const key = `extra-${actorEmployeeId}`;
+    const first = await repository.createExtraRun({
+      actorEmployeeId,
+      comment: "Дополнительный выезд по решению администратора",
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: key,
+      reasonCode: "EXTRA_DELIVERY",
+      territoryId: territoryOneId,
+    });
+    const repeated = await repository.createExtraRun({
+      actorEmployeeId,
+      comment: "Дополнительный выезд по решению администратора",
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: key,
+      reasonCode: "EXTRA_DELIVERY",
+      territoryId: territoryOneId,
+    });
+    expect(first).toMatchObject({ runNo: 2, source: "EXTRA_RUN", status: "DRAFT" });
+    expect(repeated.id).toBe(first.id);
   });
 });

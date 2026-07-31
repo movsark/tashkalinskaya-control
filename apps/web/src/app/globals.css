@@ -2200,6 +2200,78 @@ select:focus {
   }
 }
 
+.logistics-role-layout {
+  min-height: 100vh;
+}
+
+.role-run-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.role-run-card {
+  align-items: center;
+  background: var(--surface, #fff);
+  border: 1px solid rgba(38, 49, 43, 0.12);
+  border-radius: 22px;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(210px, 1fr) minmax(320px, 1.5fr);
+  padding: 22px 24px;
+}
+
+.role-run-card h2,
+.role-run-card p {
+  margin: 4px 0;
+}
+
+.role-run-card dl {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.role-run-card dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.role-run-card dt {
+  color: var(--muted, #65716b);
+  font-size: 0.78rem;
+}
+
+.role-run-card dd {
+  font-weight: 700;
+  margin: 0;
+}
+
+.warehouse-run-action {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+}
+
+.role-run-card.is-ready {
+  border-color: rgba(28, 132, 91, 0.4);
+  box-shadow: inset 5px 0 #1c845b;
+}
+
+@media (max-width: 760px) {
+  .role-run-card,
+  .role-run-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-run-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
