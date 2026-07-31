@@ -8,9 +8,10 @@ import { CorrelationIdMiddleware } from "./correlation-id.middleware";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 import { IdentityModule } from "./identity/identity.module";
+import { LogisticsModule } from "./logistics/logistics.module";
 
 @Module({
-  imports: [AttendanceModule, CatalogModule, CoreModule, IdentityModule],
+  imports: [AttendanceModule, CatalogModule, CoreModule, IdentityModule, LogisticsModule],
   controllers: [AppController, HealthController],
   providers: [CorrelationIdMiddleware, HealthService],
 })

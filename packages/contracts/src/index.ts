@@ -238,3 +238,106 @@ export interface ProductListResponse {
   readonly items: readonly ProductView[];
   readonly total: number;
 }
+
+export type DirectoryStatus = "ACTIVE" | "ARCHIVED";
+export type TerritoryRunStatus =
+  "DRAFT" | "SCHEDULED" | "READY_FOR_LOADING" | "LOADING" | "COMPLETED" | "CANCELLED";
+export type LoadingGroupStatus = "DRAFT" | "PUBLISHED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface TerritoryView {
+  readonly description: string | null;
+  readonly id: string;
+  readonly name: string;
+  readonly number: number;
+  readonly sortOrder: number;
+  readonly status: DirectoryStatus;
+  readonly version: number;
+}
+
+export interface DriverProfileView {
+  readonly canDriveFrom: string | null;
+  readonly canDriveTo: string | null;
+  readonly comment: string | null;
+  readonly employeeId: string;
+  readonly employeeName: string;
+  readonly personnelNumber: string;
+  readonly status: DirectoryStatus;
+  readonly version: number;
+}
+
+export interface VehicleView {
+  readonly capacityNote: string | null;
+  readonly comment: string | null;
+  readonly displayName: string;
+  readonly id: string;
+  readonly registrationNumber: string;
+  readonly status: DirectoryStatus;
+  readonly version: number;
+}
+
+export interface TerritoryDefaultAssignmentView {
+  readonly comment: string | null;
+  readonly driverEmployeeId: string;
+  readonly driverName: string;
+  readonly id: string;
+  readonly reasonCode: string;
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly validFrom: string;
+  readonly validTo: string | null;
+  readonly vehicleId: string;
+  readonly vehicleName: string;
+  readonly version: number;
+}
+
+export interface LoadingGroupView {
+  readonly dispatchDate: string;
+  readonly groupNo: number;
+  readonly id: string;
+  readonly loadingZone: string;
+  readonly plannedEndAt: string;
+  readonly plannedStartAt: string;
+  readonly status: LoadingGroupStatus;
+  readonly version: number;
+}
+
+export interface TerritoryRunView {
+  readonly comment: string | null;
+  readonly dispatchDate: string;
+  readonly driverEmployeeId: string | null;
+  readonly driverName: string | null;
+  readonly id: string;
+  readonly loadingGroupId: string | null;
+  readonly plannedEndAt: string | null;
+  readonly plannedStartAt: string | null;
+  readonly reasonCode: string | null;
+  readonly runNo: number;
+  readonly sequenceNo: number | null;
+  readonly source: "DEFAULT" | "MANUAL" | "CALENDAR_EXCEPTION" | "EXTRA_RUN";
+  readonly status: TerritoryRunStatus;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly vehicleId: string | null;
+  readonly vehicleName: string | null;
+  readonly version: number;
+}
+
+export interface LogisticsSetupView {
+  readonly assignments: readonly TerritoryDefaultAssignmentView[];
+  readonly drivers: readonly DriverProfileView[];
+  readonly territories: readonly TerritoryView[];
+  readonly vehicles: readonly VehicleView[];
+}
+
+export interface LogisticsDayView {
+  readonly dispatchDate: string;
+  readonly groups: readonly LoadingGroupView[];
+  readonly runs: readonly TerritoryRunView[];
+  readonly summary: {
+    readonly completeAssignments: number;
+    readonly draft: number;
+    readonly published: number;
+    readonly total: number;
+  };
+}

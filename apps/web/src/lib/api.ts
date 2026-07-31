@@ -11,11 +11,18 @@ import type {
   ManualAttendanceReasonView,
   ManualAttendanceResult,
   ImportPreview,
+  LogisticsDayView,
+  LogisticsSetupView,
+  LoadingGroupView,
   PlatformFamily,
   ProductListResponse,
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
+  TerritoryDefaultAssignmentView,
+  TerritoryRunView,
+  TerritoryView,
+  VehicleView,
 } from "@tashkalinskaya/contracts";
 import type {
   AuthenticationResponseJSON,
@@ -398,6 +405,147 @@ export async function createEmployee(
 
 export async function listProducts(): Promise<ProductListResponse> {
   return request("/catalog/products");
+}
+
+export async function getLogisticsSetup(): Promise<LogisticsSetupView> {
+  return request("/logistics/setup");
+}
+
+export async function updateTerritory(
+  territoryId: string,
+  input: {
+    description?: string;
+    name: string;
+    status: "ACTIVE" | "ARCHIVED";
+    version: number;
+  },
+  csrfToken: string,
+): Promise<TerritoryView> {
+  return request(`/logistics/territories/${territoryId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PATCH",
+  });
+}
+
+export async function createVehicle(
+  input: {
+    capacityNote?: string;
+    comment?: string;
+    displayName: string;
+    registrationNumber: string;
+  },
+  csrfToken: string,
+): Promise<VehicleView> {
+  return request("/logistics/vehicles", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function upsertDriverProfile(
+  employeeId: string,
+  input: {
+    canDriveFrom?: string;
+    canDriveTo?: string;
+    comment?: string;
+    status: "ACTIVE" | "ARCHIVED";
+    version?: number;
+  },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/logistics/drivers/${employeeId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
+}
+
+export async function createDefaultAssignment(
+  input: {
+    comment?: string;
+    driverEmployeeId: string;
+    reasonCode: string;
+    territoryId: string;
+    validFrom: string;
+    validTo?: string;
+    vehicleId: string;
+  },
+  csrfToken: string,
+): Promise<TerritoryDefaultAssignmentView> {
+  return request("/logistics/default-assignments", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getLogisticsDay(dispatchDate: string): Promise<LogisticsDayView> {
+  return request(`/logistics/days/${dispatchDate}`);
+}
+
+export async function generateLogisticsDay(
+  dispatchDate: string,
+  idempotencyKey: string,
+  csrfToken: string,
+): Promise<LogisticsDayView> {
+  return request(`/logistics/days/${dispatchDate}/generate`, {
+    body: JSON.stringify({ idempotencyKey }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createLoadingGroup(
+  input: {
+    dispatchDate: string;
+    groupNo: number;
+    loadingZone: string;
+    plannedEndAt: string;
+    plannedStartAt: string;
+  },
+  csrfToken: string,
+): Promise<LoadingGroupView> {
+  return request("/logistics/groups", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function updateTerritoryRun(
+  runId: string,
+  input: {
+    comment?: string;
+    driverEmployeeId: string;
+    loadingGroupId?: string;
+    plannedEndAt: string;
+    plannedStartAt: string;
+    reasonCode: string;
+    sequenceNo?: number;
+    vehicleId: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<TerritoryRunView> {
+  return request(`/logistics/runs/${runId}/assignment`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PATCH",
+  });
+}
+
+export async function publishLogisticsDay(
+  dispatchDate: string,
+  runIds: readonly string[],
+  csrfToken: string,
+): Promise<LogisticsDayView> {
+  return request(`/logistics/days/${dispatchDate}/publish`, {
+    body: JSON.stringify({ runIds }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function previewCatalogImport(
