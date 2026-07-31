@@ -31,6 +31,11 @@ const foundations = [
     state: "B10.1",
     title: "Фирменный магазин",
   },
+  {
+    detail: "Задания цехов, исполнители, выпуск партиями, сверхплан, брак и невыполнение",
+    state: "B11.1",
+    title: "Производство",
+  },
 ];
 
 export default function HomePage() {
@@ -51,7 +56,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B10</p>
+          <p className="eyebrow">Разработка MVP · B05–B11</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -72,6 +77,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/store">
               Заказ магазина
+            </a>
+            <a className="text-link" href="/production">
+              Открыть производство
             </a>
           </div>
         </div>
@@ -120,12 +128,11 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B11 · Производство по цехам</h2>
+          <h2>B12 · Приёмка готовой продукции и склад</h2>
         </div>
         <p>
-          План и заказ магазина уже фиксируются в неизменяемых версиях. Следующий срез передаст план
-          в цехи, даст ответственному распределить задания, а кондитеру — зафиксировать выпуск, брак
-          и причину невыполнения.
+          Цех уже передаёт заявленные партии в очередь склада. Следующий срез добавит физическую
+          приёмку, неизменяемые складские движения и расчёт свободного остатка.
         </p>
       </section>
 

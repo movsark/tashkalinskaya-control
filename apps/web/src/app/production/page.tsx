@@ -1,0 +1,1048 @@
+"use client";
+
+import type {
+  AuthenticatedUser,
+  ProductionBatchView,
+  ProductionTaskView,
+  ProductionWarehouseQueueView,
+  ProductionWorkspaceView,
+} from "@tashkalinskaya/contracts";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { AppBrand } from "../../components/app-brand";
+import {
+  ApiRequestError,
+  assignProductionTask,
+  closeProductionTask,
+  createProductionTransfer,
+  decideProductionDefect,
+  decideProductionOverproduction,
+  decideProductionTransfer,
+  generateProductionTasks,
+  getProductionWarehouseQueue,
+  getProductionWorkspace,
+  getSession,
+  resubmitProductionDefect,
+  startProductionTask,
+  submitProductionBatch,
+  submitProductionDefect,
+  withdrawProductionBatch,
+} from "../../lib/api";
+
+export default function ProductionPage() {
+  const router = useRouter();
+  const [session, setSession] = useState<AuthenticatedUser | null>(null);
+  const [workspace, setWorkspace] = useState<ProductionWorkspaceView | null>(null);
+  const [warehouseQueue, setWarehouseQueue] = useState<ProductionWarehouseQueueView | null>(null);
+  const [date, setDate] = useState(today());
+  const [workshopId, setWorkshopId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const roles = useMemo(
+    () => new Set(session?.employee.roles.map((role) => role.roleCode) ?? []),
+    [session],
+  );
+  const isAdmin = roles.has("ADMIN");
+  const canManage = isAdmin || roles.has("WORKSHOP_MANAGER");
+  const canSeeWarehouse = isAdmin || roles.has("MANAGER") || roles.has("WAREHOUSE_KEEPER");
+  const metrics = useMemo(() => {
+    const tasks = workspace?.tasks ?? [];
+    return {
+      accepted: tasks.reduce((sum, task) => sum + task.acceptedQuantity, 0),
+      awaiting: tasks.reduce((sum, task) => sum + task.awaitingWarehouseQuantity, 0),
+      defects: tasks.reduce((sum, task) => sum + task.confirmedDefectQuantity, 0),
+      plan: tasks.reduce((sum, task) => sum + task.targetQuantity, 0),
+    };
+  }, [workspace]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const currentSession = await getSession();
+        setSession(currentSession);
+        const currentWorkspace = await getProductionWorkspace(date);
+        setWorkspace(currentWorkspace);
+        const managerScope = currentSession.employee.roles.find(
+          (role) =>
+            ["WORKSHOP_MANAGER", "CONFECTIONER"].includes(role.roleCode) &&
+            role.scopeType === "WORKSHOP",
+        )?.scopeId;
+        setWorkshopId(managerScope ?? "");
+        if (
+          currentSession.employee.roles.some((role) =>
+            ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role.roleCode),
+          )
+        ) {
+          setWarehouseQueue(await getProductionWarehouseQueue());
+        }
+      } catch (caught) {
+        if (caught instanceof ApiRequestError && caught.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        setError(messageOf(caught));
+      }
+    }
+    void load();
+  }, [router]);
+
+  async function reload(nextMessage?: string) {
+    const next = await getProductionWorkspace(date, workshopId || undefined);
+    setWorkspace(next);
+    if (canSeeWarehouse) setWarehouseQueue(await getProductionWarehouseQueue());
+    if (nextMessage) setMessage(nextMessage);
+  }
+
+  async function run(operation: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await operation();
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeFilters(nextDate: string, nextWorkshopId: string) {
+    setDate(nextDate);
+    setWorkshopId(nextWorkshopId);
+    await run(async () => {
+      setWorkspace(await getProductionWorkspace(nextDate, nextWorkshopId || undefined));
+    });
+  }
+
+  if (workspace === null) {
+    return (
+      <main className="workspace-layout production-layout">
+        <header className="workspace-header">
+          <AppBrand />
+        </header>
+        <p className={error ? "form-error production-loading" : "production-loading"}>
+          {error || "Загружаем задания цехов…"}
+        </p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="workspace-layout production-layout">
+      <header className="workspace-header">
+        <AppBrand />
+        <div className="workspace-user">
+          <span>{session?.employee.fullName}</span>
+          <small>
+            Производство · <Link href="/planning/plan">план</Link> ·{" "}
+            <Link href="/logistics/warehouse">склад</Link> · <Link href="/">главная</Link>
+          </small>
+        </div>
+      </header>
+
+      <section className="production-hero">
+        <div>
+          <p className="eyebrow">B11 · работа цехов</p>
+          <h1>Производство</h1>
+          <p>Задания, исполнители, выпуск партиями, невыполнение и производственный брак.</p>
+        </div>
+        <div className="production-filters">
+          <label>
+            Производственная дата
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => void changeFilters(event.target.value, workshopId)}
+            />
+          </label>
+          <label>
+            Цех
+            <select
+              value={workshopId}
+              onChange={(event) => void changeFilters(date, event.target.value)}
+            >
+              {workspace.workshops.length > 1 || roles.has("ADMIN") || roles.has("MANAGER") ? (
+                <option value="">Все доступные цехи</option>
+              ) : null}
+              {workspace.workshops.map((workshop) => (
+                <option key={workshop.id} value={workshop.id}>
+                  {workshop.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {isAdmin ? (
+            <button
+              className="primary-button"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await generateProductionTasks(date, session!.csrfToken);
+                  await reload("Задания синхронизированы с актуальной версией плана.");
+                })
+              }
+              type="button"
+            >
+              Создать задания из плана
+            </button>
+          ) : null}
+        </div>
+      </section>
+
+      {error ? <p className="form-error production-notice">{error}</p> : null}
+      {message ? <p className="logistics-success production-notice">{message}</p> : null}
+
+      <section className="production-metrics" aria-label="Сводка производства">
+        <Metric label="План" value={metrics.plan} />
+        <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
+        <Metric label="Принято складом" value={metrics.accepted} tone="green" />
+        <Metric label="Подтвержденный брак" value={metrics.defects} tone="red" />
+      </section>
+
+      <section className="production-board">
+        <div className="production-section-heading">
+          <div>
+            <p className="eyebrow">Оперативная доска</p>
+            <h2>Задания на {dateLabel(date)}</h2>
+          </div>
+          <span>{workspace.tasks.length} заданий</span>
+        </div>
+        {workspace.tasks.length === 0 ? (
+          <p className="logistics-empty">
+            Заданий пока нет. Администратор создаёт их из опубликованного плана B09.
+          </p>
+        ) : (
+          <div className="production-task-grid">
+            {workspace.tasks.map((task) => (
+              <TaskCard
+                busy={busy}
+                canManage={canManage}
+                employees={workspace.employees}
+                key={task.id}
+                onAction={run}
+                onReload={reload}
+                reasons={workspace.reasons}
+                session={session!}
+                task={task}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {canManage ? (
+        <TransferPanel
+          busy={busy}
+          isAdmin={isAdmin}
+          onAction={run}
+          onReload={reload}
+          session={session!}
+          workspace={workspace}
+        />
+      ) : null}
+
+      {warehouseQueue ? <WarehouseQueue queue={warehouseQueue} /> : null}
+    </main>
+  );
+}
+
+function Metric({ label, tone = "", value }: { label: string; tone?: string; value: number }) {
+  return (
+    <article className={tone ? `is-${tone}` : ""}>
+      <span>{label}</span>
+      <strong>{value} шт.</strong>
+    </article>
+  );
+}
+
+function TaskCard({
+  busy,
+  canManage,
+  employees,
+  onAction,
+  onReload,
+  reasons,
+  session,
+  task,
+}: {
+  busy: boolean;
+  canManage: boolean;
+  employees: ProductionWorkspaceView["employees"];
+  onAction: (operation: () => Promise<void>) => Promise<void>;
+  onReload: (message?: string) => Promise<void>;
+  reasons: ProductionWorkspaceView["reasons"];
+  session: AuthenticatedUser;
+  task: ProductionTaskView;
+}) {
+  const [employeeId, setEmployeeId] = useState(
+    task.assignments.find((item) => item.isLead)?.employeeId ?? "",
+  );
+  const [quantity, setQuantity] = useState(String(Math.max(task.remainingToDeclare, 0)));
+  const [batchReasonId, setBatchReasonId] = useState("");
+  const [batchComment, setBatchComment] = useState("");
+  const [defectQuantity, setDefectQuantity] = useState("1");
+  const [defectReasonId, setDefectReasonId] = useState("");
+  const [defectComment, setDefectComment] = useState("");
+  const [closeReasonId, setCloseReasonId] = useState("");
+  const [closeComment, setCloseComment] = useState("");
+  const [defectCorrections, setDefectCorrections] = useState<Record<string, string>>({});
+  const terminal = ["COMPLETED", "PARTIALLY_COMPLETED", "CANCELLED_BY_ADMIN"].includes(task.status);
+  const overproduction = Number(quantity) > task.remainingToDeclare;
+
+  return (
+    <article className={`production-task status-${task.status.toLowerCase()}`}>
+      <header>
+        <div>
+          <span className="production-task-code">{task.productCode}</span>
+          <h3>{task.productName}</h3>
+          <small>
+            {task.workshopName} ·{" "}
+            {task.productionWindow === "NIGHT" ? "Ночное окно" : "Дневное окно"}
+          </small>
+        </div>
+        <span className={`status-pill status-${task.status.toLowerCase()}`}>
+          {taskStatusLabel(task.status)}
+        </span>
+      </header>
+
+      <dl className="production-task-metrics">
+        <div>
+          <dt>План</dt>
+          <dd>{task.targetQuantity}</dd>
+        </div>
+        <div>
+          <dt>Заявлено</dt>
+          <dd>{task.declaredQuantity}</dd>
+        </div>
+        <div>
+          <dt>Принято</dt>
+          <dd>{task.acceptedQuantity}</dd>
+        </div>
+        <div>
+          <dt>Осталось заявить</dt>
+          <dd>{task.remainingToDeclare}</dd>
+        </div>
+      </dl>
+
+      <div className="production-assignees">
+        <strong>Исполнители</strong>
+        {task.assignments.length ? (
+          task.assignments.map((assignment) => (
+            <span key={assignment.id}>
+              {assignment.employeeName} {assignment.isLead ? "· ответственный" : ""}
+            </span>
+          ))
+        ) : (
+          <span>Не назначены</span>
+        )}
+      </div>
+
+      {!terminal && canManage ? (
+        <div className="production-inline-form">
+          <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
+            <option value="">Назначить ответственного</option>
+            {employees.map((employee) => (
+              <option disabled={!employee.isPresent} key={employee.id} value={employee.id}>
+                {employee.fullName} {employee.isPresent ? "" : "· нет прихода"}
+              </option>
+            ))}
+          </select>
+          <button
+            className="secondary-button"
+            disabled={busy || employeeId === ""}
+            onClick={() =>
+              void onAction(async () => {
+                await assignProductionTask(
+                  task.id,
+                  { participants: [{ employeeId, isLead: true }], version: task.version },
+                  session.csrfToken,
+                );
+                await onReload("Исполнитель назначен.");
+              })
+            }
+            type="button"
+          >
+            Назначить
+          </button>
+        </div>
+      ) : null}
+
+      {!terminal && task.status === "ASSIGNED" ? (
+        <button
+          className="secondary-button production-full-button"
+          disabled={busy}
+          onClick={() =>
+            void onAction(async () => {
+              await startProductionTask(task.id, task.version, session.csrfToken);
+              await onReload("Работа по заданию начата.");
+            })
+          }
+          type="button"
+        >
+          Начать работу
+        </button>
+      ) : null}
+
+      {!terminal && task.assignments.length > 0 ? (
+        <div className="production-operation">
+          <strong>Заявить выпуск</strong>
+          <div className="production-form-grid">
+            <label>
+              Количество
+              <input
+                min="1"
+                type="number"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            {overproduction ? (
+              <label>
+                Причина сверх плана
+                <select
+                  value={batchReasonId}
+                  onChange={(event) => setBatchReasonId(event.target.value)}
+                >
+                  <option value="">Выберите причину</option>
+                  {reasons
+                    .filter((reason) => reason.kind === "OVERPRODUCTION")
+                    .map((reason) => (
+                      <option key={reason.id} value={reason.id}>
+                        {reason.displayName}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          {overproduction ? (
+            <textarea
+              placeholder="Комментарий к сверхплану"
+              value={batchComment}
+              onChange={(event) => setBatchComment(event.target.value)}
+            />
+          ) : null}
+          <button
+            className="primary-button"
+            disabled={
+              busy ||
+              Number(quantity) <= 0 ||
+              (overproduction && (batchReasonId === "" || batchComment.trim().length < 3))
+            }
+            onClick={() =>
+              void onAction(async () => {
+                await submitProductionBatch(
+                  task.id,
+                  {
+                    ...(overproduction ? { comment: batchComment, reasonId: batchReasonId } : {}),
+                    idempotencyKey: crypto.randomUUID(),
+                    producedAt: new Date().toISOString(),
+                    quantity: Number(quantity),
+                    taskVersion: task.version,
+                  },
+                  session.csrfToken,
+                );
+                await onReload(
+                  overproduction
+                    ? "Сверхплан отправлен ответственному на решение."
+                    : "Партия передана в очередь склада.",
+                );
+              })
+            }
+            type="button"
+          >
+            {overproduction ? "Запросить сверхплан" : "Передать складу"}
+          </button>
+        </div>
+      ) : null}
+
+      {task.batches.length ? (
+        <div className="production-batches">
+          <strong>Партии</strong>
+          {task.batches.map((batch) => (
+            <BatchRow
+              batch={batch}
+              busy={busy}
+              canManage={canManage}
+              key={batch.id}
+              onAction={onAction}
+              onReload={onReload}
+              session={session}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {!terminal && task.assignments.length > 0 ? (
+        <div className="production-operation production-defect-form">
+          <strong>Сообщить о браке</strong>
+          <div className="production-form-grid">
+            <label>
+              Количество
+              <input
+                min="1"
+                type="number"
+                value={defectQuantity}
+                onChange={(event) => setDefectQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              Причина
+              <select
+                value={defectReasonId}
+                onChange={(event) => setDefectReasonId(event.target.value)}
+              >
+                <option value="">Выберите причину</option>
+                {reasons
+                  .filter((reason) => reason.kind === "DEFECT")
+                  .map((reason) => (
+                    <option key={reason.id} value={reason.id}>
+                      {reason.displayName}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <textarea
+            placeholder="Что произошло"
+            value={defectComment}
+            onChange={(event) => setDefectComment(event.target.value)}
+          />
+          <button
+            className="secondary-button"
+            disabled={busy || defectReasonId === "" || defectComment.trim().length < 3}
+            onClick={() =>
+              void onAction(async () => {
+                await submitProductionDefect(
+                  task.id,
+                  {
+                    comment: defectComment,
+                    idempotencyKey: crypto.randomUUID(),
+                    occurredAt: new Date().toISOString(),
+                    quantity: Number(defectQuantity),
+                    reasonId: defectReasonId,
+                  },
+                  session.csrfToken,
+                );
+                await onReload("Отчет о браке отправлен ответственному.");
+              })
+            }
+            type="button"
+          >
+            Отправить отчет
+          </button>
+        </div>
+      ) : null}
+
+      {task.defects.length ? (
+        <div className="production-defects">
+          <strong>Брак</strong>
+          {task.defects.map((defect) => (
+            <div key={defect.id}>
+              <span>
+                {defect.reasonName} · {defect.quantity} шт. · {defectStatusLabel(defect.status)}
+              </span>
+              {canManage && defect.status === "SUBMITTED" ? (
+                <span className="production-small-actions">
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void onAction(async () => {
+                        await decideProductionDefect(
+                          defect.id,
+                          {
+                            comment: "Подтверждено ответственным цеха",
+                            decision: "CONFIRM",
+                            version: defect.version,
+                          },
+                          session.csrfToken,
+                        );
+                        await onReload("Брак подтвержден.");
+                      })
+                    }
+                    type="button"
+                  >
+                    Подтвердить
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void onAction(async () => {
+                        await decideProductionDefect(
+                          defect.id,
+                          {
+                            comment: "Нужно уточнить данные отчета",
+                            decision: "RETURN",
+                            version: defect.version,
+                          },
+                          session.csrfToken,
+                        );
+                        await onReload("Отчет возвращен на исправление.");
+                      })
+                    }
+                    type="button"
+                  >
+                    Вернуть
+                  </button>
+                </span>
+              ) : null}
+              {defect.status === "RETURNED_FOR_CORRECTION" ? (
+                <span className="production-defect-correction">
+                  <input
+                    aria-label="Исправленный комментарий"
+                    value={defectCorrections[defect.id] ?? defect.comment}
+                    onChange={(event) =>
+                      setDefectCorrections((current) => ({
+                        ...current,
+                        [defect.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    disabled={
+                      busy || (defectCorrections[defect.id] ?? defect.comment).trim().length < 3
+                    }
+                    onClick={() =>
+                      void onAction(async () => {
+                        await resubmitProductionDefect(
+                          defect.id,
+                          {
+                            comment: (defectCorrections[defect.id] ?? defect.comment).trim(),
+                            version: defect.version,
+                          },
+                          session.csrfToken,
+                        );
+                        await onReload("Отчет о браке повторно отправлен.");
+                      })
+                    }
+                    type="button"
+                  >
+                    Отправить повторно
+                  </button>
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!terminal && canManage ? (
+        <div className="production-close-form">
+          <strong>Закрыть окно</strong>
+          {task.acceptedQuantity < task.targetQuantity ? (
+            <>
+              <select
+                value={closeReasonId}
+                onChange={(event) => setCloseReasonId(event.target.value)}
+              >
+                <option value="">Причина невыполнения</option>
+                {reasons
+                  .filter((reason) => reason.kind === "SHORTFALL")
+                  .map((reason) => (
+                    <option key={reason.id} value={reason.id}>
+                      {reason.displayName}
+                    </option>
+                  ))}
+              </select>
+              <input
+                placeholder="Комментарий"
+                value={closeComment}
+                onChange={(event) => setCloseComment(event.target.value)}
+              />
+            </>
+          ) : null}
+          <button
+            className="secondary-button"
+            disabled={
+              busy ||
+              (task.acceptedQuantity < task.targetQuantity &&
+                (closeReasonId === "" || closeComment.trim().length < 3))
+            }
+            onClick={() =>
+              void onAction(async () => {
+                await closeProductionTask(
+                  task.id,
+                  {
+                    ...(task.acceptedQuantity < task.targetQuantity
+                      ? { comment: closeComment, reasonId: closeReasonId }
+                      : {}),
+                    version: task.version,
+                  },
+                  session.csrfToken,
+                );
+                await onReload("Производственное окно закрыто.");
+              })
+            }
+            type="button"
+          >
+            Закрыть задание
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function BatchRow({
+  batch,
+  busy,
+  canManage,
+  onAction,
+  onReload,
+  session,
+}: {
+  batch: ProductionBatchView;
+  busy: boolean;
+  canManage: boolean;
+  onAction: (operation: () => Promise<void>) => Promise<void>;
+  onReload: (message?: string) => Promise<void>;
+  session: AuthenticatedUser;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <div className="production-batch-row">
+      <span>
+        <strong>{batch.quantity} шт.</strong> · {batchStatusLabel(batch.status)}
+      </span>
+      {batch.status === "PENDING_OVERPRODUCTION" && canManage ? (
+        <span className="production-small-actions">
+          <button
+            disabled={busy}
+            onClick={() =>
+              void onAction(async () => {
+                await decideProductionOverproduction(
+                  batch.id,
+                  { comment: "Сверхплан согласован", decision: "APPROVE", version: batch.version },
+                  session.csrfToken,
+                );
+                await onReload("Сверхплан передан складу.");
+              })
+            }
+            type="button"
+          >
+            Утвердить
+          </button>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void onAction(async () => {
+                await decideProductionOverproduction(
+                  batch.id,
+                  { comment: "Сверхплан отклонен", decision: "REJECT", version: batch.version },
+                  session.csrfToken,
+                );
+                await onReload("Сверхплан отклонен.");
+              })
+            }
+            type="button"
+          >
+            Отклонить
+          </button>
+        </span>
+      ) : null}
+      {batch.status === "AWAITING_WAREHOUSE" ? (
+        <span className="production-withdraw">
+          <input
+            placeholder="Причина отзыва"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <button
+            disabled={busy || reason.trim().length < 3}
+            onClick={() =>
+              void onAction(async () => {
+                await withdrawProductionBatch(
+                  batch.id,
+                  { reason: reason.trim(), version: batch.version },
+                  session.csrfToken,
+                );
+                await onReload("Партия отозвана до проверки склада.");
+              })
+            }
+            type="button"
+          >
+            Отозвать
+          </button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function TransferPanel({
+  busy,
+  isAdmin,
+  onAction,
+  onReload,
+  session,
+  workspace,
+}: {
+  busy: boolean;
+  isAdmin: boolean;
+  onAction: (operation: () => Promise<void>) => Promise<void>;
+  onReload: (message?: string) => Promise<void>;
+  session: AuthenticatedUser;
+  workspace: ProductionWorkspaceView;
+}) {
+  const products = Array.from(
+    new Map(
+      workspace.tasks.map((task) => [
+        task.productId,
+        { id: task.productId, name: task.productName },
+      ]),
+    ).values(),
+  );
+  const [productId, setProductId] = useState("");
+  const [fromId, setFromId] = useState(workspace.workshops[0]?.id ?? "");
+  const [toId, setToId] = useState("");
+  const [validFrom, setValidFrom] = useState(workspace.productionDate);
+  const [validUntil, setValidUntil] = useState(workspace.productionDate);
+  const [reason, setReason] = useState("");
+  return (
+    <section className="production-transfer-panel">
+      <div className="production-section-heading">
+        <div>
+          <p className="eyebrow">Временная передача</p>
+          <h2>Передать товар другому цеху</h2>
+        </div>
+      </div>
+      <div className="production-transfer-form">
+        <select value={productId} onChange={(event) => setProductId(event.target.value)}>
+          <option value="">Товар</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name}
+            </option>
+          ))}
+        </select>
+        <select value={fromId} onChange={(event) => setFromId(event.target.value)}>
+          <option value="">Исходный цех</option>
+          {workspace.availableTransferWorkshops.map((workshop) => (
+            <option key={workshop.id} value={workshop.id}>
+              {workshop.name}
+            </option>
+          ))}
+        </select>
+        <select value={toId} onChange={(event) => setToId(event.target.value)}>
+          <option value="">Принимающий цех</option>
+          {workspace.availableTransferWorkshops.map((workshop) => (
+            <option key={workshop.id} value={workshop.id}>
+              {workshop.name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={validFrom}
+          onChange={(event) => setValidFrom(event.target.value)}
+        />
+        <input
+          type="date"
+          value={validUntil}
+          onChange={(event) => setValidUntil(event.target.value)}
+        />
+        <input
+          placeholder="Причина"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+        <button
+          className="primary-button"
+          disabled={
+            busy || productId === "" || fromId === "" || toId === "" || reason.trim().length < 3
+          }
+          onClick={() =>
+            void onAction(async () => {
+              await createProductionTransfer(
+                {
+                  fromWorkshopId: fromId,
+                  productId,
+                  reason,
+                  toWorkshopId: toId,
+                  validFrom,
+                  validUntil,
+                },
+                session.csrfToken,
+              );
+              await onReload("Предложение передачи отправлено администратору.");
+            })
+          }
+          type="button"
+        >
+          Отправить
+        </button>
+      </div>
+      <div className="production-transfer-list">
+        {workspace.transfers.map((transfer) => (
+          <article key={transfer.id}>
+            <div>
+              <strong>{transfer.productName}</strong>
+              <span>
+                {transfer.fromWorkshopName} → {transfer.toWorkshopName} · {transfer.validFrom}–
+                {transfer.validUntil}
+              </span>
+              <small>{transfer.requesterReason}</small>
+            </div>
+            <span className={`status-pill status-${transfer.status.toLowerCase()}`}>
+              {transferStatusLabel(transfer.status)}
+            </span>
+            {isAdmin && transfer.status === "SUBMITTED" ? (
+              <span className="production-small-actions">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void onAction(async () => {
+                      await decideProductionTransfer(
+                        transfer.id,
+                        {
+                          comment: "Передача согласована",
+                          decision: "APPROVE",
+                          version: transfer.version,
+                        },
+                        session.csrfToken,
+                      );
+                      await onReload("Временная передача утверждена.");
+                    })
+                  }
+                  type="button"
+                >
+                  Утвердить
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void onAction(async () => {
+                      await decideProductionTransfer(
+                        transfer.id,
+                        {
+                          comment: "Передача отклонена",
+                          decision: "REJECT",
+                          version: transfer.version,
+                        },
+                        session.csrfToken,
+                      );
+                      await onReload("Передача отклонена.");
+                    })
+                  }
+                  type="button"
+                >
+                  Отклонить
+                </button>
+              </span>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WarehouseQueue({ queue }: { queue: ProductionWarehouseQueueView }) {
+  return (
+    <section className="production-warehouse-queue">
+      <div className="production-section-heading">
+        <div>
+          <p className="eyebrow">Граница B12</p>
+          <h2>Очередь приёмки склада</h2>
+        </div>
+        <span>{queue.batches.length} партий</span>
+      </div>
+      <p className="production-boundary-note">
+        Эти партии только заявлены цехом. Складской остаток появится после физической приемки в B12.
+      </p>
+      <div className="production-queue-list">
+        {queue.batches.length ? (
+          queue.batches.map((batch) => (
+            <article key={batch.id}>
+              <span className={batch.productionWindow === "NIGHT" ? "is-night" : ""}>
+                {batch.productionWindow === "NIGHT" ? "Ночь" : "День"}
+              </span>
+              <div>
+                <strong>{batch.productName}</strong>
+                <small>
+                  {batch.workshopName} · {batch.submittedByName}
+                </small>
+              </div>
+              <strong>{batch.quantity} шт.</strong>
+              <small>{dateTimeLabel(batch.submittedAt)}</small>
+            </article>
+          ))
+        ) : (
+          <p className="logistics-empty">Сейчас склад не ожидает производственных партий.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function taskStatusLabel(status: ProductionTaskView["status"]): string {
+  return {
+    ASSIGNED: "Назначено",
+    CANCELLED_BY_ADMIN: "Отменено",
+    COMPLETED: "Выполнено",
+    CREATED: "Не назначено",
+    IN_PROGRESS: "В работе",
+    PARTIALLY_COMPLETED: "Выполнено частично",
+  }[status];
+}
+
+function batchStatusLabel(status: ProductionBatchView["status"]): string {
+  return {
+    ACCEPTED_BY_WAREHOUSE: "Принята складом",
+    AWAITING_WAREHOUSE: "Ожидает склад",
+    PENDING_OVERPRODUCTION: "Сверхплан ожидает решения",
+    REJECTED_FOR_CORRECTION: "Возвращена на исправление",
+    REPLACED: "Заменена",
+    WAREHOUSE_REVIEW: "Склад проверяет",
+    WITHDRAWN_BEFORE_REVIEW: "Отозвана",
+  }[status];
+}
+
+function defectStatusLabel(status: ProductionTaskView["defects"][number]["status"]): string {
+  return {
+    CONFIRMED: "подтвержден",
+    REJECTED: "отклонен",
+    RETURNED_FOR_CORRECTION: "на исправлении",
+    SUBMITTED: "ожидает решения",
+  }[status];
+}
+
+function transferStatusLabel(
+  status: ProductionWorkspaceView["transfers"][number]["status"],
+): string {
+  return { APPROVED: "Утверждена", REJECTED: "Отклонена", SUBMITTED: "Ожидает" }[status];
+}
+
+function today(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).format(new Date());
+}
+
+function dateLabel(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    weekday: "long",
+  }).format(new Date(`${value}T12:00:00`));
+}
+
+function dateTimeLabel(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  }).format(new Date(value));
+}
+
+function messageOf(caught: unknown): string {
+  return caught instanceof Error ? caught.message : "Не удалось выполнить действие";
+}
