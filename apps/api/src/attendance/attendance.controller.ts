@@ -1,15 +1,79 @@
-import { Body, Controller, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 
-import { CsrfGuard, SessionAuthGuard, TerminalSessionAuthGuard } from "../identity/identity.guards";
+import {
+  CsrfGuard,
+  SessionAuthGuard,
+  StepUpGuard,
+  TerminalSessionAuthGuard,
+} from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
-import { ScanAttendanceQrDto } from "./attendance.dto";
+import {
+  AttendanceControlQueryDto,
+  AttendanceCorrectionQueryDto,
+  CreateAttendanceCorrectionDto,
+  DecideAttendanceCorrectionDto,
+  ManualAttendanceDto,
+  ScanAttendanceQrDto,
+} from "./attendance.dto";
 import { AttendanceService } from "./attendance.service";
 
 @ApiTags("Табель")
 @Controller("attendance")
 export class AttendanceController {
   constructor(private readonly attendance: AttendanceService) {}
+
+  @Get("control")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  control(@Query() query: AttendanceControlQueryDto, @Req() request: AuthenticatedRequest) {
+    return this.attendance.control(query, requireActor(request));
+  }
+
+  @Get("manual-reasons")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  manualReasons(@Req() request: AuthenticatedRequest) {
+    return this.attendance.listManualReasons(requireActor(request));
+  }
+
+  @Post("manual")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  manual(@Body() dto: ManualAttendanceDto, @Req() request: AuthenticatedRequest) {
+    return this.attendance.recordManual(dto, requireActor(request), requireCorrelationId(request));
+  }
+
+  @Get("corrections")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  corrections(@Query() query: AttendanceCorrectionQueryDto, @Req() request: AuthenticatedRequest) {
+    return this.attendance.listCorrections(query, requireActor(request));
+  }
+
+  @Post("corrections")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  createCorrection(
+    @Body() dto: CreateAttendanceCorrectionDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.attendance.createCorrection(
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("corrections/:correctionId/decision")
+  @UseGuards(SessionAuthGuard, CsrfGuard, StepUpGuard)
+  decideCorrection(
+    @Param("correctionId") correctionId: string,
+    @Body() dto: DecideAttendanceCorrectionDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.attendance.decideCorrection(
+      correctionId,
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
 
   @Post("me/qr")
   @UseGuards(SessionAuthGuard, CsrfGuard)

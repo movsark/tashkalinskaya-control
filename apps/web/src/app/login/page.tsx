@@ -37,10 +37,13 @@ export default function LoginPage() {
         password,
       });
       saveDeviceId(session.deviceId);
+      const roles = session.employee.roles.map((role) => role.roleCode);
       router.push(
-        session.employee.roles.some((role) => role.roleCode === "ADMIN")
+        roles.includes("ADMIN")
           ? "/employees"
-          : "/attendance/me",
+          : roles.some((role) => ["ACCOUNTANT", "MANAGER", "WORKSHOP_MANAGER"].includes(role))
+            ? "/attendance/control"
+            : "/attendance/me",
       );
     } catch (caught) {
       setError(

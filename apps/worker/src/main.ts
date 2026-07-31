@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { createDatabasePool, isDatabaseConfigured } from "@tashkalinskaya/database";
 import type { Pool } from "pg";
 
@@ -27,6 +29,7 @@ async function runCycle(): Promise<void> {
   }
 
   try {
+    const missingExitCount = await markMissingExits(pool);
     const result = await pool.query<{ pending_count: string }>(`
       select count(*)::text as pending_count
       from system.outbox_message
@@ -35,12 +38,66 @@ async function runCycle(): Promise<void> {
     `);
     log("info", "worker.heartbeat", {
       pendingOutboxMessages: Number(result.rows[0]?.pending_count ?? 0),
+      newlyFlaggedMissingExits: missingExitCount,
       version: config.appVersion,
     });
   } catch (error) {
     log("error", "worker.cycle_failed", {
       message: error instanceof Error ? error.message : "unknown error",
     });
+  }
+}
+
+async function markMissingExits(database: Pool): Promise<number> {
+  const client = await database.connect();
+  try {
+    await client.query("begin");
+    const flagged = await client.query<{
+      business_date: string;
+      department_id: string;
+      employee_id: string;
+      id: string;
+    }>(
+      `
+        update attendance.work_shift
+        set flags = array_append(flags, 'MISSING_EXIT'),
+            updated_at = now(), version = version + 1
+        where status = 'OPEN'
+          and not ('MISSING_EXIT' = any(flags))
+          and now() >
+            (schedule_snapshot ->> 'plannedEnd')::timestamptz
+            + make_interval(
+                mins => (schedule_snapshot ->> 'missingExitDelayMinutes')::integer
+              )
+        returning id, employee_id, department_id, business_date
+      `,
+    );
+    for (const shift of flagged.rows) {
+      await client.query(
+        `
+          insert into system.outbox_message (
+            id, event_name, aggregate_type, aggregate_id, payload, occurred_at
+          ) values ($1, 'attendance.missing-exit-detected', 'WORK_SHIFT', $2, $3, now())
+        `,
+        [
+          randomUUID(),
+          shift.id,
+          JSON.stringify({
+            businessDate: shift.business_date,
+            departmentId: shift.department_id,
+            employeeId: shift.employee_id,
+            workShiftId: shift.id,
+          }),
+        ],
+      );
+    }
+    await client.query("commit");
+    return flagged.rowCount ?? 0;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

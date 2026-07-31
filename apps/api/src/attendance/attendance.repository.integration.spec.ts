@@ -233,7 +233,207 @@ describe.runIf(hasDatabase)("AttendanceRepository with PostgreSQL", () => {
     );
     expect(count.rows[0]?.count).toBe("1");
   });
+
+  it("records an idempotent manual arrival with a required reason", async () => {
+    const manualEmployee = await createAdditionalActor("MANUAL");
+    const adminActor = {
+      ...actor,
+      roles: [
+        {
+          id: randomUUID(),
+          roleCode: "ADMIN" as const,
+          scopeId: null,
+          scopeType: "FACTORY" as const,
+        },
+      ],
+    };
+    const idempotencyKey = randomUUID();
+    const first = await repository.recordManual({
+      actor: adminActor,
+      correlationId: randomUUID(),
+      employeeId: manualEmployee.employee.id,
+      idempotencyKey,
+      reasonId: "0a000001-0000-4000-8000-000000000001",
+    });
+    expect(first).toMatchObject({
+      action: "ARRIVAL",
+      captureMethod: "MANUAL",
+      reasonCode: "NO_PHONE",
+      repeated: false,
+    });
+
+    const replay = await repository.recordManual({
+      actor: adminActor,
+      correlationId: randomUUID(),
+      employeeId: manualEmployee.employee.id,
+      idempotencyKey,
+      reasonId: "0a000001-0000-4000-8000-000000000001",
+    });
+    expect(replay).toMatchObject({ id: first.id, repeated: true });
+    const count = await database.query<{ count: string }>(
+      `select count(*)::text as count from attendance.event where employee_id = $1`,
+      [manualEmployee.employee.id],
+    );
+    expect(count.rows[0]?.count).toBe("1");
+  });
+
+  it("returns the attendance control view within the permitted department", async () => {
+    const view = await repository.getControl({
+      departmentIds: [departmentId],
+      requestedDepartmentId: departmentId,
+    });
+    expect(view.departmentId).toBe(departmentId);
+    expect(view.items.length).toBeGreaterThan(0);
+    expect(view.items.every((item) => item.departmentId === departmentId)).toBe(true);
+    expect(Object.values(view.summary).reduce((total, count) => total + count, 0)).toBe(
+      view.items.length,
+    );
+  });
+
+  it("keeps the original event while applying an approved correction projection", async () => {
+    const correctedEmployee = await createAdditionalActor("CORRECTED");
+    const arrivalSecret = crypto.generateSecret();
+    await repository.issueToken({
+      actor: correctedEmployee,
+      tokenHash: crypto.hashSecret(arrivalSecret),
+      tokenId: randomUUID(),
+    });
+    const arrival = await repository.scanToken({
+      correlationId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      terminal,
+      tokenHash: crypto.hashSecret(arrivalSecret),
+    });
+    expect(arrival.ok).toBe(true);
+    if (!arrival.ok) throw new Error("Arrival was not created");
+    await database.query(
+      `update attendance.cursor set last_event_at = now() - interval '61 seconds' where employee_id = $1`,
+      [correctedEmployee.employee.id],
+    );
+    const departureSecret = crypto.generateSecret();
+    await repository.issueToken({
+      actor: correctedEmployee,
+      tokenHash: crypto.hashSecret(departureSecret),
+      tokenId: randomUUID(),
+    });
+    await repository.scanToken({
+      correlationId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      terminal,
+      tokenHash: crypto.hashSecret(departureSecret),
+    });
+    const shift = await database.query<{ id: string }>(
+      `select id from attendance.work_shift where employee_id = $1`,
+      [correctedEmployee.employee.id],
+    );
+    const proposed = new Date(new Date(arrival.result.acceptedAt).getTime() - 5 * 60_000);
+    const submitted = await repository.createCorrection({
+      actor: withFactoryRole(actor, "ACCOUNTANT"),
+      comment: "Исправление по журналу ответственного",
+      correlationId: randomUUID(),
+      proposedEffectiveAt: proposed,
+      proposedEventType: "ARRIVAL",
+      reasonId: "0a000001-0000-4000-8000-000000000004",
+      workShiftId: shift.rows[0]!.id,
+    });
+    expect(submitted.status).toBe("SUBMITTED");
+
+    const approved = await repository.decideCorrection({
+      actor: withFactoryRole(actor, "ADMIN"),
+      comment: "Сверено с журналом цеха",
+      correlationId: randomUUID(),
+      correctionId: submitted.id,
+      decision: "APPROVED",
+    });
+    expect(approved.status).toBe("APPROVED");
+    const projection = await database.query<{ effective_arrival_at: Date }>(
+      `select effective_arrival_at from attendance.work_shift where id = $1`,
+      [shift.rows[0]!.id],
+    );
+    expect(projection.rows[0]?.effective_arrival_at.toISOString()).toBe(proposed.toISOString());
+    const original = await database.query<{ accepted_at: Date }>(
+      `select accepted_at from attendance.event where id = $1`,
+      [arrival.result.id],
+    );
+    expect(original.rows[0]?.accepted_at.toISOString()).toBe(arrival.result.acceptedAt);
+  });
+
+  it("closes a missing departure through correction without inventing an event", async () => {
+    const correctedEmployee = await createAdditionalActor("MISSING-EXIT");
+    const secret = crypto.generateSecret();
+    await repository.issueToken({
+      actor: correctedEmployee,
+      tokenHash: crypto.hashSecret(secret),
+      tokenId: randomUUID(),
+    });
+    const arrival = await repository.scanToken({
+      correlationId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      terminal,
+      tokenHash: crypto.hashSecret(secret),
+    });
+    if (!arrival.ok) throw new Error("Arrival was not created");
+    const shift = await database.query<{ id: string }>(
+      `select id from attendance.work_shift where employee_id = $1`,
+      [correctedEmployee.employee.id],
+    );
+    const clock = await database.query<{ current_time: Date }>(
+      `select now() - interval '1 millisecond' as current_time`,
+    );
+    const submitted = await repository.createCorrection({
+      actor: withFactoryRole(actor, "ACCOUNTANT"),
+      comment: "Уход подтвержден ответственным",
+      correlationId: randomUUID(),
+      proposedEffectiveAt: clock.rows[0]!.current_time,
+      proposedEventType: "DEPARTURE",
+      reasonId: "0a000001-0000-4000-8000-000000000004",
+      workShiftId: shift.rows[0]!.id,
+    });
+    await repository.decideCorrection({
+      actor: withFactoryRole(actor, "ADMIN"),
+      comment: "Сверено и подтверждено",
+      correlationId: randomUUID(),
+      correctionId: submitted.id,
+      decision: "APPROVED",
+    });
+    const result = await database.query<{
+      closing_correction_id: string | null;
+      event_count: string;
+      status: string;
+    }>(
+      `
+        select
+          ws.status, ws.closing_correction_id,
+          (select count(*)::text from attendance.event ae where ae.work_shift_id = ws.id) event_count
+        from attendance.work_shift ws
+        where ws.id = $1
+      `,
+      [shift.rows[0]!.id],
+    );
+    expect(result.rows[0]).toMatchObject({
+      closing_correction_id: submitted.id,
+      event_count: "1",
+      status: "CLOSED",
+    });
+  });
 });
+
+function withFactoryRole(
+  source: AuthenticatedActor,
+  roleCode: "ACCOUNTANT" | "ADMIN",
+): AuthenticatedActor {
+  return {
+    ...source,
+    roles: [
+      {
+        id: randomUUID(),
+        roleCode,
+        scopeId: null,
+        scopeType: "FACTORY",
+      },
+    ],
+  };
+}
 
 async function createAdditionalActor(label: string): Promise<AuthenticatedActor> {
   const nextEmployeeId = randomUUID();

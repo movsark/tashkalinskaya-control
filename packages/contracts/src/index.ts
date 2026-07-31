@@ -115,3 +115,64 @@ export interface TerminalSessionView {
   readonly terminalCode: string;
   readonly terminalId: string;
 }
+
+export type AttendanceControlStatus =
+  "ABSENT" | "CLOSED" | "EXPECTED" | "MISSING_EXIT" | "OPEN" | "REVIEW";
+
+export interface ManualAttendanceReasonView {
+  readonly code: string;
+  readonly displayName: string;
+  readonly id: string;
+  readonly requiresComment: boolean;
+}
+
+export interface AttendanceControlItem {
+  readonly arrivalAt: string | null;
+  readonly businessDate: string;
+  readonly departmentId: string;
+  readonly departmentName: string;
+  readonly departureAt: string | null;
+  readonly employeeId: string;
+  readonly employeeName: string;
+  readonly flags: readonly string[];
+  readonly personnelNumber: string;
+  readonly plannedEnd: string | null;
+  readonly plannedStart: string | null;
+  readonly scheduleName: string | null;
+  readonly status: AttendanceControlStatus;
+  readonly workShiftId: string | null;
+}
+
+export interface AttendanceControlView {
+  readonly asOf: string;
+  readonly businessDate: string;
+  readonly departmentId: string | null;
+  readonly items: readonly AttendanceControlItem[];
+  readonly summary: Readonly<Record<AttendanceControlStatus, number>>;
+}
+
+export interface ManualAttendanceResult extends AttendanceEventView {
+  readonly employeeName: string;
+  readonly reasonCode: string;
+  readonly repeated: boolean;
+}
+
+export type AttendanceCorrectionStatus = "APPROVED" | "REJECTED" | "SUBMITTED";
+
+export interface AttendanceCorrectionView {
+  readonly comment: string | null;
+  readonly createdAt: string;
+  readonly createdByName: string;
+  readonly decidedAt: string | null;
+  readonly decidedByName: string | null;
+  readonly decisionComment: string | null;
+  readonly employeeId: string;
+  readonly employeeName: string;
+  readonly id: string;
+  readonly proposedEffectiveAt: string;
+  readonly proposedEventType: AttendanceAction;
+  readonly reasonCode: string;
+  readonly reasonName: string;
+  readonly status: AttendanceCorrectionStatus;
+  readonly workShiftId: string;
+}
