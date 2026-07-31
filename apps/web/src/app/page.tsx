@@ -36,6 +36,11 @@ const foundations = [
     state: "B11.1",
     title: "Производство",
   },
+  {
+    detail: "Физическая приёмка, неизменяемые движения, остатки и расхождения",
+    state: "B12.1",
+    title: "Склад",
+  },
 ];
 
 export default function HomePage() {
@@ -56,7 +61,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B11</p>
+          <p className="eyebrow">Разработка MVP · B05–B12</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -80,6 +85,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/production">
               Открыть производство
+            </a>
+            <a className="text-link" href="/warehouse">
+              Открыть склад
             </a>
           </div>
         </div>
@@ -128,11 +136,11 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B12 · Приёмка готовой продукции и склад</h2>
+          <h2>B13 · Погрузка с двойным подтверждением</h2>
         </div>
         <p>
-          Цех уже передаёт заявленные партии в очередь склада. Следующий срез добавит физическую
-          приёмку, неизменяемые складские движения и расчёт свободного остатка.
+          Склад уже принимает партии и ведёт объяснимый остаток. Следующий срез свяжет этот остаток
+          с погрузкой по территориям и встречным подтверждением водителя.
         </p>
       </section>
 

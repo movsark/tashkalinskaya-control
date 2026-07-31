@@ -673,3 +673,78 @@ export interface ProductionWarehouseQueueView {
   })[];
   readonly serverTime: string;
 }
+
+export interface WarehouseReasonView {
+  readonly code: string;
+  readonly displayName: string;
+  readonly id: string;
+  readonly kind: "CORRECTION" | "RECEIPT_DIFFERENCE";
+}
+
+export interface WarehouseReceiptView {
+  readonly acceptedQuantity: number;
+  readonly batchId: string;
+  readonly declaredQuantity: number;
+  readonly id: string;
+  readonly movementDocumentId: string;
+  readonly receivedAt: string;
+  readonly receivedByName: string;
+  readonly rejectedQuantity: number;
+  readonly status: "ACCEPTED" | "PARTIALLY_ACCEPTED" | "REJECTED";
+}
+
+export interface WarehouseQueueItemView {
+  readonly batchId: string;
+  readonly batchVersion: number;
+  readonly claimedAt: string | null;
+  readonly claimedById: string | null;
+  readonly claimedByName: string | null;
+  readonly isNight: boolean;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly productionDate: string;
+  readonly quantity: number;
+  readonly submittedAt: string;
+  readonly workshopId: string;
+  readonly workshopName: string;
+}
+
+export interface WarehouseBalanceView {
+  readonly blockedQuantity: number;
+  readonly freeQuantity: number;
+  readonly integrityStatus: "MISMATCH" | "OK";
+  readonly onHandQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly reservedLoadingQuantity: number;
+  readonly reservedStoreQuantity: number;
+  readonly returnPoolQuantity: number;
+  readonly updatedAt: string;
+}
+
+export interface WarehouseDiscrepancyView {
+  readonly acceptedQuantity: number;
+  readonly batchId: string;
+  readonly declaredQuantity: number;
+  readonly differenceQuantity: number;
+  readonly dueAt: string;
+  readonly id: string;
+  readonly productName: string;
+  readonly status: "OPEN" | "RESOLVED" | "RESOLVED_BY_ADMIN" | "WORKSHOP_EXPLAINED";
+  readonly version: number;
+  readonly warehouseComment: string;
+  readonly workshopExplanation: string | null;
+  readonly workshopId: string;
+  readonly workshopName: string;
+}
+
+export interface WarehouseWorkspaceView {
+  readonly balances: readonly WarehouseBalanceView[];
+  readonly discrepancies: readonly WarehouseDiscrepancyView[];
+  readonly queue: readonly WarehouseQueueItemView[];
+  readonly reasons: readonly WarehouseReasonView[];
+  readonly serverTime: string;
+  readonly warehouseName: string;
+}

@@ -37,6 +37,8 @@ import type {
   TerritoryView,
   VehicleView,
   WarehouseLogisticsDayView,
+  WarehouseReceiptView,
+  WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
 import type {
   AuthenticationResponseJSON,
@@ -994,6 +996,89 @@ export async function downloadCatalogTemplate(): Promise<void> {
 
 export async function downloadImportIssues(batchId: string): Promise<void> {
   await downloadFile(`/catalog/imports/${batchId}/issues.csv`, `import-${batchId}-issues.csv`);
+}
+
+export async function getWarehouseWorkspace(): Promise<WarehouseWorkspaceView> {
+  return request("/warehouse/workspace");
+}
+export async function claimWarehouseBatch(
+  batchId: string,
+  version: number,
+  csrfToken: string,
+): Promise<void> {
+  await request(`/warehouse/batches/${batchId}/claim`, {
+    body: JSON.stringify({ version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function releaseWarehouseBatch(
+  batchId: string,
+  reason: string,
+  csrfToken: string,
+): Promise<void> {
+  await request(`/warehouse/batches/${batchId}/release`, {
+    body: JSON.stringify({ reason }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function receiveWarehouseBatch(
+  batchId: string,
+  input: {
+    acceptedQuantity: number;
+    comment?: string;
+    idempotencyKey: string;
+    reasonId?: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<WarehouseReceiptView> {
+  return request(`/warehouse/batches/${batchId}/receive`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function explainWarehouseDiscrepancy(
+  id: string,
+  input: { explanation: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  await request(`/warehouse/discrepancies/${id}/explain`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function resolveWarehouseDiscrepancy(
+  id: string,
+  input: { comment: string; resolutionCode: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  await request(`/warehouse/discrepancies/${id}/resolve`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function createWarehouseCorrection(
+  input: {
+    bucket: string;
+    comment: string;
+    direction: "INCREASE" | "DECREASE";
+    idempotencyKey: string;
+    productId: string;
+    quantity: number;
+    reasonId: string;
+  },
+  csrfToken: string,
+): Promise<void> {
+  await request("/warehouse/corrections", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 async function request<Result>(path: string, init: RequestInit = {}): Promise<Result> {

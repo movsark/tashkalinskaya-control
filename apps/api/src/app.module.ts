@@ -12,6 +12,7 @@ import { LogisticsModule } from "./logistics/logistics.module";
 import { PlanningModule } from "./planning/planning.module";
 import { ProductionModule } from "./production/production.module";
 import { StoreModule } from "./store/store.module";
+import { WarehouseModule } from "./warehouse/warehouse.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { StoreModule } from "./store/store.module";
     PlanningModule,
     ProductionModule,
     StoreModule,
+    WarehouseModule,
   ],
   controllers: [AppController, HealthController],
   providers: [CorrelationIdMiddleware, HealthService],
