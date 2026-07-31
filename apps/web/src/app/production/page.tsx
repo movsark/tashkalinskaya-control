@@ -139,7 +139,7 @@ export default function ProductionPage() {
           <span>{session?.employee.fullName}</span>
           <small>
             Производство · <Link href="/planning/plan">план</Link> ·{" "}
-            <Link href="/logistics/warehouse">склад</Link> · <Link href="/">главная</Link>
+            <Link href="/warehouse">склад</Link> · <Link href="/">главная</Link>
           </small>
         </div>
       </header>
@@ -952,7 +952,8 @@ function WarehouseQueue({ queue }: { queue: ProductionWarehouseQueueView }) {
         <span>{queue.batches.length} партий</span>
       </div>
       <p className="production-boundary-note">
-        Эти партии только заявлены цехом. Складской остаток появится после физической приемки в B12.
+        Эти партии только заявлены цехом. Складской остаток появится после физической приёмки на
+        экране склада.
       </p>
       <div className="production-queue-list">
         {queue.batches.length ? (
