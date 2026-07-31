@@ -98,3 +98,27 @@ export class CreateCalendarLinkDto {
   @Length(3, 500)
   comment!: string;
 }
+
+export class RunProductionPlanDto {
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+}
+
+export class OverrideProductionPlanDto {
+  @IsUUID()
+  productId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000)
+  quantity!: number;
+
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+}

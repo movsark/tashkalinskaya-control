@@ -433,3 +433,46 @@ export interface TerritoryNormWeekView {
   readonly territoryId: string;
   readonly weekStart: string;
 }
+
+export interface PlanDemandLineView {
+  readonly allocatedFreeStock: number;
+  readonly allocatedGoodReturn: number;
+  readonly dispatchDate: string;
+  readonly directionKind: "STORE" | "TERRITORY";
+  readonly effectiveDemand: number;
+  readonly excessReturn: number;
+  readonly newProduction: number;
+  readonly oneOffQuantity: number | null;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly storeOrderQuantity: number;
+  readonly territoryId: string | null;
+  readonly territoryNumber: number | null;
+  readonly weeklyNormQuantity: number | null;
+  readonly workshopId: string;
+  readonly workshopName: string;
+}
+
+export interface ProductionPlanLineView {
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly workshopId: string;
+  readonly workshopName: string;
+}
+
+export interface ProductionPlanView {
+  readonly attempts: number;
+  readonly demandLines: readonly PlanDemandLineView[];
+  readonly inputHash: string;
+  readonly planId: string;
+  readonly productionDate: string;
+  readonly productionLines: readonly ProductionPlanLineView[];
+  readonly publishedAt: string;
+  readonly resultHash: string;
+  readonly status: "PUBLISHED";
+  readonly version: number;
+  readonly warnings: readonly string[];
+}

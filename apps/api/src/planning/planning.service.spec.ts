@@ -3,15 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import { PlanningService } from "./planning.service";
 
 function service() {
-  return new PlanningService({
-    canDriverViewTerritory: vi.fn().mockResolvedValue(false),
-    createCalendarLink: vi.fn(),
-    createRequest: vi.fn(),
-    decideRequest: vi.fn(),
-    getSetup: vi.fn(),
-    getWeek: vi.fn(),
-    listRequests: vi.fn(),
-  } as never);
+  return new PlanningService(
+    {
+      canDriverViewTerritory: vi.fn().mockResolvedValue(false),
+      createCalendarLink: vi.fn(),
+      createRequest: vi.fn(),
+      decideRequest: vi.fn(),
+      getSetup: vi.fn(),
+      getWeek: vi.fn(),
+      listRequests: vi.fn(),
+    } as never,
+    { nodeEnvironment: "test" } as never,
+  );
 }
 
 describe("PlanningService calendar invariants", () => {

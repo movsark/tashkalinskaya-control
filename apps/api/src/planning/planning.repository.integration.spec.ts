@@ -13,12 +13,13 @@ const adminId = randomUUID();
 const driverId = randomUUID();
 const otherDriverId = randomUUID();
 const productId = randomUUID();
+const workshopId = randomUUID();
 const vehicleId = randomUUID();
 const correlationId = randomUUID();
 const territoryOneId = "12000000-0000-4000-8000-000000000001";
 const territoryNineId = "12000000-0000-4000-8000-000000000009";
-const uniqueOffset = Number.parseInt(adminId.slice(0, 6), 16) % 2_000;
-const weekStart = nextMonday(new Date(Date.UTC(2035, 0, 1 + uniqueOffset)));
+const uniqueOffset = Number.parseInt(adminId.slice(0, 8), 16) % 50_000;
+const weekStart = nextMonday(new Date(Date.UTC(2100, 0, 1 + uniqueOffset)));
 const friday = addDays(weekStart, 4);
 const wednesday = addDays(weekStart, 2);
 const tuesday = addDays(weekStart, 1);
@@ -89,11 +90,16 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       ],
     );
     await database.query(
+      `insert into identity.department (id, code, name)
+       values ($1, $2, 'Тестовый цех B09')`,
+      [workshopId, `B09-W-${adminId.slice(0, 8).toUpperCase()}`],
+    );
+    await database.query(
       `insert into catalog.product (
-         id, product_code, name, category_id, unit_code
+         id, product_code, name, category_id, unit_code, primary_workshop_id
        ) values ($1, $2, 'Тестовый торт B09',
-         '11000000-0000-4000-8000-000000000001', 'PCS')`,
-      [productId, `B09-${adminId.slice(0, 8).toUpperCase()}`],
+         '11000000-0000-4000-8000-000000000001', 'PCS', $3)`,
+      [productId, `B09-${adminId.slice(0, 8).toUpperCase()}`, workshopId],
     );
   });
 
@@ -287,6 +293,69 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       territoryId: territoryNineId,
     });
     expect(late.status).toBe("MISSED_CUTOFF");
+  });
+
+  it("publishes one immutable plan, retries preflight, and versions an admin override", async () => {
+    const blocked = await repository.runProductionPlan({
+      actorEmployeeId: adminId,
+      allowPlaceholderInputs: false,
+      correlationId: randomUUID(),
+      productionDate: wednesday,
+    });
+    expect(blocked).toMatchObject({ code: "PLACEHOLDER_INPUTS_DISABLED", status: "FAILED" });
+
+    const published = await repository.runProductionPlan({
+      actorEmployeeId: adminId,
+      allowPlaceholderInputs: true,
+      correlationId: randomUUID(),
+      productionDate: wednesday,
+    });
+    if (published.status === "FAILED") throw new Error(JSON.stringify(published));
+    expect(published).toMatchObject({ attempts: 2, status: "PUBLISHED", version: 1 });
+    expect(published.productionLines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 9, workshopId }),
+    );
+
+    const repeated = await repository.runProductionPlan({
+      actorEmployeeId: adminId,
+      allowPlaceholderInputs: true,
+      correlationId: randomUUID(),
+      productionDate: wednesday,
+    });
+    expect(repeated).toMatchObject({ planId: published.planId, version: 1 });
+
+    await expect(
+      database.query(
+        `update planning.production_plan_line set quantity = quantity + 1
+         where plan_id = $1 and product_id = $2`,
+        [published.planId, productId],
+      ),
+    ).rejects.toMatchObject({ code: "P0001" });
+
+    const idempotencyKey = `B09-OVERRIDE-${randomUUID()}`;
+    const overridden = await repository.overrideProductionPlan({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      idempotencyKey,
+      newQuantity: 12,
+      productId,
+      productionDate: wednesday,
+      reason: "Подтвержденная корректировка администратора",
+    });
+    expect(overridden).toMatchObject({ version: 2 });
+    expect(overridden.productionLines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 12 }),
+    );
+    const repeatedOverride = await repository.overrideProductionPlan({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      idempotencyKey,
+      newQuantity: 12,
+      productId,
+      productionDate: wednesday,
+      reason: "Подтвержденная корректировка администратора",
+    });
+    expect(repeatedOverride.planId).toBe(overridden.planId);
   });
 });
 

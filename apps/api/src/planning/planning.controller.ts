@@ -13,7 +13,13 @@ import { ApiTags } from "@nestjs/swagger";
 
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
-import { CreateCalendarLinkDto, CreateNormRequestDto, DecideNormRequestDto } from "./planning.dto";
+import {
+  CreateCalendarLinkDto,
+  CreateNormRequestDto,
+  DecideNormRequestDto,
+  OverrideProductionPlanDto,
+  RunProductionPlanDto,
+} from "./planning.dto";
 import { PlanningService } from "./planning.service";
 
 @ApiTags("Планирование")
@@ -74,6 +80,42 @@ export class PlanningController {
   @RequireRoles("ADMIN")
   createCalendarLink(@Body() dto: CreateCalendarLinkDto, @Req() request: AuthenticatedRequest) {
     return this.planning.createCalendarLink(
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Get("plans/:productionDate")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER")
+  productionPlan(@Param("productionDate") productionDate: string) {
+    return this.planning.productionPlan(productionDate);
+  }
+
+  @Post("plans/:productionDate/run")
+  @RequireRoles("ADMIN")
+  runProductionPlan(
+    @Param("productionDate") productionDate: string,
+    @Body() dto: RunProductionPlanDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.planning.runProductionPlan(
+      productionDate,
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("plans/:productionDate/override")
+  @RequireRoles("ADMIN")
+  overrideProductionPlan(
+    @Param("productionDate") productionDate: string,
+    @Body() dto: OverrideProductionPlanDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.planning.overrideProductionPlan(
+      productionDate,
       dto,
       requireActorId(request),
       requireCorrelationId(request),

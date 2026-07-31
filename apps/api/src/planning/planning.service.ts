@@ -1,16 +1,29 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { RoleCode } from "@tashkalinskaya/contracts";
 
 import type {
   CreateCalendarLinkDto,
   CreateNormRequestDto,
   DecideNormRequestDto,
+  OverrideProductionPlanDto,
+  RunProductionPlanDto,
 } from "./planning.dto";
 import { PlanningRepository } from "./planning.repository";
+import { API_CONFIG, type ApiConfig } from "../config";
 
 @Injectable()
 export class PlanningService {
-  constructor(private readonly repository: PlanningRepository) {}
+  constructor(
+    private readonly repository: PlanningRepository,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+  ) {}
 
   setup() {
     return this.repository.getSetup();
@@ -120,6 +133,65 @@ export class PlanningService {
       territoryId: dto.territoryId ?? null,
     });
   }
+
+  async runProductionPlan(
+    productionDate: string,
+    dto: RunProductionPlanDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    assertDate(productionDate);
+    void dto.idempotencyKey;
+    const result = await this.repository.runProductionPlan({
+      actorEmployeeId,
+      allowPlaceholderInputs: this.allowsPlaceholderInputs(),
+      correlationId,
+      productionDate,
+    });
+    if (result.status === "FAILED") {
+      throw new ConflictException({ code: result.code, message: planErrorMessage(result.code) });
+    }
+    return result;
+  }
+
+  async productionPlan(productionDate: string) {
+    assertDate(productionDate);
+    const plan = await this.repository.getProductionPlan(productionDate);
+    if (plan === null) throw new NotFoundException("План на эту дату еще не опубликован");
+    return plan;
+  }
+
+  overrideProductionPlan(
+    productionDate: string,
+    dto: OverrideProductionPlanDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    assertDate(productionDate);
+    return this.repository.overrideProductionPlan({
+      actorEmployeeId,
+      correlationId,
+      idempotencyKey: dto.idempotencyKey,
+      newQuantity: dto.quantity,
+      productId: dto.productId,
+      productionDate,
+      reason: dto.reason.trim(),
+    });
+  }
+
+  private allowsPlaceholderInputs(): boolean {
+    return this.config.nodeEnvironment === "development" || this.config.nodeEnvironment === "test";
+  }
+}
+
+function planErrorMessage(code: string): string {
+  const messages: Record<string, string> = {
+    CALENDAR_OR_DEMAND_MISSING: "Не найден календарь вывоза или утвержденный спрос",
+    PLACEHOLDER_INPUTS_DISABLED:
+      "План нельзя публиковать без подключенных заказов магазина и складских остатков",
+    PRODUCT_WORKSHOP_MISSING: "У одного из товаров не назначен основной цех",
+  };
+  return messages[code] ?? "План не прошел предварительную проверку";
 }
 
 function assertDate(value: string): void {
