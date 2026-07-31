@@ -176,3 +176,65 @@ export interface AttendanceCorrectionView {
   readonly status: AttendanceCorrectionStatus;
   readonly workShiftId: string;
 }
+
+export type ImportBatchStatus = "INVALID" | "READY" | "READY_WITH_WARNINGS" | "APPLIED" | "FAILED";
+
+export type ImportRowStatus = "VALID" | "WARNING" | "ERROR" | "SKIPPED_ZERO" | "APPLIED";
+
+export interface ImportIssueView {
+  readonly code: string;
+  readonly columnName: string | null;
+  readonly message: string;
+  readonly safeValuePreview: string | null;
+  readonly severity: "ERROR" | "WARNING";
+  readonly sheetName: string | null;
+  readonly sourceRowNumber: number | null;
+  readonly suggestedFix: string;
+}
+
+export interface ImportPreviewRow {
+  readonly entityType: "NORM" | "PRODUCT";
+  readonly naturalKey: string;
+  readonly normalized: Readonly<Record<string, boolean | number | string | null>>;
+  readonly sheetName: "Нормы" | "Товары";
+  readonly sourceRowNumber: number;
+  readonly status: ImportRowStatus;
+}
+
+export interface ImportPreview {
+  readonly appliedAt: string | null;
+  readonly batchId: string;
+  readonly counts: {
+    readonly errors: number;
+    readonly skipped: number;
+    readonly total: number;
+    readonly valid: number;
+    readonly warnings: number;
+  };
+  readonly effectiveFrom: string;
+  readonly fileName: string;
+  readonly fileSha256: string;
+  readonly issues: readonly ImportIssueView[];
+  readonly rows: readonly ImportPreviewRow[];
+  readonly status: ImportBatchStatus;
+  readonly templateVersion: "v1.0";
+  readonly warningCodes: readonly string[];
+}
+
+export interface ProductView {
+  readonly barcodes: readonly string[];
+  readonly category: string;
+  readonly externalCode: string | null;
+  readonly id: string;
+  readonly name: string;
+  readonly primaryWorkshop: string | null;
+  readonly productCode: string;
+  readonly status: "ACTIVE" | "ARCHIVED";
+  readonly unit: string;
+  readonly version: number;
+}
+
+export interface ProductListResponse {
+  readonly items: readonly ProductView[];
+  readonly total: number;
+}

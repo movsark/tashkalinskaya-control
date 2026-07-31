@@ -34,6 +34,15 @@ import { WebAuthnService } from "./webauthn.service";
     TerminalsService,
     WebAuthnService,
   ],
-  exports: [CsrfGuard, IdentityCryptoService, SessionAuthGuard, TerminalSessionAuthGuard],
+  exports: [
+    CsrfGuard,
+    DeviceSecurityRepository,
+    IdentityCryptoService,
+    IdentityRepository,
+    RolesGuard,
+    SessionAuthGuard,
+    StepUpGuard,
+    TerminalSessionAuthGuard,
+  ],
 })
 export class IdentityModule {}

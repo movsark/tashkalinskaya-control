@@ -17,6 +17,7 @@ required_files=(
   "docs/B07_SOURCE_WORKBOOK_PROFILE.md"
   "docs/B07_IMPORT_DESIGN.md"
   "docs/B07_ACCEPTANCE_SCENARIOS.md"
+  "docs/B07_1_CATALOG_IMPORT_CORE.md"
   "templates/import/README.md"
   "templates/import/Шаблон_массового_импорта.xlsx"
 )
