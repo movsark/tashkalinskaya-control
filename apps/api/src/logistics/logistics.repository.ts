@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  DriverLogisticsDayView,
   DriverProfileView,
   LoadingGroupView,
   LogisticsDayView,
@@ -10,6 +11,7 @@ import type {
   TerritoryRunView,
   TerritoryView,
   VehicleView,
+  WarehouseLogisticsDayView,
 } from "@tashkalinskaya/contracts";
 import type { PoolClient } from "pg";
 
@@ -73,6 +75,7 @@ interface GroupRow {
 }
 
 interface RunRow {
+  readonly attendance_work_shift_id: string | null;
   readonly comment: string | null;
   readonly dispatch_date: string;
   readonly driver_employee_id: string | null;
@@ -82,6 +85,7 @@ interface RunRow {
   readonly planned_end_at: Date | null;
   readonly planned_start_at: Date | null;
   readonly reason_code: string | null;
+  readonly ready_at: Date | null;
   readonly run_no: number;
   readonly sequence_no: number | null;
   readonly source: TerritoryRunView["source"];
@@ -101,7 +105,8 @@ const runSelect = `
     r.driver_employee_id, coalesce(e.full_name, r.driver_name_snapshot) as driver_name,
     r.vehicle_id, coalesce(v.display_name, r.vehicle_snapshot) as vehicle_name,
     r.loading_group_id, r.sequence_no, r.planned_start_at, r.planned_end_at,
-    r.source, r.status, r.reason_code, r.comment, r.version
+    r.source, r.status, r.reason_code, r.comment, r.attendance_work_shift_id,
+    r.ready_at, r.version
   from logistics.territory_run r
   join logistics.territory t on t.id = r.territory_id
   left join identity.employee e on e.id = r.driver_employee_id
@@ -504,17 +509,57 @@ export class LogisticsRepository {
       if (!["DRAFT", "SCHEDULED"].includes(previous.status)) {
         throw new NotFoundException("Назначение рейса уже заблокировано погрузкой");
       }
+      if (previous.status === "SCHEDULED" && (command.comment?.trim().length ?? 0) < 3) {
+        throw new ConflictException({
+          code: "LOGISTICS_CHANGE_REASON_REQUIRED",
+          message: "Для изменения опубликованного рейса укажите причину",
+        });
+      }
       await assertActiveReferences(client, command);
+      const bufferedConflict = await client.query(
+        `
+          select 1
+          from logistics.territory_run other
+          cross join logistics.configuration config
+          where other.id <> $1 and other.status <> 'CANCELLED'
+            and other.planned_start_at is not null
+            and (other.driver_employee_id = $2 or other.vehicle_id = $3)
+            and tstzrange(
+              other.planned_start_at - make_interval(mins => config.run_turnaround_buffer_minutes),
+              other.planned_end_at + make_interval(mins => config.run_turnaround_buffer_minutes),
+              '[)'
+            ) && tstzrange($4::timestamptz, $5::timestamptz, '[)')
+          limit 1
+        `,
+        [
+          command.runId,
+          command.driverEmployeeId,
+          command.vehicleId,
+          command.plannedStartAt,
+          command.plannedEndAt,
+        ],
+      );
+      if (bufferedConflict.rowCount !== 0) {
+        throw new ConflictException({
+          code: "LOGISTICS_TURNAROUND_CONFLICT",
+          message: "Между рейсами одного водителя или машины нужен технологический буфер",
+        });
+      }
       if ((command.loadingGroupId === null) !== (command.sequenceNo === null)) {
         throw new NotFoundException("Группа и порядковый номер указываются вместе");
       }
       if (command.loadingGroupId !== null) {
         const group = await client.query(
-          `select id from logistics.loading_group where id = $1 and dispatch_date = $2 and status = 'DRAFT'`,
-          [command.loadingGroupId, previous.dispatch_date],
+          `select id from logistics.loading_group
+           where id = $1 and dispatch_date = $2 and status = $3`,
+          [
+            command.loadingGroupId,
+            previous.dispatch_date,
+            previous.status === "SCHEDULED" ? "PUBLISHED" : "DRAFT",
+          ],
         );
         if (group.rowCount === 0)
-          throw new NotFoundException("Черновая группа этой даты не найдена");
+          throw new NotFoundException("Доступная группа этой даты не найдена");
       }
       const updated = await client.query(
         `
@@ -577,6 +622,14 @@ export class LogisticsRepository {
         newAssignment,
         reasonCode: command.reasonCode,
       });
+      if (previous.status === "SCHEDULED") {
+        await insertOutbox(client, "logistics.run.assignment-changed", command.runId, {
+          dispatchDate: previous.dispatch_date,
+          newAssignment,
+          oldAssignment,
+          runId: command.runId,
+        });
+      }
       return date.dispatch_date;
     });
     const day = await this.getDay(dispatchDate);
@@ -642,6 +695,181 @@ export class LogisticsRepository {
       });
     });
     return this.getDay(command.dispatchDate);
+  }
+
+  async getDriverDay(
+    dispatchDate: string,
+    driverEmployeeId: string,
+  ): Promise<DriverLogisticsDayView> {
+    const runs = await this.database.query<RunRow>(
+      `${runSelect}
+       where r.dispatch_date = $1 and r.driver_employee_id = $2
+         and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+       order by r.planned_start_at, t.territory_number, r.run_no`,
+      [dispatchDate, driverEmployeeId],
+    );
+    return { dispatchDate, runs: runs.rows.map(mapRun) };
+  }
+
+  async getWarehouseDay(dispatchDate: string): Promise<WarehouseLogisticsDayView> {
+    const [groups, runs] = await Promise.all([
+      this.database.query<GroupRow>(
+        `
+          select id, dispatch_date::text, group_no, planned_start_at, planned_end_at,
+                 loading_zone, status, version
+          from logistics.loading_group
+          where dispatch_date = $1 and status <> 'DRAFT' and status <> 'CANCELLED'
+          order by group_no
+        `,
+        [dispatchDate],
+      ),
+      this.database.query<RunRow>(
+        `${runSelect}
+         where r.dispatch_date = $1
+           and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+         order by r.planned_start_at, r.sequence_no, t.territory_number`,
+        [dispatchDate],
+      ),
+    ]);
+    const items = runs.rows.map(mapRun);
+    return {
+      dispatchDate,
+      groups: groups.rows.map(mapGroup),
+      runs: items,
+      summary: {
+        ready: items.filter((item) => item.status === "READY_FOR_LOADING").length,
+        scheduled: items.filter((item) => item.status === "SCHEDULED").length,
+        total: items.length,
+      },
+    };
+  }
+
+  async markRunReady(command: {
+    activeRole: "ADMIN" | "WAREHOUSE_KEEPER";
+    actorEmployeeId: string;
+    correlationId: string;
+    idempotencyKey: string;
+    runId: string;
+    version: number;
+  }): Promise<TerritoryRunView> {
+    const dispatchDate = await this.database.transaction(async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:ready:${command.runId}`,
+      ]);
+      const locked = await client.query<RunRow>(`${runSelect} where r.id = $1 for update of r`, [
+        command.runId,
+      ]);
+      const run = locked.rows[0];
+      if (run === undefined) throw new NotFoundException("Рейс не найден");
+      if (run.status === "READY_FOR_LOADING") return run.dispatch_date;
+      if (run.status !== "SCHEDULED" || run.version !== command.version) {
+        throw new ConflictException("Рейс изменен или еще не опубликован");
+      }
+      if (run.driver_employee_id === null) throw new ConflictException("Водитель не назначен");
+      const shift = await client.query<{ id: string }>(
+        `
+          select id
+          from attendance.work_shift
+          where employee_id = $1 and business_date = $2 and status = 'OPEN'
+          order by opened_at desc
+          limit 1
+        `,
+        [run.driver_employee_id, run.dispatch_date],
+      );
+      const workShiftId = shift.rows[0]?.id;
+      if (workShiftId === undefined) {
+        throw new ConflictException({
+          code: "DRIVER_ATTENDANCE_REQUIRED",
+          message: "Водитель не отметил приход за день вывоза",
+        });
+      }
+      await client.query(
+        `
+          update logistics.territory_run
+          set status = 'READY_FOR_LOADING', ready_at = now(), ready_by = $2,
+              attendance_work_shift_id = $3, updated_by = $2, correlation_id = $4,
+              updated_at = now(), version = version + 1
+          where id = $1
+        `,
+        [command.runId, command.actorEmployeeId, workShiftId, command.correlationId],
+      );
+      await insertAudit(client, command, "TERRITORY_RUN_READY", "TERRITORY_RUN", command.runId, {
+        attendanceWorkShiftId: workShiftId,
+        idempotencyKey: command.idempotencyKey,
+      });
+      await insertOutbox(client, "logistics.run.ready", command.runId, {
+        dispatchDate: run.dispatch_date,
+        runId: command.runId,
+      });
+      return run.dispatch_date;
+    });
+    const day = await this.getWarehouseDay(dispatchDate);
+    return day.runs.find((run) => run.id === command.runId)!;
+  }
+
+  async createExtraRun(command: {
+    actorEmployeeId: string;
+    comment: string;
+    correlationId: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    reasonCode: string;
+    territoryId: string;
+  }): Promise<TerritoryRunView> {
+    const runId = await this.database.transaction(async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:extra:${command.actorEmployeeId}:${command.idempotencyKey}`,
+      ]);
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:runs:${command.dispatchDate}:${command.territoryId}`,
+      ]);
+      const repeated = await client.query<{ territory_run_id: string }>(
+        `select territory_run_id from logistics.extra_run_command
+         where actor_employee_id = $1 and idempotency_key = $2`,
+        [command.actorEmployeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0] !== undefined) return repeated.rows[0].territory_run_id;
+      const createdId = randomUUID();
+      const created = await client.query(
+        `
+          insert into logistics.territory_run (
+            id, dispatch_date, territory_id, run_no, source, reason_code, comment,
+            territory_code_snapshot, territory_name_snapshot, created_by, updated_by,
+            correlation_id
+          )
+          select $1, $2::date, t.id,
+            coalesce((select max(run_no) + 1 from logistics.territory_run
+                      where dispatch_date = $2 and territory_id = t.id), 1),
+            'EXTRA_RUN', $4, $5, t.territory_number::text, t.name, $6, $6, $7
+          from logistics.territory t
+          where t.id = $3 and t.status = 'ACTIVE'
+        `,
+        [
+          createdId,
+          command.dispatchDate,
+          command.territoryId,
+          command.reasonCode,
+          command.comment,
+          command.actorEmployeeId,
+          command.correlationId,
+        ],
+      );
+      if (created.rowCount === 0) throw new NotFoundException("Активная территория не найдена");
+      await client.query(
+        `insert into logistics.extra_run_command (
+           id, actor_employee_id, idempotency_key, territory_run_id
+         ) values ($1, $2, $3, $4)`,
+        [randomUUID(), command.actorEmployeeId, command.idempotencyKey, createdId],
+      );
+      await insertAudit(client, command, "EXTRA_RUN_CREATED", "TERRITORY_RUN", createdId, {
+        dispatchDate: command.dispatchDate,
+        reasonCode: command.reasonCode,
+        territoryId: command.territoryId,
+      });
+      return createdId;
+    });
+    const day = await this.getDay(command.dispatchDate);
+    return day.runs.find((run) => run.id === runId)!;
   }
 
   async getDay(dispatchDate: string): Promise<LogisticsDayView> {
@@ -717,7 +945,7 @@ async function assertActiveReferences(
 
 async function insertAudit(
   client: PoolClient,
-  command: { actorEmployeeId: string; correlationId: string },
+  command: { actorEmployeeId: string; correlationId: string; activeRole?: string },
   action: string,
   objectType: string,
   objectId: string | null,
@@ -728,7 +956,7 @@ async function insertAudit(
       insert into audit.event (
         id, occurred_at, actor_employee_id, active_role, action, object_type,
         object_id, correlation_id, result, metadata
-      ) values ($1, now(), $2, 'ADMIN', $3, $4, $5, $6, 'SUCCESS', $7)
+      ) values ($1, now(), $2, $8, $3, $4, $5, $6, 'SUCCESS', $7)
     `,
     [
       randomUUID(),
@@ -738,6 +966,7 @@ async function insertAudit(
       objectId,
       command.correlationId,
       metadata,
+      command.activeRole ?? "ADMIN",
     ],
   );
 }
@@ -838,6 +1067,7 @@ function mapGroup(row: GroupRow): LoadingGroupView {
 
 function mapRun(row: RunRow): TerritoryRunView {
   return {
+    attendanceVerified: row.attendance_work_shift_id !== null,
     comment: row.comment,
     dispatchDate: row.dispatch_date,
     driverEmployeeId: row.driver_employee_id,
@@ -847,6 +1077,7 @@ function mapRun(row: RunRow): TerritoryRunView {
     plannedEndAt: row.planned_end_at?.toISOString() ?? null,
     plannedStartAt: row.planned_start_at?.toISOString() ?? null,
     reasonCode: row.reason_code,
+    readyAt: row.ready_at?.toISOString() ?? null,
     runNo: row.run_no,
     sequenceNo: row.sequence_no,
     source: row.source,

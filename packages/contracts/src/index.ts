@@ -302,6 +302,7 @@ export interface LoadingGroupView {
 }
 
 export interface TerritoryRunView {
+  readonly attendanceVerified: boolean;
   readonly comment: string | null;
   readonly dispatchDate: string;
   readonly driverEmployeeId: string | null;
@@ -311,6 +312,7 @@ export interface TerritoryRunView {
   readonly plannedEndAt: string | null;
   readonly plannedStartAt: string | null;
   readonly reasonCode: string | null;
+  readonly readyAt: string | null;
   readonly runNo: number;
   readonly sequenceNo: number | null;
   readonly source: "DEFAULT" | "MANUAL" | "CALENDAR_EXCEPTION" | "EXTRA_RUN";
@@ -321,6 +323,22 @@ export interface TerritoryRunView {
   readonly vehicleId: string | null;
   readonly vehicleName: string | null;
   readonly version: number;
+}
+
+export interface DriverLogisticsDayView {
+  readonly dispatchDate: string;
+  readonly runs: readonly TerritoryRunView[];
+}
+
+export interface WarehouseLogisticsDayView {
+  readonly dispatchDate: string;
+  readonly groups: readonly LoadingGroupView[];
+  readonly runs: readonly TerritoryRunView[];
+  readonly summary: {
+    readonly ready: number;
+    readonly scheduled: number;
+    readonly total: number;
+  };
 }
 
 export interface LogisticsSetupView {

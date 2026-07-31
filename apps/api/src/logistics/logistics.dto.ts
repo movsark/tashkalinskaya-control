@@ -181,3 +181,33 @@ export class PublishDayDto {
   @IsUUID(undefined, { each: true })
   runIds!: string[];
 }
+
+export class MarkRunReadyDto {
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}
+
+export class CreateExtraRunDto {
+  @IsDateString()
+  dispatchDate!: string;
+
+  @IsUUID()
+  territoryId!: string;
+
+  @IsString()
+  @Length(3, 50)
+  reasonCode!: string;
+
+  @IsString()
+  @Length(3, 500)
+  comment!: string;
+
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+}

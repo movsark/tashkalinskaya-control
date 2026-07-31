@@ -8,6 +8,7 @@ import type {
   EmployeeAccessDetail,
   EmployeeListResponse,
   EmployeeSummary,
+  DriverLogisticsDayView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
   ImportPreview,
@@ -23,6 +24,7 @@ import type {
   TerritoryRunView,
   TerritoryView,
   VehicleView,
+  WarehouseLogisticsDayView,
 } from "@tashkalinskaya/contracts";
 import type {
   AuthenticationResponseJSON,
@@ -483,6 +485,45 @@ export async function createDefaultAssignment(
 
 export async function getLogisticsDay(dispatchDate: string): Promise<LogisticsDayView> {
   return request(`/logistics/days/${dispatchDate}`);
+}
+
+export async function getDriverLogisticsDay(dispatchDate: string): Promise<DriverLogisticsDayView> {
+  return request(`/logistics/me/days/${dispatchDate}`);
+}
+
+export async function getWarehouseLogisticsDay(
+  dispatchDate: string,
+): Promise<WarehouseLogisticsDayView> {
+  return request(`/logistics/warehouse/days/${dispatchDate}`);
+}
+
+export async function markTerritoryRunReady(
+  runId: string,
+  version: number,
+  csrfToken: string,
+): Promise<TerritoryRunView> {
+  return request(`/logistics/runs/${runId}/ready`, {
+    body: JSON.stringify({ idempotencyKey: `web-ready-${runId}`, version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createExtraTerritoryRun(
+  input: {
+    comment: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    reasonCode: string;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<TerritoryRunView> {
+  return request("/logistics/runs/extra", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function generateLogisticsDay(

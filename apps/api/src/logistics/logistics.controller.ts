@@ -16,9 +16,11 @@ import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identi
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   CreateDefaultAssignmentDto,
+  CreateExtraRunDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
   GenerateDayDto,
+  MarkRunReadyDto,
   PublishDayDto,
   UpdateRunAssignmentDto,
   UpdateTerritoryDto,
@@ -113,6 +115,18 @@ export class LogisticsController {
     return this.logistics.day(dispatchDate);
   }
 
+  @Get("me/days/:dispatchDate")
+  @RequireRoles("DRIVER")
+  driverDay(@Param("dispatchDate") dispatchDate: string, @Req() request: AuthenticatedRequest) {
+    return this.logistics.driverDay(dispatchDate, requireActorId(request));
+  }
+
+  @Get("warehouse/days/:dispatchDate")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  warehouseDay(@Param("dispatchDate") dispatchDate: string) {
+    return this.logistics.warehouseDay(dispatchDate);
+  }
+
   @Post("days/:dispatchDate/generate")
   @RequireRoles("ADMIN")
   generateDay(
@@ -143,6 +157,34 @@ export class LogisticsController {
   ) {
     return this.logistics.updateRun(
       runId,
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("runs/:runId/ready")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  markRunReady(
+    @Param("runId", ParseUUIDPipe) runId: string,
+    @Body() dto: MarkRunReadyDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.logistics.markRunReady(
+      runId,
+      dto,
+      requireActorId(request),
+      request.actor?.roles.some((role) => role.roleCode === "WAREHOUSE_KEEPER")
+        ? "WAREHOUSE_KEEPER"
+        : "ADMIN",
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("runs/extra")
+  @RequireRoles("ADMIN")
+  createExtraRun(@Body() dto: CreateExtraRunDto, @Req() request: AuthenticatedRequest) {
+    return this.logistics.createExtraRun(
       dto,
       requireActorId(request),
       requireCorrelationId(request),
