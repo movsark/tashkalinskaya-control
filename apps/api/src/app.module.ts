@@ -2,6 +2,7 @@ import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common
 
 import { AppController } from "./app.controller";
 import { AttendanceModule } from "./attendance/attendance.module";
+import { CatalogModule } from "./catalog/catalog.module";
 import { CoreModule } from "./core.module";
 import { CorrelationIdMiddleware } from "./correlation-id.middleware";
 import { HealthController } from "./health.controller";
@@ -9,7 +10,7 @@ import { HealthService } from "./health.service";
 import { IdentityModule } from "./identity/identity.module";
 
 @Module({
-  imports: [AttendanceModule, CoreModule, IdentityModule],
+  imports: [AttendanceModule, CatalogModule, CoreModule, IdentityModule],
   controllers: [AppController, HealthController],
   providers: [CorrelationIdMiddleware, HealthService],
 })

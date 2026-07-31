@@ -10,7 +10,9 @@ import type {
   EmployeeSummary,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
+  ImportPreview,
   PlatformFamily,
+  ProductListResponse,
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
@@ -394,17 +396,61 @@ export async function createEmployee(
   });
 }
 
+export async function listProducts(): Promise<ProductListResponse> {
+  return request("/catalog/products");
+}
+
+export async function previewCatalogImport(
+  file: File,
+  effectiveFrom: string,
+  csrfToken: string,
+): Promise<ImportPreview> {
+  const body = new FormData();
+  body.set("file", file);
+  body.set("effectiveFrom", effectiveFrom);
+  return request("/catalog/imports/preview", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getCatalogImport(batchId: string): Promise<ImportPreview> {
+  return request(`/catalog/imports/${batchId}`);
+}
+
+export async function applyCatalogImport(
+  batchId: string,
+  acknowledgedWarningCodes: readonly string[],
+  csrfToken: string,
+): Promise<ImportPreview> {
+  return request(`/catalog/imports/${batchId}/apply`, {
+    body: JSON.stringify({ acknowledgedWarningCodes }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function downloadCatalogTemplate(): Promise<void> {
+  await downloadFile("/catalog/imports/template", "Шаблон_массового_импорта_v1.0.xlsx");
+}
+
+export async function downloadImportIssues(batchId: string): Promise<void> {
+  await downloadFile(`/catalog/imports/${batchId}/issues.csv`, `import-${batchId}-issues.csv`);
+}
+
 async function request<Result>(path: string, init: RequestInit = {}): Promise<Result> {
   let response: Response;
   try {
+    const headers = new Headers(init.headers);
+    if (!(init.body instanceof FormData) && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
     response = await fetch(`${apiUrl}${path}`, {
       ...init,
       cache: "no-store",
       credentials: "include",
-      headers: {
-        "content-type": "application/json",
-        ...init.headers,
-      },
+      headers,
     });
   } catch {
     throw new ApiRequestError(
@@ -423,4 +469,27 @@ async function request<Result>(path: string, init: RequestInit = {}): Promise<Re
   }
   if (response.status === 204) return undefined as Result;
   return (await response.json()) as Result;
+}
+
+async function downloadFile(path: string, fileName: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}${path}`, { cache: "no-store", credentials: "include" });
+  } catch {
+    throw new ApiRequestError("Нет связи с сервером", 0, "NETWORK_ERROR");
+  }
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as Partial<ApiError> | null;
+    throw new ApiRequestError(
+      error?.message ?? "Не удалось скачать файл",
+      response.status,
+      error?.code,
+    );
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
