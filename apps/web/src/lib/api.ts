@@ -22,6 +22,12 @@ import type {
   PlanningSetupView,
   ProductionPlanView,
   ProductListResponse,
+  ProductionBatchView,
+  ProductionDefectView,
+  ProductionTaskView,
+  ProductionTransferView,
+  ProductionWarehouseQueueView,
+  ProductionWorkspaceView,
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
@@ -696,6 +702,192 @@ export async function decideStoreLateRequest(
   csrfToken: string,
 ): Promise<StoreLateChangeRequestView> {
   return request(`/store/late-requests/${requestId}/decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getProductionWorkspace(
+  productionDate: string,
+  workshopId?: string,
+): Promise<ProductionWorkspaceView> {
+  const query = new URLSearchParams({ date: productionDate });
+  if (workshopId !== undefined && workshopId !== "") query.set("workshopId", workshopId);
+  return request(`/production/workspace?${query.toString()}`);
+}
+
+export async function getProductionWarehouseQueue(): Promise<ProductionWarehouseQueueView> {
+  return request("/production/warehouse-queue");
+}
+
+export async function generateProductionTasks(
+  productionDate: string,
+  csrfToken: string,
+): Promise<ProductionWorkspaceView> {
+  return request(`/production/days/${productionDate}/generate`, {
+    body: JSON.stringify({}),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function assignProductionTask(
+  taskId: string,
+  input: {
+    participants: ReadonlyArray<{ employeeId: string; isLead: boolean }>;
+    reason?: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<ProductionTaskView> {
+  return request(`/production/tasks/${taskId}/assign`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function startProductionTask(
+  taskId: string,
+  version: number,
+  csrfToken: string,
+): Promise<ProductionTaskView> {
+  return request(`/production/tasks/${taskId}/start`, {
+    body: JSON.stringify({ version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function submitProductionBatch(
+  taskId: string,
+  input: {
+    comment?: string;
+    idempotencyKey: string;
+    producedAt: string;
+    quantity: number;
+    reasonId?: string;
+    replacementForBatchId?: string;
+    taskVersion: number;
+  },
+  csrfToken: string,
+): Promise<ProductionBatchView> {
+  return request(`/production/tasks/${taskId}/batches`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function withdrawProductionBatch(
+  batchId: string,
+  input: { reason: string; version: number },
+  csrfToken: string,
+): Promise<ProductionBatchView> {
+  return request(`/production/batches/${batchId}/withdraw`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideProductionOverproduction(
+  batchId: string,
+  input: { comment: string; decision: "APPROVE" | "REJECT"; version: number },
+  csrfToken: string,
+): Promise<ProductionBatchView> {
+  return request(`/production/batches/${batchId}/overproduction-decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function closeProductionTask(
+  taskId: string,
+  input: { comment?: string; reasonId?: string; version: number },
+  csrfToken: string,
+): Promise<ProductionTaskView> {
+  return request(`/production/tasks/${taskId}/close`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function submitProductionDefect(
+  taskId: string,
+  input: {
+    allegedEmployeeId?: string;
+    comment: string;
+    idempotencyKey: string;
+    occurredAt: string;
+    quantity: number;
+    reasonId: string;
+    sourceBatchId?: string;
+  },
+  csrfToken: string,
+): Promise<ProductionDefectView> {
+  return request(`/production/tasks/${taskId}/defects`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideProductionDefect(
+  defectId: string,
+  input: {
+    comment: string;
+    decision: "CONFIRM" | "REJECT" | "RETURN";
+    version: number;
+  },
+  csrfToken: string,
+): Promise<ProductionDefectView> {
+  return request(`/production/defects/${defectId}/decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function resubmitProductionDefect(
+  defectId: string,
+  input: { comment: string; version: number },
+  csrfToken: string,
+): Promise<ProductionDefectView> {
+  return request(`/production/defects/${defectId}/resubmit`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createProductionTransfer(
+  input: {
+    fromWorkshopId: string;
+    productId: string;
+    reason: string;
+    toWorkshopId: string;
+    validFrom: string;
+    validUntil: string;
+  },
+  csrfToken: string,
+): Promise<ProductionTransferView> {
+  return request("/production/transfers", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideProductionTransfer(
+  transferId: string,
+  input: { comment: string; decision: "APPROVE" | "REJECT"; version: number },
+  csrfToken: string,
+): Promise<ProductionTransferView> {
+  return request(`/production/transfers/${transferId}/decision`, {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

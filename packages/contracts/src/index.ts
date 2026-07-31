@@ -536,3 +536,140 @@ export interface StoreLateChangeRequestView {
   readonly submittedZero: boolean;
   readonly version: number;
 }
+
+export interface ProductionReasonView {
+  readonly code: string;
+  readonly displayName: string;
+  readonly id: string;
+  readonly kind: "DEFECT" | "OVERPRODUCTION" | "SHORTFALL";
+  readonly photoRequired: boolean;
+}
+
+export interface ProductionEmployeeView {
+  readonly fullName: string;
+  readonly id: string;
+  readonly isPresent: boolean;
+  readonly personnelNumber: string;
+}
+
+export interface ProductionAssignmentView {
+  readonly assignedAt: string;
+  readonly employeeId: string;
+  readonly employeeName: string;
+  readonly id: string;
+  readonly isLead: boolean;
+}
+
+export interface ProductionBatchView {
+  readonly id: string;
+  readonly overproduction: boolean;
+  readonly overproductionComment: string | null;
+  readonly producedAt: string;
+  readonly productionDate: string;
+  readonly productionWindow: "DAY" | "NIGHT";
+  readonly quantity: number;
+  readonly replacementForBatchId: string | null;
+  readonly status:
+    | "ACCEPTED_BY_WAREHOUSE"
+    | "AWAITING_WAREHOUSE"
+    | "PENDING_OVERPRODUCTION"
+    | "REJECTED_FOR_CORRECTION"
+    | "REPLACED"
+    | "WAREHOUSE_REVIEW"
+    | "WITHDRAWN_BEFORE_REVIEW";
+  readonly submittedAt: string;
+  readonly submittedById: string;
+  readonly submittedByName: string;
+  readonly version: number;
+}
+
+export interface ProductionDefectView {
+  readonly comment: string;
+  readonly decisionComment: string | null;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly quantity: number;
+  readonly reasonCode: string;
+  readonly reasonName: string;
+  readonly reportedById: string;
+  readonly reportedByName: string;
+  readonly status: "CONFIRMED" | "REJECTED" | "RETURNED_FOR_CORRECTION" | "SUBMITTED";
+  readonly taskId: string;
+  readonly version: number;
+}
+
+export interface ProductionTaskView {
+  readonly acceptedQuantity: number;
+  readonly assignments: readonly ProductionAssignmentView[];
+  readonly awaitingWarehouseQuantity: number;
+  readonly batches: readonly ProductionBatchView[];
+  readonly confirmedDefectQuantity: number;
+  readonly correctionOfTaskId: string | null;
+  readonly declaredQuantity: number;
+  readonly defects: readonly ProductionDefectView[];
+  readonly id: string;
+  readonly overproductionQuantity: number;
+  readonly planId: string;
+  readonly planLineId: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly productionDate: string;
+  readonly productionWindow: "DAY" | "NIGHT";
+  readonly rejectedQuantity: number;
+  readonly remainingToDeclare: number;
+  readonly shortfallQuantity: number;
+  readonly sourceTransferId: string | null;
+  readonly status:
+    | "ASSIGNED"
+    | "CANCELLED_BY_ADMIN"
+    | "COMPLETED"
+    | "CREATED"
+    | "IN_PROGRESS"
+    | "PARTIALLY_COMPLETED";
+  readonly targetQuantity: number;
+  readonly version: number;
+  readonly withdrawnQuantity: number;
+  readonly workshopId: string;
+  readonly workshopName: string;
+}
+
+export interface ProductionTransferView {
+  readonly decisionComment: string | null;
+  readonly fromWorkshopId: string;
+  readonly fromWorkshopName: string;
+  readonly id: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly requesterName: string;
+  readonly requesterReason: string;
+  readonly status: "APPROVED" | "REJECTED" | "SUBMITTED";
+  readonly toWorkshopId: string;
+  readonly toWorkshopName: string;
+  readonly validFrom: string;
+  readonly validUntil: string;
+  readonly version: number;
+}
+
+export interface ProductionWorkspaceView {
+  readonly availableTransferWorkshops: readonly { id: string; name: string }[];
+  readonly employees: readonly ProductionEmployeeView[];
+  readonly productionDate: string;
+  readonly reasons: readonly ProductionReasonView[];
+  readonly serverTime: string;
+  readonly tasks: readonly ProductionTaskView[];
+  readonly transfers: readonly ProductionTransferView[];
+  readonly workshopId: string | null;
+  readonly workshops: readonly { id: string; name: string }[];
+}
+
+export interface ProductionWarehouseQueueView {
+  readonly batches: readonly (ProductionBatchView & {
+    readonly productCode: string;
+    readonly productName: string;
+    readonly taskId: string;
+    readonly workshopId: string;
+    readonly workshopName: string;
+  })[];
+  readonly serverTime: string;
+}
