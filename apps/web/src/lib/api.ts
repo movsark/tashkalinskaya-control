@@ -1,11 +1,15 @@
 import type {
   ApiError,
+  AttendanceControlView,
+  AttendanceCorrectionView,
   AttendanceQrView,
   AttendanceScanResult,
   AuthenticatedUser,
   EmployeeAccessDetail,
   EmployeeListResponse,
   EmployeeSummary,
+  ManualAttendanceReasonView,
+  ManualAttendanceResult,
   PlatformFamily,
   RoleCode,
   RoleAssignmentView,
@@ -225,6 +229,75 @@ export async function scanAttendanceQr(
   csrfToken: string,
 ): Promise<AttendanceScanResult> {
   return request("/attendance/terminal/scan", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getAttendanceControl(
+  date?: string,
+  departmentId?: string,
+): Promise<AttendanceControlView> {
+  const query = new URLSearchParams();
+  if (date !== undefined) query.set("date", date);
+  if (departmentId !== undefined) query.set("departmentId", departmentId);
+  const suffix = query.size === 0 ? "" : `?${query.toString()}`;
+  return request(`/attendance/control${suffix}`);
+}
+
+export async function listManualAttendanceReasons(): Promise<
+  readonly ManualAttendanceReasonView[]
+> {
+  return request("/attendance/manual-reasons");
+}
+
+export async function recordManualAttendance(
+  input: {
+    comment?: string;
+    employeeId: string;
+    idempotencyKey: string;
+    reasonId: string;
+  },
+  csrfToken: string,
+): Promise<ManualAttendanceResult> {
+  return request("/attendance/manual", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function listAttendanceCorrections(
+  status?: "APPROVED" | "REJECTED" | "SUBMITTED",
+): Promise<readonly AttendanceCorrectionView[]> {
+  const suffix = status === undefined ? "" : `?status=${status}`;
+  return request(`/attendance/corrections${suffix}`);
+}
+
+export async function createAttendanceCorrection(
+  input: {
+    comment?: string;
+    proposedEffectiveAt: string;
+    proposedEventType: "ARRIVAL" | "DEPARTURE";
+    reasonId: string;
+    workShiftId: string;
+  },
+  csrfToken: string,
+): Promise<AttendanceCorrectionView> {
+  return request("/attendance/corrections", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideAttendanceCorrection(
+  correctionId: string,
+  input: { comment: string; decision: "APPROVED" | "REJECTED" },
+  csrfToken: string,
+): Promise<AttendanceCorrectionView> {
+  return request(`/attendance/corrections/${correctionId}/decision`, {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

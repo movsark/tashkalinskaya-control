@@ -195,7 +195,8 @@ export default function EmployeesPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Сотрудники и доступ · <Link href="/terminals">планшеты</Link>
+            Сотрудники и доступ · <Link href="/attendance/control">табель</Link> ·{" "}
+            <Link href="/terminals">планшеты</Link>
           </small>
         </div>
       </header>
