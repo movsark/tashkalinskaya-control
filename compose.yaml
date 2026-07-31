@@ -43,10 +43,13 @@ services:
         condition: service_completed_successfully
     environment:
       API_PORT: 4000
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER:-local-auth-token-pepper-change-me}
       CORS_ORIGINS: http://localhost:3000
+      CSRF_SECRET: ${CSRF_SECRET:-local-csrf-secret-change-me-now-x}
       DATABASE_REQUIRED: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
       NODE_ENV: production
+      SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER:-local-session-pepper-change-me-now}
     healthcheck:
       test:
         - CMD

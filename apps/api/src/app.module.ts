@@ -1,21 +1,16 @@
 import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
 
 import { AppController } from "./app.controller";
-import { API_CONFIG, loadApiConfig } from "./config";
+import { CoreModule } from "./core.module";
 import { CorrelationIdMiddleware } from "./correlation-id.middleware";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
+import { IdentityModule } from "./identity/identity.module";
 
 @Module({
+  imports: [CoreModule, IdentityModule],
   controllers: [AppController, HealthController],
-  providers: [
-    {
-      provide: API_CONFIG,
-      useFactory: loadApiConfig,
-    },
-    CorrelationIdMiddleware,
-    HealthService,
-  ],
+  providers: [CorrelationIdMiddleware, HealthService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

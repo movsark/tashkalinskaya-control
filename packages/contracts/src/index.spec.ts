@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ServiceHealth } from "./index";
+import { ROLE_CODES, type ServiceHealth } from "./index";
 
 describe("ServiceHealth contract", () => {
   it("keeps the public health response explicit", () => {
@@ -13,5 +13,13 @@ describe("ServiceHealth contract", () => {
 
     expect(response.state).toBe("healthy");
     expect(response.service).toBe("api");
+  });
+});
+
+describe("identity contracts", () => {
+  it("contains every approved MVP role", () => {
+    expect(ROLE_CODES).toHaveLength(9);
+    expect(ROLE_CODES).toContain("ADMIN");
+    expect(ROLE_CODES).toContain("ATTENDANCE_ONLY");
   });
 });

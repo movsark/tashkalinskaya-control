@@ -2,19 +2,19 @@ import { SystemReadiness } from "../components/system-readiness";
 
 const foundations = [
   {
-    detail: "Next.js PWA · телефон, iPad, офис",
-    state: "Создано",
-    title: "Рабочий интерфейс",
+    detail: "Одноразовый код · парольная фраза · Argon2id",
+    state: "B05",
+    title: "Персональный вход",
   },
   {
-    detail: "NestJS · REST/OpenAPI · health-check",
-    state: "Создано",
-    title: "Прикладной API",
+    detail: "9 ролей MVP · фабрика, цех, территория, склад, магазин",
+    state: "B05",
+    title: "Роли и области",
   },
   {
-    detail: "PostgreSQL 18 · миграции · outbox",
-    state: "Подготовлено",
-    title: "Надёжные данные",
+    detail: "Samsung или iPhone · отзыв сессий администратором",
+    state: "B05",
+    title: "Одно устройство",
   },
 ];
 
@@ -36,17 +36,19 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Первый программный срез · B04.1</p>
-          <h1>Основа приложения работает</h1>
+          <p className="eyebrow">Первый функциональный модуль · B05</p>
+          <h1>Персональный доступ сотрудников</h1>
           <p className="hero__lead">
-            Созданы отдельные процессы интерфейса, API и фоновых заданий. Следующий функциональный
-            модуль — авторизация и управление сотрудниками.
+            У каждого сотрудника собственная учетная запись, назначенные роли и одно привязанное
+            личное устройство. Общих аккаунтов цеха нет.
           </p>
           <div className="hero__actions">
-            <a className="primary-link" href="http://localhost:4000/api/docs">
-              Открыть API
+            <a className="primary-link" href="/login">
+              Войти в систему
             </a>
-            <span className="secondary-note">Данные пока только тестовые</span>
+            <a className="text-link" href="/activate">
+              Активировать устройство
+            </a>
           </div>
         </div>
 
@@ -73,10 +75,10 @@ export default function HomePage() {
       <section className="content-section" aria-labelledby="foundation-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Технический фундамент</p>
-            <h2 id="foundation-title">Три процесса, одна версия</h2>
+            <p className="eyebrow">Контур доступа</p>
+            <h2 id="foundation-title">Сотрудник, роль и устройство</h2>
           </div>
-          <p>Все части собираются и проверяются вместе до попадания в main.</p>
+          <p>Права проверяются сервером при каждом запросе и меняются немедленно.</p>
         </div>
 
         <div className="foundation-grid">
@@ -94,11 +96,11 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B05 · Авторизация и сотрудники</h2>
+          <h2>B05.2 · Устройства и терминалы</h2>
         </div>
         <p>
-          Вход по телефону и PIN, роли, области доступа, одно личное устройство и административное
-          управление сотрудниками.
+          Следующий срез завершит криптографический challenge устройства, быстрый локальный PIN,
+          замену телефона и регистрацию фабричного iPad.
         </p>
       </section>
 

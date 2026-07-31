@@ -6,6 +6,9 @@
 
 - пароли и строки подключения к БД/Redis;
 - ключи подписи сессий, QR и API;
+- pepper одноразовых кодов `AUTH_TOKEN_PEPPER`;
+- pepper серверных сессий `SESSION_TOKEN_PEPPER`;
+- ключ CSRF `CSRF_SECRET`;
 - приватные ключи Web Push;
 - токены GitHub, Timeweb, S3 и мониторинга;
 - ключи шифрования резервных копий;

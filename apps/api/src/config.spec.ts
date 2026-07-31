@@ -6,12 +6,19 @@ describe("loadApiConfig", () => {
   it("loads safe local defaults", () => {
     const config = loadApiConfig({});
 
+    expect(config.authTokenPepper.length).toBeGreaterThanOrEqual(32);
+    expect(config.csrfSecret.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(4000);
     expect(config.databaseRequired).toBe(false);
     expect(config.corsOrigins).toEqual(["http://localhost:3000"]);
+    expect(config.sessionTokenPepper.length).toBeGreaterThanOrEqual(32);
   });
 
   it("rejects an invalid port", () => {
     expect(() => loadApiConfig({ API_PORT: "70000" })).toThrow();
+  });
+
+  it("does not allow local identity secrets in production", () => {
+    expect(() => loadApiConfig({ NODE_ENV: "production" })).toThrow("AUTH_TOKEN_PEPPER");
   });
 });
