@@ -119,6 +119,21 @@ export class RolesGuard implements CanActivate {
   }
 }
 
+@Injectable()
+export class StepUpGuard implements CanActivate {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const expiresAt = request.actor?.stepUpExpiresAt;
+    if (expiresAt === null || expiresAt === undefined || expiresAt <= new Date()) {
+      throw new ForbiddenException({
+        code: "STEP_UP_REQUIRED",
+        message: "Повторно подтвердите пароль и системный PIN или биометрию",
+      });
+    }
+    return true;
+  }
+}
+
 function authenticationRequired(): UnauthorizedException {
   return new UnauthorizedException({
     code: "AUTHENTICATION_REQUIRED",

@@ -9,6 +9,9 @@
 - pepper одноразовых кодов `AUTH_TOKEN_PEPPER`;
 - pepper серверных сессий `SESSION_TOKEN_PEPPER`;
 - ключ CSRF `CSRF_SECRET`;
+- домен доверяющей стороны WebAuthn `WEBAUTHN_RP_ID` и точный список
+  разрешенных origins `WEBAUTHN_ORIGINS` (это не секреты, но подмена этих
+  настроек меняет границу доверия);
 - приватные ключи Web Push;
 - токены GitHub, Timeweb, S3 и мониторинга;
 - ключи шифрования резервных копий;

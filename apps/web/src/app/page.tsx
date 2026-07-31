@@ -2,8 +2,8 @@ import { SystemReadiness } from "../components/system-readiness";
 
 const foundations = [
   {
-    detail: "Одноразовый код · парольная фраза · Argon2id",
-    state: "B05",
+    detail: "Парольная фраза · Argon2id · системный PIN или биометрия",
+    state: "B05.2",
     title: "Персональный вход",
   },
   {
@@ -12,8 +12,8 @@ const foundations = [
     title: "Роли и области",
   },
   {
-    detail: "Samsung или iPhone · отзыв сессий администратором",
-    state: "B05",
+    detail: "Samsung, iPhone или iPad · WebAuthn · замена через администратора",
+    state: "B05.2",
     title: "Одно устройство",
   },
 ];
@@ -96,11 +96,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B05.2 · Устройства и терминалы</h2>
+          <h2>B05.2 · Защищенные устройства готово</h2>
         </div>
         <p>
-          Следующий срез завершит криптографический challenge устройства, быстрый локальный PIN,
-          замену телефона и регистрацию фабричного iPad.
+          Криптографический challenge устройства, системный PIN/биометрия, замена телефона и
+          регистрация фабричного iPad вошли в рабочий контур. Следующий блок — B06, табель и
+          динамический QR.
         </p>
       </section>
 

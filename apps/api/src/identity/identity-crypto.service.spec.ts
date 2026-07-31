@@ -30,6 +30,14 @@ describe("IdentityCryptoService", () => {
     expect(service.verifyCsrfToken(sessionToken, "wrong")).toBe(false);
   });
 
+  it("stores WebAuthn challenges only as purpose-separated HMAC hashes", () => {
+    const challenge = "base64url-webauthn-challenge";
+
+    expect(service.hashChallenge(challenge)).toHaveLength(64);
+    expect(service.hashChallenge(challenge)).not.toBe(service.hashAccessCode(challenge));
+    expect(service.hashChallenge(challenge)).not.toContain(challenge);
+  });
+
   it("normalizes equivalent login forms", () => {
     expect(service.normalizeLogin("  Админ  ")).toBe("админ");
     expect(service.normalizePersonnelNumber(" т-001 ")).toBe("Т-001");

@@ -4,20 +4,28 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { EmployeesController } from "./employees.controller";
 import { EmployeesService } from "./employees.service";
+import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
-import { CsrfGuard, RolesGuard, SessionAuthGuard } from "./identity.guards";
+import { CsrfGuard, RolesGuard, SessionAuthGuard, StepUpGuard } from "./identity.guards";
 import { IdentityRepository } from "./identity.repository";
+import { TerminalsController } from "./terminals.controller";
+import { TerminalsService } from "./terminals.service";
+import { WebAuthnService } from "./webauthn.service";
 
 @Module({
-  controllers: [AuthController, EmployeesController],
+  controllers: [AuthController, EmployeesController, TerminalsController],
   providers: [
     AuthService,
     CsrfGuard,
+    DeviceSecurityRepository,
     EmployeesService,
     IdentityCryptoService,
     IdentityRepository,
     RolesGuard,
     SessionAuthGuard,
+    StepUpGuard,
+    TerminalsService,
+    WebAuthnService,
   ],
 })
 export class IdentityModule {}

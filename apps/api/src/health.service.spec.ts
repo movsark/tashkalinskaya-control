@@ -13,6 +13,9 @@ const localConfig: ApiConfig = {
   nodeEnvironment: "test",
   port: 4000,
   sessionTokenPepper: "test-session-pepper-32-characters",
+  webauthnOrigins: ["http://localhost:3000"],
+  webauthnRpId: "localhost",
+  webauthnRpName: "Ташкалинская фабрика",
 };
 
 describe("HealthService", () => {
