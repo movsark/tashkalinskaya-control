@@ -78,6 +78,20 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
     ).rejects.toMatchObject({ code: "23505" });
   });
 
+  it("returns the employee access card with device history", async () => {
+    await expect(repository.getEmployeeAccess(employeeId)).resolves.toMatchObject({
+      devices: [
+        {
+          deviceLabel: "Первое устройство",
+          id: deviceId,
+          platformFamily: "IOS",
+          status: "ACTIVE",
+        },
+      ],
+      employee: { id: employeeId, login },
+    });
+  });
+
   it("stores a single-use WebAuthn challenge bound to account and device", async () => {
     const challengeId = await securityRepository.createChallenge({
       accountId,

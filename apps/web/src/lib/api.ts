@@ -1,10 +1,12 @@
 import type {
   ApiError,
   AuthenticatedUser,
+  EmployeeAccessDetail,
   EmployeeListResponse,
   EmployeeSummary,
   PlatformFamily,
   RoleCode,
+  RoleAssignmentView,
 } from "@tashkalinskaya/contracts";
 import type {
   AuthenticationResponseJSON,
@@ -209,6 +211,50 @@ export async function createTerminal(
 
 export async function listEmployees(): Promise<EmployeeListResponse> {
   return request<EmployeeListResponse>("/employees");
+}
+
+export async function getEmployeeAccess(employeeId: string): Promise<EmployeeAccessDetail> {
+  return request(`/employees/${employeeId}/access`);
+}
+
+export async function updateEmployeeStatus(
+  employeeId: string,
+  input: { reason: string; status: EmployeeSummary["employmentStatus"]; version: number },
+  csrfToken: string,
+): Promise<EmployeeSummary> {
+  return request(`/employees/${employeeId}/status`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PATCH",
+  });
+}
+
+export async function replaceEmployeeRoles(
+  employeeId: string,
+  input: {
+    reason: string;
+    roles: ReadonlyArray<Pick<RoleAssignmentView, "roleCode" | "scopeId" | "scopeType">>;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<EmployeeSummary> {
+  return request(`/employees/${employeeId}/roles`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
+}
+
+export async function revokePersonalDevice(
+  deviceId: string,
+  reason: string,
+  csrfToken: string,
+): Promise<void> {
+  return request(`/employees/devices/${deviceId}/revoke`, {
+    body: JSON.stringify({ reason }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function createEmployee(
