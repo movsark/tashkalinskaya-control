@@ -1,0 +1,17 @@
+{
+  "contractVersion": "1.0",
+  "messageId": "19000000-0000-4000-8000-000000000001",
+  "correlationId": "19000000-0000-4000-8000-000000000002",
+  "idempotencyKey": "product:CAKE-DEMO-01:revision:1",
+  "messageType": "MASTER_DATA_UPSERT",
+  "operationCode": "PRODUCT_UPSERT",
+  "sourceSystem": "TASHKALINSKAYA_CONTROL",
+  "targetSystem": "ONE_C",
+  "occurredAt": "2026-08-01T10:00:00.000Z",
+  "payload": {
+    "productCode": "CAKE-DEMO-01",
+    "name": "Торт демонстрационный",
+    "unitCode": "PCS",
+    "status": "ACTIVE"
+  }
+}

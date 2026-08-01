@@ -1229,3 +1229,5 @@ export interface ReportSnapshot {
   readonly title: string;
   readonly totals: Readonly<Record<string, number>>;
 }
+
+export * from "./integration";
