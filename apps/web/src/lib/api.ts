@@ -15,6 +15,7 @@ import type {
   ManualAttendanceResult,
   NormChangeRequestView,
   ImportPreview,
+  InventoryWorkspaceView,
   LogisticsDayView,
   LogisticsSetupView,
   LoadingDriverDayView,
@@ -1177,6 +1178,62 @@ export async function createWarehouseCorrection(
   csrfToken: string,
 ): Promise<void> {
   await request("/warehouse/corrections", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getInventoryWorkspace(date: string): Promise<InventoryWorkspaceView> {
+  return request(`/inventory/workspace?date=${encodeURIComponent(date)}`);
+}
+
+export async function openInventory(
+  input: { businessDate: string; idempotencyKey: string; reason?: string },
+  csrfToken: string,
+): Promise<{ sessionId: string; versionNo: number }> {
+  return request("/inventory/sessions", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function countInventoryLine(
+  lineId: string,
+  input: { actualQuantity: number; idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ lineId: string; version: number }> {
+  return request(`/inventory/lines/${lineId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
+}
+
+export async function submitInventory(
+  sessionId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ discrepancyCount: number; sessionId: string; status: string }> {
+  return request(`/inventory/sessions/${sessionId}/submit`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function resolveInventoryDiscrepancy(
+  discrepancyId: string,
+  input: {
+    comment: string;
+    idempotencyKey: string;
+    resolutionCode: "APPLY_CORRECTION" | "EXPLAINED_NO_STOCK_CHANGE";
+    version: number;
+  },
+  csrfToken: string,
+): Promise<{ correctionId: string | null; discrepancyId: string; status: string }> {
+  return request(`/inventory/discrepancies/${discrepancyId}/resolve`, {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

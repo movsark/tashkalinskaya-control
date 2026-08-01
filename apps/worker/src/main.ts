@@ -106,8 +106,9 @@ async function publishPlanIfDue(database: Pool): Promise<PlanningCycleResult> {
     );
     const result = await publishScheduledPlan(client, {
       actorEmployeeId: null,
-      allowPlaceholderInputs:
-        config.nodeEnvironment === "development" || config.nodeEnvironment === "test",
+      // B14 requires publication from the system ledger when the physical count
+      // is late; the resulting snapshot carries INVENTORY_NOT_CONFIRMED.
+      allowPlaceholderInputs: true,
       correlationId: randomUUID(),
       productionDate,
       triggerSource: "SCHEDULER",

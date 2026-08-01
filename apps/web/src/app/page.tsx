@@ -46,6 +46,11 @@ const foundations = [
     state: "B13.1",
     title: "Погрузка",
   },
+  {
+    detail: "Версионируемый физический пересчёт, расхождения и связь с планом после 10:00",
+    state: "B14.1",
+    title: "Инвентаризация",
+  },
 ];
 
 export default function HomePage() {
@@ -66,7 +71,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B13</p>
+          <p className="eyebrow">Разработка MVP · B05–B14</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -93,6 +98,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/warehouse">
               Открыть склад
+            </a>
+            <a className="text-link" href="/warehouse/inventory">
+              Инвентаризация
             </a>
           </div>
         </div>
@@ -121,7 +129,7 @@ export default function HomePage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Готовые рабочие срезы</p>
-            <h2 id="foundation-title">От доступа до подтверждённой погрузки</h2>
+            <h2 id="foundation-title">От доступа до подтверждённого остатка</h2>
           </div>
           <p>Каждый модуль использует серверные права, аудит и PostgreSQL-транзакции.</p>
         </div>
@@ -141,12 +149,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B14 · Инвентаризация и поиск расхождений</h2>
+          <h2>B15 · Годный возврат и общий пул</h2>
         </div>
         <p>
-          Погрузка уже резервирует остаток и завершается только после подтверждения кладовщика и
-          водителя. Следующий срез добавит ежедневный физический пересчёт и автоматический разбор
-          расхождений.
+          Ежедневный пересчёт уже связан с системным остатком и планом производства. Следующий срез
+          примет годный возврат от водителей и даст администратору распределять общий пул между
+          территориями.
         </p>
       </section>
 

@@ -180,7 +180,9 @@ export class PlanningService {
   }
 
   private allowsPlaceholderInputs(): boolean {
-    return this.config.nodeEnvironment === "development" || this.config.nodeEnvironment === "test";
+    // B14 provides a safe system-ledger fallback with an explicit warning when
+    // the physical inventory has not been submitted by 10:00.
+    return true;
   }
 }
 

@@ -4,11 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadApiConfig } from "../config";
 import { DatabaseService } from "../database.service";
+import { InventoryRepository } from "../inventory/inventory.repository";
 import { PlanningRepository } from "./planning.repository";
 
 const hasDatabase = typeof process.env.DATABASE_URL === "string";
 const database = new DatabaseService(loadApiConfig(process.env));
 const repository = new PlanningRepository(database);
+const inventoryRepository = new InventoryRepository(database);
 const adminId = randomUUID();
 const driverId = randomUUID();
 const otherDriverId = randomUUID();
@@ -304,6 +306,45 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     });
     expect(blocked).toMatchObject({ code: "PLACEHOLDER_INPUTS_DISABLED", status: "FAILED" });
 
+    const inventoryActor = {
+      deviceId: randomUUID(),
+      employeeId: adminId,
+      roles: [
+        {
+          id: randomUUID(),
+          roleCode: "ADMIN" as const,
+          scopeId: null,
+          scopeType: "FACTORY" as const,
+        },
+      ],
+    };
+    const inventory = await inventoryRepository.open({
+      actor: inventoryActor,
+      businessDate: wednesday,
+      correlationId: randomUUID(),
+      idempotencyKey: `B09-INVENTORY-${randomUUID()}`,
+      reason: null,
+    });
+    let inventoryWorkspace = await inventoryRepository.workspace(wednesday, inventoryActor);
+    for (const line of inventoryWorkspace.session!.lines) {
+      await inventoryRepository.count({
+        actor: inventoryActor,
+        actualQuantity: line.systemQuantity,
+        correlationId: randomUUID(),
+        idempotencyKey: `B09-COUNT-${line.id}-${randomUUID()}`,
+        lineId: line.id,
+        version: line.version,
+      });
+    }
+    inventoryWorkspace = await inventoryRepository.workspace(wednesday, inventoryActor);
+    await inventoryRepository.submit({
+      actor: inventoryActor,
+      correlationId: randomUUID(),
+      idempotencyKey: `B09-SUBMIT-${randomUUID()}`,
+      sessionId: inventory.sessionId,
+      version: inventoryWorkspace.session!.version,
+    });
+
     const published = await repository.runProductionPlan({
       actorEmployeeId: adminId,
       allowPlaceholderInputs: true,
@@ -312,6 +353,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     });
     if (published.status === "FAILED") throw new Error(JSON.stringify(published));
     expect(published).toMatchObject({ attempts: 2, status: "PUBLISHED", version: 1 });
+    expect(published.warnings).not.toContain("INVENTORY_NOT_CONFIRMED");
     expect(published.productionLines).toContainEqual(
       expect.objectContaining({ productId, quantity: 9, workshopId }),
     );
