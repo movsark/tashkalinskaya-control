@@ -60,6 +60,12 @@ jobs:
       - name: Validate repository
         run: bash scripts/check-repository.sh
 
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser and HTTP regression
+        run: npm run test:e2e
+
   container-build:
     needs: validate
     runs-on: ubuntu-latest

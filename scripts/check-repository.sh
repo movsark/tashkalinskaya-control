@@ -50,6 +50,7 @@ fi
 bash scripts/check-sensitive-files.sh
 node --check prototypes/ux/app.js
 node scripts/check-links.mjs
+npm run test:load:validate
 
 if [[ -f package.json ]]; then
   npm run check
