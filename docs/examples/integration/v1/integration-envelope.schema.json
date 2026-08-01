@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tashkalinskaya:integration-envelope:1.0",
+  "title": "Tashkalinskaya integration envelope v1.0 draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "messageId",
+    "correlationId",
+    "idempotencyKey",
+    "messageType",
+    "operationCode",
+    "sourceSystem",
+    "targetSystem",
+    "occurredAt",
+    "payload"
+  ],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 200 },
+    "messageType": {
+      "enum": ["MASTER_DATA_UPSERT", "OPERATION_POSTED", "RECONCILIATION_STATUS"]
+    },
+    "operationCode": {
+      "enum": [
+        "PRODUCT_UPSERT",
+        "TERRITORY_UPSERT",
+        "DRIVER_UPSERT",
+        "WAREHOUSE_RECEIPT",
+        "LOADING_DISPATCH",
+        "GOOD_RETURN_RECEIPT",
+        "SPOILAGE_WRITEOFF",
+        "INVENTORY_CORRECTION",
+        "ATTENDANCE_DAY"
+      ]
+    },
+    "sourceSystem": {
+      "enum": ["TASHKALINSKAYA_CONTROL", "ONE_C", "AGENT_PLUS"]
+    },
+    "targetSystem": {
+      "enum": ["TASHKALINSKAYA_CONTROL", "ONE_C", "AGENT_PLUS"]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" }
+  }
+}

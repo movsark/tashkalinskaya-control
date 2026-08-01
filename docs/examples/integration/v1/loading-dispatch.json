@@ -1,0 +1,24 @@
+{
+  "contractVersion": "1.0",
+  "messageId": "19000000-0000-4000-8000-000000000011",
+  "correlationId": "19000000-0000-4000-8000-000000000012",
+  "idempotencyKey": "loading:19000000-0000-4000-8000-000000000013:revision:1",
+  "messageType": "OPERATION_POSTED",
+  "operationCode": "LOADING_DISPATCH",
+  "sourceSystem": "TASHKALINSKAYA_CONTROL",
+  "targetSystem": "AGENT_PLUS",
+  "occurredAt": "2026-08-01T06:30:00.000Z",
+  "payload": {
+    "internalDocumentId": "19000000-0000-4000-8000-000000000013",
+    "businessDate": "2026-08-01",
+    "revision": 1,
+    "lines": [
+      {
+        "productCode": "CAKE-DEMO-01",
+        "territoryCode": "TERRITORY-09",
+        "quantity": 12,
+        "unitCode": "PCS"
+      }
+    ]
+  }
+}
