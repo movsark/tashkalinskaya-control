@@ -17,7 +17,9 @@ import type {
   ImportPreview,
   LogisticsDayView,
   LogisticsSetupView,
+  LoadingDriverDayView,
   LoadingGroupView,
+  LoadingWarehouseDayView,
   PlatformFamily,
   PlanningSetupView,
   ProductionPlanView,
@@ -518,6 +520,106 @@ export async function markTerritoryRunReady(
 ): Promise<TerritoryRunView> {
   return request(`/logistics/runs/${runId}/ready`, {
     body: JSON.stringify({ idempotencyKey: `web-ready-${runId}`, version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getLoadingWarehouseDay(
+  dispatchDate: string,
+): Promise<LoadingWarehouseDayView> {
+  return request(`/loading/warehouse/days/${dispatchDate}`);
+}
+
+export async function getLoadingDriverDay(dispatchDate: string): Promise<LoadingDriverDayView> {
+  return request(`/loading/driver/days/${dispatchDate}`);
+}
+
+export async function openLoadingGroup(
+  groupId: string,
+  version: number,
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/groups/${groupId}/open`, {
+    body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createLoadingLine(
+  sessionId: string,
+  input: { comment?: string; productId: string; quantity: number; sessionVersion: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/sessions/${sessionId}/lines`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function reviseLoadingLine(
+  lineId: string,
+  input: { comment: string; quantity: number; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
+}
+
+export async function reassignLoadingLine(
+  lineId: string,
+  input: { reason: string; targetSessionId: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/reassign`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function respondLoadingLine(
+  lineId: string,
+  input: {
+    counterQuantity?: number;
+    reason?: string;
+    responseType: "CONFIRM" | "COUNTER" | "REJECT";
+    revisionId: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/respond`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function confirmLoadingByWarehouse(
+  sessionId: string,
+  version: number,
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/sessions/${sessionId}/warehouse-confirm`, {
+    body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), version }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function confirmLoadingByDriver(
+  sessionId: string,
+  version: number,
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/sessions/${sessionId}/driver-confirm`, {
+    body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), version }),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });

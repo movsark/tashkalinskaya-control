@@ -748,3 +748,98 @@ export interface WarehouseWorkspaceView {
   readonly serverTime: string;
   readonly warehouseName: string;
 }
+
+export interface LoadingPlanSnapshotView {
+  readonly allocatedFreeStock: number;
+  readonly allocatedGoodReturn: number;
+  readonly newProduction: number;
+  readonly oneOffQuantity: number | null;
+  readonly plannedQuantity: number;
+  readonly weeklyNormQuantity: number;
+}
+
+export interface LoadingLineView extends LoadingPlanSnapshotView {
+  readonly comment: string | null;
+  readonly counterQuantity: number | null;
+  readonly currentRevisionId: string;
+  readonly currentRevisionNo: number;
+  readonly id: string;
+  readonly isOverPlan: boolean;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly responseReason: string | null;
+  readonly responseType: "CONFIRM" | "COUNTER" | "REJECT" | null;
+  readonly status: "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
+  readonly version: number;
+}
+
+export interface LoadingSessionView {
+  readonly completedAt: string | null;
+  readonly dispatchDate: string;
+  readonly driverEmployeeId: string;
+  readonly driverFinalAt: string | null;
+  readonly driverName: string;
+  readonly groupId: string;
+  readonly groupNo: number;
+  readonly id: string;
+  readonly lines: readonly LoadingLineView[];
+  readonly runId: string;
+  readonly runNo: number;
+  readonly sequenceNo: number;
+  readonly startedAt: string;
+  readonly status: "CANCELLED" | "COMPLETED" | "IN_PROGRESS" | "WAREHOUSE_CONFIRMED";
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly totalQuantity: number;
+  readonly unresolvedLines: number;
+  readonly vehicleName: string;
+  readonly version: number;
+  readonly warehouseFinalAt: string | null;
+}
+
+export interface LoadingRunPreviewView {
+  readonly driverName: string | null;
+  readonly id: string;
+  readonly runNo: number;
+  readonly sequenceNo: number | null;
+  readonly status: TerritoryRunStatus;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly vehicleName: string | null;
+}
+
+export interface LoadingGroupWorkspaceView {
+  readonly dispatchDate: string;
+  readonly groupId: string;
+  readonly groupNo: number;
+  readonly plannedEndAt: string;
+  readonly plannedStartAt: string;
+  readonly runs: readonly LoadingRunPreviewView[];
+  readonly sessions: readonly LoadingSessionView[];
+  readonly status: LoadingGroupStatus;
+  readonly version: number;
+}
+
+export interface LoadingProductView {
+  readonly barcodes: readonly string[];
+  readonly code: string;
+  readonly freeQuantity: number;
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface LoadingWarehouseDayView {
+  readonly dispatchDate: string;
+  readonly groups: readonly LoadingGroupWorkspaceView[];
+  readonly products: readonly LoadingProductView[];
+  readonly serverTime: string;
+}
+
+export interface LoadingDriverDayView {
+  readonly dispatchDate: string;
+  readonly serverTime: string;
+  readonly sessions: readonly LoadingSessionView[];
+}

@@ -41,6 +41,11 @@ const foundations = [
     state: "B12.1",
     title: "Склад",
   },
+  {
+    detail: "Погрузка по территориям, резерв склада, встречная сверка и двойное завершение",
+    state: "B13.1",
+    title: "Погрузка",
+  },
 ];
 
 export default function HomePage() {
@@ -61,7 +66,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B12</p>
+          <p className="eyebrow">Разработка MVP · B05–B13</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -116,7 +121,7 @@ export default function HomePage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Готовые рабочие срезы</p>
-            <h2 id="foundation-title">От доступа до плана производства</h2>
+            <h2 id="foundation-title">От доступа до подтверждённой погрузки</h2>
           </div>
           <p>Каждый модуль использует серверные права, аудит и PostgreSQL-транзакции.</p>
         </div>
@@ -136,11 +141,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B13 · Погрузка с двойным подтверждением</h2>
+          <h2>B14 · Инвентаризация и поиск расхождений</h2>
         </div>
         <p>
-          Склад уже принимает партии и ведёт объяснимый остаток. Следующий срез свяжет этот остаток
-          с погрузкой по территориям и встречным подтверждением водителя.
+          Погрузка уже резервирует остаток и завершается только после подтверждения кладовщика и
+          водителя. Следующий срез добавит ежедневный физический пересчёт и автоматический разбор
+          расхождений.
         </p>
       </section>
 

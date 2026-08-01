@@ -9,6 +9,7 @@ import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 import { IdentityModule } from "./identity/identity.module";
 import { LogisticsModule } from "./logistics/logistics.module";
+import { LoadingModule } from "./loading/loading.module";
 import { PlanningModule } from "./planning/planning.module";
 import { ProductionModule } from "./production/production.module";
 import { StoreModule } from "./store/store.module";
@@ -21,6 +22,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     CoreModule,
     IdentityModule,
     LogisticsModule,
+    LoadingModule,
     PlanningModule,
     ProductionModule,
     StoreModule,
