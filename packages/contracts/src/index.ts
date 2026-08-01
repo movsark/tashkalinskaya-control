@@ -749,6 +749,79 @@ export interface WarehouseWorkspaceView {
   readonly warehouseName: string;
 }
 
+export interface InventoryMovementSourceView {
+  readonly documentCount: number;
+  readonly documentType: string;
+  readonly quantity: number;
+}
+
+export interface InventoryLineView {
+  readonly actualQuantity: number | null;
+  readonly barcodes: readonly string[];
+  readonly countedAt: string | null;
+  readonly countedByName: string | null;
+  readonly differenceQuantity: number | null;
+  readonly id: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly snapshotBlocked: number;
+  readonly snapshotFree: number;
+  readonly snapshotReservedLoading: number;
+  readonly snapshotReservedStore: number;
+  readonly snapshotReturnPool: number;
+  readonly systemQuantity: number;
+  readonly version: number;
+}
+
+export interface InventoryDiscrepancyView {
+  readonly actualQuantity: number;
+  readonly differenceQuantity: number;
+  readonly id: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly resolutionCode: "APPLY_CORRECTION" | "EXPLAINED_NO_STOCK_CHANGE" | null;
+  readonly resolutionComment: string | null;
+  readonly resolvedAt: string | null;
+  readonly resolvedByName: string | null;
+  readonly severity: "CRITICAL" | "NORMAL";
+  readonly status: "CORRECTED" | "EXPLAINED" | "OPEN";
+  readonly systemQuantity: number;
+  readonly version: number;
+}
+
+export interface InventorySessionView {
+  readonly businessDate: string;
+  readonly countedLines: number;
+  readonly discrepancyCount: number;
+  readonly dueAt: string;
+  readonly id: string;
+  readonly isCurrent: boolean;
+  readonly lines: readonly InventoryLineView[];
+  readonly openedAt: string;
+  readonly openedByName: string;
+  readonly openReason: string | null;
+  readonly postSnapshotDocumentCount: number;
+  readonly snapshotAt: string;
+  readonly snapshotHash: string;
+  readonly status: "DRAFT" | "RESOLVED" | "SUBMITTED";
+  readonly submittedAt: string | null;
+  readonly submittedByName: string | null;
+  readonly totalLines: number;
+  readonly version: number;
+  readonly versionNo: number;
+}
+
+export interface InventoryWorkspaceView {
+  readonly discrepancies: readonly InventoryDiscrepancyView[];
+  readonly movementSources: readonly InventoryMovementSourceView[];
+  readonly serverTime: string;
+  readonly session: InventorySessionView | null;
+  readonly versions: readonly Omit<InventorySessionView, "lines">[];
+  readonly warehouseName: string;
+}
+
 export interface LoadingPlanSnapshotView {
   readonly allocatedFreeStock: number;
   readonly allocatedGoodReturn: number;

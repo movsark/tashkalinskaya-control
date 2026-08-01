@@ -85,7 +85,8 @@ export default function WarehousePage() {
         <div className="workspace-user">
           <span>{session.employee.fullName}</span>
           <small>
-            Склад · <Link href="/production">производство</Link> · <Link href="/">главная</Link>
+            Склад · <Link href="/warehouse/inventory">инвентаризация</Link> ·{" "}
+            <Link href="/production">производство</Link> · <Link href="/">главная</Link>
           </small>
         </div>
       </header>

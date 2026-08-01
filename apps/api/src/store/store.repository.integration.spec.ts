@@ -150,6 +150,7 @@ describe.runIf(hasDatabase)("StoreRepository with PostgreSQL", () => {
     });
     if (published.status === "FAILED") throw new Error(JSON.stringify(published));
     expect(published.warnings).not.toContain("STORE_ORDER_MISSING");
+    expect(published.warnings).toContain("INVENTORY_NOT_CONFIRMED");
     expect(published.demandLines).toContainEqual(
       expect.objectContaining({
         directionKind: "STORE",
@@ -225,6 +226,7 @@ describe.runIf(hasDatabase)("StoreRepository with PostgreSQL", () => {
     });
     if (published.status === "FAILED") throw new Error(JSON.stringify(published));
     expect(published.warnings).not.toContain("STORE_ORDER_MISSING");
+    expect(published.warnings).toContain("INVENTORY_NOT_CONFIRMED");
     expect(published.demandLines.filter((line) => line.directionKind === "STORE")).toHaveLength(0);
   });
 });

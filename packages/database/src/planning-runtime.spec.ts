@@ -22,8 +22,9 @@ const baseLine: PlanningSnapshot["lines"][number] = {
 
 function snapshot(lines: PlanningSnapshot["lines"]): PlanningSnapshot {
   return {
-    adapters: { inventory: "PLACEHOLDER_UNCONFIRMED", storeOrder: "PLACEHOLDER_MISSING" },
+    adapters: { inventory: "SYSTEM_UNCONFIRMED", storeOrder: "PLACEHOLDER_MISSING" },
     engineVersion: "test",
+    inventory: null,
     lines,
     productionDate: "2035-04-01",
     storeOrders: [],

@@ -8,6 +8,7 @@ import { CorrelationIdMiddleware } from "./correlation-id.middleware";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 import { IdentityModule } from "./identity/identity.module";
+import { InventoryModule } from "./inventory/inventory.module";
 import { LogisticsModule } from "./logistics/logistics.module";
 import { LoadingModule } from "./loading/loading.module";
 import { PlanningModule } from "./planning/planning.module";
@@ -21,6 +22,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     CatalogModule,
     CoreModule,
     IdentityModule,
+    InventoryModule,
     LogisticsModule,
     LoadingModule,
     PlanningModule,

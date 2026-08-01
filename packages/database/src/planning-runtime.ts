@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-export const PLANNING_ENGINE_VERSION = "b10.1-v2";
+export const PLANNING_ENGINE_VERSION = "b14.1-v3";
 
 export interface PlanningSnapshotLine {
   readonly allocatedFreeStock: number;
@@ -24,10 +24,16 @@ export interface PlanningSnapshotLine {
 
 export interface PlanningSnapshot {
   readonly adapters: {
-    readonly inventory: "PLACEHOLDER_UNCONFIRMED";
+    readonly inventory: "DATABASE_CONFIRMED" | "SYSTEM_UNCONFIRMED";
     readonly storeOrder: "DATABASE" | "PLACEHOLDER_MISSING";
   };
   readonly engineVersion: string;
+  readonly inventory: {
+    readonly sessionId: string;
+    readonly snapshotAt: string;
+    readonly submittedAt: string;
+    readonly versionNo: number;
+  } | null;
   readonly lines: readonly PlanningSnapshotLine[];
   readonly productionDate: string;
   readonly storeOrders: readonly (
@@ -729,17 +735,74 @@ async function buildSnapshot(
     workshopId: row.primary_workshop_id!,
     workshopName: row.workshop_name!,
   }));
+  const inventoryResult = await client.query<{
+    id: string;
+    snapshot_at: Date;
+    submitted_at: Date;
+    version_no: number;
+  }>(
+    `select s.id,s.version_no,s.snapshot_at,sub.submitted_at
+     from warehouse.inventory_session s
+     join warehouse.inventory_submission sub on sub.inventory_session_id=s.id
+     where s.warehouse_id='15000000-0000-4000-8000-000000000001'
+       and s.business_date=$1 and s.is_current
+     order by s.version_no desc limit 1`,
+    [productionDate],
+  );
+  const confirmedInventory = inventoryResult.rows[0] ?? null;
+  const availability = confirmedInventory
+    ? await client.query<{ available_quantity: number; product_id: string }>(
+        `select product_id,
+                greatest(0,actual_quantity-snapshot_reserved_loading-snapshot_reserved_store-
+                  snapshot_return_pool-snapshot_blocked)::int available_quantity
+         from warehouse.inventory_line
+         where inventory_session_id=$1`,
+        [confirmedInventory.id],
+      )
+    : await client.query<{ available_quantity: number; product_id: string }>(
+        `select product_id,quantity::int available_quantity
+         from warehouse.stock_balance
+         where warehouse_id='15000000-0000-4000-8000-000000000001' and bucket='FREE_STOCK'`,
+      );
+  const demandLines = allocateFreeStock(
+    [...territoryDemandLines, ...storeDemandLines],
+    new Map(availability.rows.map((row) => [row.product_id, row.available_quantity])),
+  );
   return {
     adapters: {
-      inventory: "PLACEHOLDER_UNCONFIRMED",
+      inventory: confirmedInventory ? "DATABASE_CONFIRMED" : "SYSTEM_UNCONFIRMED",
       storeOrder: "DATABASE",
     },
     engineVersion: PLANNING_ENGINE_VERSION,
-    lines: [...territoryDemandLines, ...storeDemandLines],
+    inventory: confirmedInventory
+      ? {
+          sessionId: confirmedInventory.id,
+          snapshotAt: confirmedInventory.snapshot_at.toISOString(),
+          submittedAt: confirmedInventory.submitted_at.toISOString(),
+          versionNo: confirmedInventory.version_no,
+        }
+      : null,
+    lines: demandLines,
     productionDate,
     storeOrders,
-    warnings: ["INVENTORY_NOT_CONFIRMED", ...(missingStoreOrder ? ["STORE_ORDER_MISSING"] : [])],
+    warnings: [
+      ...(confirmedInventory ? [] : ["INVENTORY_NOT_CONFIRMED"]),
+      ...(missingStoreOrder ? ["STORE_ORDER_MISSING"] : []),
+    ],
   };
+}
+
+function allocateFreeStock(
+  lines: readonly PlanningSnapshotLine[],
+  availableByProduct: Map<string, number>,
+): PlanningSnapshotLine[] {
+  return [...lines].sort(compareSnapshot).map((line) => {
+    const available = availableByProduct.get(line.productId) ?? 0;
+    const demand = line.oneOffQuantity ?? line.weeklyNormQuantity ?? line.storeOrderQuantity;
+    const allocatedFreeStock = Math.min(available, demand);
+    availableByProduct.set(line.productId, available - allocatedFreeStock);
+    return { ...line, allocatedFreeStock };
+  });
 }
 
 interface StoreVersionRow {
