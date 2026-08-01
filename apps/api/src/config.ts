@@ -71,6 +71,9 @@ export const API_CONFIG = Symbol("API_CONFIG");
 export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
   const parsed = environmentSchema.parse(environment);
   const databaseUrl = parsed.DATABASE_URL?.trim();
+  if (parsed.DATABASE_REQUIRED && databaseUrl === undefined) {
+    throw new Error("DATABASE_URL is required when DATABASE_REQUIRED=true");
+  }
   if (parsed.NODE_ENV === "production" || parsed.NODE_ENV === "staging") {
     for (const name of [
       "AUTH_TOKEN_PEPPER",

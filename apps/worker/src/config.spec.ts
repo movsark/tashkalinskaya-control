@@ -13,4 +13,8 @@ describe("loadWorkerConfig", () => {
       "required together",
     );
   });
+
+  it("requires a database URL when the database is mandatory", () => {
+    expect(() => loadWorkerConfig({ DATABASE_REQUIRED: "true" })).toThrow("DATABASE_URL");
+  });
 });

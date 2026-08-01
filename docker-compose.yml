@@ -1,0 +1,100 @@
+# Timeweb App Platform staging manifest. Local development uses compose.yaml.
+# The web service must remain first: App Platform proxies the public domain only to it.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        INTERNAL_API_URL: http://api:4000/api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:3000/').then(r=>{if(!r.ok)process.exit(1)})
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.worker
+    command:
+      - node
+      - packages/database/dist/migrate.js
+    environment:
+      DATABASE_SSL: require
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      API_PORT: 4000
+      APP_VERSION: ${APP_VERSION}
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
+      CORS_ORIGINS: ${PUBLIC_ORIGIN}
+      CSRF_SECRET: ${CSRF_SECRET}
+      DATABASE_REQUIRED: "true"
+      DATABASE_SSL: require
+      DATABASE_URL: ${DATABASE_URL}
+      FILE_STORAGE_DRIVER: s3
+      NODE_ENV: staging
+      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY}
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER}
+      WEBAUTHN_ORIGINS: ${PUBLIC_ORIGIN}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      WEBAUTHN_RP_NAME: Ташкалинская фабрика — staging
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:4000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)})
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_VERSION: ${APP_VERSION}
+      DATABASE_REQUIRED: "true"
+      DATABASE_SSL: require
+      DATABASE_URL: ${DATABASE_URL}
+      NODE_ENV: staging
+      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY}
+      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY}
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT}
+      WORKER_POLL_INTERVAL_MS: 5000
+    restart: unless-stopped
