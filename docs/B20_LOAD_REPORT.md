@@ -42,3 +42,6 @@ node scripts/load-test.mjs --run tests/load/factory-staging.example.json
 ```
 
 Секреты и полный ответ API в отчёт не записываются.
+
+После создания GitHub Environment `staging` тот же профиль запускается вручную
+workflow `Staging gates`; порядок описан в [runbook B20.2](B20_2_STAGING_RUNBOOK.md).

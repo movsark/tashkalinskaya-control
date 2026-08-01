@@ -25,3 +25,4 @@ uploads/
 backups/
 data/private/
 imports/private/
+var/recovery/

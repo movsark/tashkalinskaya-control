@@ -13,6 +13,12 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(live.headers()["x-frame-options"]).toBe("SAMEORIGIN");
     expect(live.headers()["x-correlation-id"]).toMatch(/^[0-9a-f-]{36}$/);
 
+    const proxiedLive = await request.get("http://127.0.0.1:4181/api/v1/health/live", {
+      headers: { origin: "http://127.0.0.1:4181" },
+    });
+    expect(proxiedLive.status()).toBe(200);
+    await expect(proxiedLive.json()).resolves.toMatchObject({ service: "api", state: "healthy" });
+
     const hostile = await request.post(`${apiBase}/auth/login/options`, {
       data: {},
       headers: { origin: "https://control.factory.example.attacker.test" },

@@ -1,7 +1,8 @@
 # B20. Стратегия тестирования MVP
 
-Статус: автоматическая основа B20.1 реализована; staging, физические устройства,
-восстановление и подписание UAT выполняются перед пилотом B21.
+Статус: автоматическая основа B20.1 и исполняемый комплект staging B20.2
+реализованы; создание ресурсов, физические устройства, фактическое восстановление
+и подписание UAT выполняются перед пилотом B21.
 
 ## 1. Цель
 
@@ -111,9 +112,13 @@ CI. Отдельный список фиксирует операции, где 
 bash scripts/check-repository.sh
 npm run test:e2e
 npm run test:load:validate
+STAGING_BASE_URL=https://staging.example EXPECTED_APP_VERSION=<sha> npm run test:staging:smoke
 LOAD_BASE_URL=http://127.0.0.1:4180 node scripts/load-test.mjs --run tests/load/local-70-read.json
 ```
 
 Staging-профиль требует `LOAD_BASE_URL`, `LOAD_BUSINESS_DATE` и отдельную тестовую
 `LOAD_SESSION_COOKIE`. Значения не сохраняются в репозитории и не выводятся в
 отчёт.
+
+Развёртывание, GitHub Environment и recovery-команды описаны в
+[runbook B20.2](B20_2_STAGING_RUNBOOK.md).

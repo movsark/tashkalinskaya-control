@@ -28,4 +28,8 @@ describe("loadApiConfig", () => {
   it("requires a complete private S3 configuration", () => {
     expect(() => loadApiConfig({ FILE_STORAGE_DRIVER: "s3" })).toThrow("S3_ENDPOINT");
   });
+
+  it("requires a database URL when the database is mandatory", () => {
+    expect(() => loadApiConfig({ DATABASE_REQUIRED: "true" })).toThrow("DATABASE_URL");
+  });
 });

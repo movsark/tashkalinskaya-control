@@ -43,6 +43,9 @@ export interface WorkerConfig {
 export function loadWorkerConfig(environment: NodeJS.ProcessEnv = process.env): WorkerConfig {
   const parsed = environmentSchema.parse(environment);
   const databaseUrl = parsed.DATABASE_URL?.trim();
+  if (parsed.DATABASE_REQUIRED && databaseUrl === undefined) {
+    throw new Error("DATABASE_URL is required when DATABASE_REQUIRED=true");
+  }
   const pushValues = [
     parsed.PUSH_VAPID_PUBLIC_KEY,
     parsed.PUSH_VAPID_PRIVATE_KEY,

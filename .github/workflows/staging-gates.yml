@@ -1,0 +1,59 @@
+name: Staging gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      business_date:
+        description: Business date for the authenticated read profile (YYYY-MM-DD)
+        required: false
+        type: string
+      expected_version:
+        description: Exact main commit SHA deployed as APP_VERSION
+        required: true
+        type: string
+      run_load:
+        default: false
+        description: Run the 70-user authenticated read profile
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  cancel-in-progress: false
+  group: staging-gates
+
+jobs:
+  staging-gates:
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the deployed revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_version }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Run public staging smoke
+        env:
+          EXPECTED_APP_VERSION: ${{ inputs.expected_version }}
+          STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+        run: npm run test:staging:smoke
+
+      - name: Validate load profile
+        if: inputs.run_load
+        run: node scripts/load-test.mjs --validate tests/load/factory-staging.example.json
+
+      - name: Run authenticated 70-user read profile
+        if: inputs.run_load
+        env:
+          LOAD_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+          LOAD_BUSINESS_DATE: ${{ inputs.business_date }}
+          LOAD_SESSION_COOKIE: ${{ secrets.STAGING_READ_SESSION_COOKIE }}
+        run: node scripts/load-test.mjs --run tests/load/factory-staging.example.json
