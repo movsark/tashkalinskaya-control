@@ -112,7 +112,7 @@ describe.runIf(hasDatabase)("NotificationsRepository with PostgreSQL", () => {
       version: 1,
     });
     expect(updated).toMatchObject({ normalPushEnabled: false, version: 2 });
-    expect(() =>
+    await expect(
       repository.updatePreference({
         actor: admin,
         normalPushEnabled: true,
@@ -122,7 +122,7 @@ describe.runIf(hasDatabase)("NotificationsRepository with PostgreSQL", () => {
         version: 1,
       }),
     ).rejects.toThrow();
-    await expect(
+    expect(() =>
       repository.updatePreference({
         actor: admin,
         normalPushEnabled: true,
