@@ -85,7 +85,35 @@ function formatMigrationError(error: unknown): string {
   return `Migration failed [${code}]: ${redactedMessage}`;
 }
 
+function migrationExitCode(error: unknown): number {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("DATABASE_URL is required")) return 10;
+  if (code === "ENOTFOUND") return 11;
+  if (code === "ECONNREFUSED") return 12;
+  if (code === "ETIMEDOUT" || code === "ETIME") return 13;
+  if (
+    [
+      "CERT_HAS_EXPIRED",
+      "DEPTH_ZERO_SELF_SIGNED_CERT",
+      "SELF_SIGNED_CERT_IN_CHAIN",
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    ].includes(code)
+  )
+    return 14;
+  if (code === "28P01") return 21;
+  if (code === "42501") return 22;
+  if (code === "3D000") return 23;
+  if (code === "28000") return 24;
+
+  return 99;
+}
+
 void main().catch((error: unknown) => {
   process.stdout.write(`${formatMigrationError(error)}\n`);
-  process.exitCode = 1;
+  process.exitCode = migrationExitCode(error);
 });
