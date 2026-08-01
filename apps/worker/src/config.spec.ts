@@ -7,4 +7,10 @@ describe("loadWorkerConfig", () => {
     expect(loadWorkerConfig({}).pollIntervalMs).toBe(5000);
     expect(() => loadWorkerConfig({ WORKER_POLL_INTERVAL_MS: "10" })).toThrow();
   });
+
+  it("requires complete VAPID settings", () => {
+    expect(() => loadWorkerConfig({ PUSH_VAPID_PUBLIC_KEY: "public-key-at-least-twenty" })).toThrow(
+      "required together",
+    );
+  });
 });

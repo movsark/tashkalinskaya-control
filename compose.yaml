@@ -50,7 +50,9 @@ services:
       CSRF_SECRET: ${CSRF_SECRET:-local-csrf-secret-change-me-now-x}
       DATABASE_REQUIRED: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
+      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY:-local-push-subscription-secret-change-me}
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
       SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER:-local-session-pepper-change-me-now}
       WEBAUTHN_ORIGINS: http://localhost:3000
       WEBAUTHN_RP_ID: localhost
@@ -80,7 +82,11 @@ services:
     environment:
       DATABASE_REQUIRED: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-tashkalinskaya}:${POSTGRES_PASSWORD:-local-only-password}@postgres:5432/${POSTGRES_DB:-tashkalinskaya}
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
+      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY:-local-push-subscription-secret-change-me}
+      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-}
       WORKER_POLL_INTERVAL_MS: 5000
     restart: unless-stopped
 

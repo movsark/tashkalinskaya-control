@@ -10,10 +10,12 @@ import type { Pool, PoolClient } from "pg";
 
 import { loadWorkerConfig } from "./config";
 import { log } from "./logger";
+import { NotificationProcessor } from "./notification.processor";
 
 const config = loadWorkerConfig();
 let pool: Pool | undefined;
 let stopping = false;
+let notifications: NotificationProcessor | undefined;
 
 if (isDatabaseConfigured(config.databaseUrl)) {
   pool = createDatabasePool({
@@ -21,6 +23,7 @@ if (isDatabaseConfigured(config.databaseUrl)) {
     connectionString: config.databaseUrl,
     sslMode: config.databaseSsl,
   });
+  notifications = new NotificationProcessor(pool, config);
 } else if (config.databaseRequired) {
   throw new Error("DATABASE_URL is required for this worker environment");
 }
@@ -36,6 +39,7 @@ async function runCycle(): Promise<void> {
   try {
     const missingExitCount = await markMissingExits(pool);
     const planning = await publishPlanIfDue(pool);
+    const notificationResult = await notifications!.runCycle();
     const result = await pool.query<{ pending_count: string }>(`
       select count(*)::text as pending_count
       from system.outbox_message
@@ -49,6 +53,9 @@ async function runCycle(): Promise<void> {
       planningStatus: planning.status,
       planningVersion: planning.version,
       newlyFlaggedMissingExits: missingExitCount,
+      notificationDeliveries: notificationResult.deliveries,
+      notificationEscalations: notificationResult.escalations,
+      notificationOutboxProcessed: notificationResult.outbox,
       version: config.appVersion,
     });
   } catch (error) {

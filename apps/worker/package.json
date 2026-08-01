@@ -13,6 +13,10 @@
     "@tashkalinskaya/contracts": "*",
     "@tashkalinskaya/database": "*",
     "pg": "^8.22.0",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.4"
   }
 }

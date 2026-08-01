@@ -1072,3 +1072,55 @@ export interface SpoilageWorkspaceView {
   readonly serverTime: string;
   readonly writtenOffQuantity: number;
 }
+
+export type NotificationSeverity = "CRITICAL" | "HIGH" | "NORMAL";
+
+export interface NotificationFeedItemView {
+  readonly createdAt: string;
+  readonly escalationLevel: 0 | 1 | 2;
+  readonly eventName: string;
+  readonly href: string;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly readAt: string | null;
+  readonly safeBody: string;
+  readonly severity: NotificationSeverity;
+  readonly title: string;
+}
+
+export interface NotificationPreferenceView {
+  readonly normalPushEnabled: boolean;
+  readonly pushEnabled: boolean;
+  readonly quietHoursEnd: string;
+  readonly quietHoursStart: string;
+  readonly timezone: "Europe/Moscow";
+  readonly version: number;
+}
+
+export interface PushSubscriptionView {
+  readonly createdAt: string;
+  readonly deviceId: string;
+  readonly id: string;
+  readonly lastSuccessAt: string | null;
+  readonly status: "ACTIVE" | "EXPIRED" | "REVOKED";
+}
+
+export interface NotificationsWorkspaceView {
+  readonly control: {
+    readonly criticalUnreadAcrossFactory: number;
+    readonly failedCriticalPushAcrossFactory: number;
+  } | null;
+  readonly items: readonly NotificationFeedItemView[];
+  readonly preference: NotificationPreferenceView;
+  readonly push: {
+    readonly available: boolean;
+    readonly publicKey: string | null;
+    readonly subscription: PushSubscriptionView | null;
+  };
+  readonly serverTime: string;
+  readonly summary: {
+    readonly criticalUnread: number;
+    readonly highUnread: number;
+    readonly totalUnread: number;
+  };
+}

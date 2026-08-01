@@ -5120,3 +5120,346 @@ select:focus {
     grid-column: auto;
   }
 }
+
+.notification-shortcut {
+  align-items: center;
+  background: var(--forest);
+  border: 2px solid white;
+  border-radius: 999px;
+  bottom: 22px;
+  box-shadow: 0 12px 35px rgb(23 60 52 / 28%);
+  color: white;
+  display: flex;
+  height: 52px;
+  justify-content: center;
+  position: fixed;
+  right: 22px;
+  text-decoration: none;
+  width: 52px;
+  z-index: 50;
+}
+
+.notification-shortcut > span {
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.notification-shortcut > b {
+  background: #d04f3f;
+  border: 2px solid white;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  min-width: 22px;
+  padding: 3px 5px;
+  position: absolute;
+  right: -5px;
+  text-align: center;
+  top: -5px;
+}
+
+.notification-shortcut.has-critical {
+  animation: notification-pulse 2s ease-in-out infinite;
+  background: #a52f28;
+}
+
+@keyframes notification-pulse {
+  50% {
+    box-shadow:
+      0 0 0 9px rgb(165 47 40 / 14%),
+      0 12px 35px rgb(23 60 52 / 28%);
+  }
+}
+
+.notifications-page {
+  background: #f4f1eb;
+  min-height: 100vh;
+}
+
+.notifications-hero {
+  align-items: center;
+  display: flex;
+  gap: 28px;
+  justify-content: space-between;
+  padding: 46px 0 24px;
+}
+
+.notifications-hero h1,
+.notifications-panel h2,
+.notifications-settings h2,
+.notifications-control h2 {
+  margin: 4px 0 8px;
+}
+
+.notifications-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(110px, 1fr));
+}
+
+.notifications-summary article {
+  background: white;
+  border: 1px solid #dfd9cf;
+  border-radius: 14px;
+  display: grid;
+  gap: 4px;
+  min-width: 110px;
+  padding: 14px;
+}
+
+.notifications-summary article.is-critical {
+  background: #a33730;
+  color: white;
+}
+
+.notifications-summary span {
+  font-size: 0.74rem;
+}
+
+.notifications-summary b {
+  font-size: 1.45rem;
+}
+
+.notifications-notice {
+  border-radius: 12px;
+  margin: 0 0 16px;
+  padding: 12px 15px;
+}
+
+.notifications-control {
+  align-items: center;
+  background: #2b302d;
+  border-radius: 18px;
+  color: white;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr auto auto;
+  margin: 14px 0 20px;
+  padding: 18px 22px;
+}
+
+.notifications-control .eyebrow {
+  color: #f1ce7f;
+}
+
+.notifications-control span {
+  background: rgb(255 255 255 / 9%);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.notifications-control b {
+  font-size: 1.2rem;
+}
+
+.notifications-grid {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  margin: 20px 0 50px;
+}
+
+.notifications-panel,
+.notifications-settings {
+  background: white;
+  border: 1px solid #e1dbd1;
+  border-radius: 20px;
+  box-shadow: 0 12px 36px rgb(44 38 27 / 6%);
+  padding: 20px;
+}
+
+.notifications-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.notifications-toolbar > div {
+  background: #f1eee7;
+  border-radius: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.notifications-toolbar > div button {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  padding: 9px 11px;
+}
+
+.notifications-toolbar > div button.is-active {
+  background: white;
+  box-shadow: 0 2px 8px rgb(30 35 31 / 10%);
+  font-weight: 800;
+}
+
+.notifications-feed {
+  display: grid;
+  gap: 10px;
+}
+
+.notifications-feed article {
+  align-items: center;
+  border: 1px solid #e3ded5;
+  border-left: 5px solid #9c9b94;
+  border-radius: 13px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.notifications-feed article.severity-high {
+  border-left-color: #d39224;
+}
+.notifications-feed article.severity-critical {
+  border-left-color: #b63c33;
+}
+.notifications-feed article.is-read {
+  opacity: 0.63;
+}
+.notifications-feed article.is-unread {
+  background: #fffdfa;
+}
+
+.notification-card__marker {
+  background: #eeece6;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 6px 8px;
+  text-transform: uppercase;
+}
+
+.severity-high .notification-card__marker {
+  background: #fff0cb;
+  color: #765000;
+}
+.severity-critical .notification-card__marker {
+  background: #fbe4e1;
+  color: #922b24;
+}
+
+.notifications-feed article span,
+.notifications-feed article p,
+.notifications-settings small,
+.notifications-hint {
+  color: #6f6a61;
+  font-size: 0.8rem;
+}
+
+.notifications-feed article h3 {
+  margin: 4px 0;
+}
+
+.notifications-feed article p {
+  margin: 0;
+}
+
+.notifications-settings {
+  display: grid;
+  gap: 14px;
+  position: sticky;
+  top: 16px;
+}
+
+.notifications-settings form {
+  border-top: 1px solid #e1dbd1;
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.notifications-enabled {
+  background: #e6f4eb;
+  border-radius: 10px;
+  color: #1c6540;
+  margin: 0;
+  padding: 11px;
+}
+
+.notifications-check {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.notifications-check input {
+  height: 19px;
+  width: 19px;
+}
+
+.notifications-hours {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.notifications-hours label {
+  display: grid;
+  font-size: 0.76rem;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.notifications-hours input {
+  border: 1px solid #d7d1c7;
+  border-radius: 9px;
+  min-width: 0;
+  padding: 8px;
+}
+
+@media (max-width: 900px) {
+  .notifications-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .notifications-grid {
+    grid-template-columns: 1fr;
+  }
+  .notifications-settings {
+    position: static;
+  }
+}
+
+@media (max-width: 650px) {
+  .notifications-summary {
+    grid-template-columns: 1fr;
+  }
+  .notifications-control {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  .notifications-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .notifications-toolbar > div {
+    overflow-x: auto;
+  }
+  .notifications-feed article {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  .notifications-panel,
+  .notifications-settings {
+    padding: 15px;
+  }
+  .notification-shortcut {
+    bottom: 14px;
+    right: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-shortcut.has-critical {
+    animation: none;
+  }
+}

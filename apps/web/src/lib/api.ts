@@ -17,6 +17,7 @@ import type {
   ManualAttendanceReasonView,
   ManualAttendanceResult,
   NormChangeRequestView,
+  NotificationsWorkspaceView,
   ImportPreview,
   InventoryWorkspaceView,
   LogisticsDayView,
@@ -1260,6 +1261,63 @@ export async function getSpoilagePhotoUrl(photoId: string): Promise<string> {
   }
   if (!response.ok) throw new ApiRequestError("Не удалось открыть фотографию", response.status);
   return URL.createObjectURL(await response.blob());
+}
+
+export async function getNotificationsWorkspace(): Promise<NotificationsWorkspaceView> {
+  return request("/notifications/workspace");
+}
+
+export async function createPushSubscription(
+  input: {
+    endpoint: string;
+    expirationTime: number | null;
+    keys: { auth: string; p256dh: string };
+  },
+  csrfToken: string,
+): Promise<{ subscriptionId: string }> {
+  return request("/notifications/subscriptions", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function revokePushSubscription(id: string, csrfToken: string): Promise<void> {
+  return request(`/notifications/subscriptions/${id}`, {
+    headers: { "x-csrf-token": csrfToken },
+    method: "DELETE",
+  });
+}
+
+export async function readNotification(id: string, csrfToken: string): Promise<{ readAt: string }> {
+  return request(`/notifications/${id}/read`, {
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function readAllNotifications(csrfToken: string): Promise<{ markedCount: number }> {
+  return request("/notifications/read-all", {
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function updateNotificationPreference(
+  input: {
+    normalPushEnabled: boolean;
+    pushEnabled: boolean;
+    quietHoursEnd: string;
+    quietHoursStart: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<NotificationsWorkspaceView["preference"]> {
+  return request("/notifications/preference", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
+  });
 }
 export async function claimWarehouseBatch(
   batchId: string,
