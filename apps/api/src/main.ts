@@ -3,11 +3,11 @@ import "reflect-metadata";
 import { ConsoleLogger, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 
 import { AppModule } from "./app.module";
 import { loadApiConfig } from "./config";
+import { originProtection } from "./http-security";
 
 async function bootstrap(): Promise<void> {
   const config = loadApiConfig();
@@ -20,18 +20,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
     origin: config.corsOrigins,
   });
-  app.use((request: Request, response: Response, next: NextFunction) => {
-    const origin = request.header("origin");
-    const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(request.method);
-    if (!safeMethod && origin !== undefined && !config.corsOrigins.includes(origin)) {
-      response.status(403).json({
-        code: "ORIGIN_REJECTED",
-        message: "Источник запроса не разрешен",
-      });
-      return;
-    }
-    next();
-  });
+  app.use(originProtection(config.corsOrigins));
   app.setGlobalPrefix("api/v1");
   app.use(helmet());
   app.useGlobalPipes(
