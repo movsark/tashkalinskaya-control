@@ -35,6 +35,11 @@ import type {
   ProductionTransferView,
   ProductionWarehouseQueueView,
   ProductionWorkspaceView,
+  ControlCenterView,
+  ReportCode,
+  ReportExportFormat,
+  ReportJobView,
+  ReportsWorkspaceView,
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
@@ -1318,6 +1323,34 @@ export async function updateNotificationPreference(
     headers: { "x-csrf-token": csrfToken },
     method: "PUT",
   });
+}
+
+export async function getControlCenter(date: string): Promise<ControlCenterView> {
+  return request(`/reports/control?date=${encodeURIComponent(date)}`);
+}
+
+export async function getReportsWorkspace(): Promise<ReportsWorkspaceView> {
+  return request("/reports/workspace");
+}
+
+export async function createReportJob(
+  input: {
+    dateFrom: string;
+    dateTo: string;
+    format: ReportExportFormat;
+    reportCode: ReportCode;
+  },
+  csrfToken: string,
+): Promise<ReportJobView> {
+  return request("/reports/jobs", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function downloadReport(job: ReportJobView): Promise<void> {
+  return downloadFile(`/reports/jobs/${job.id}/download`, job.fileName ?? "report");
 }
 export async function claimWarehouseBatch(
   batchId: string,

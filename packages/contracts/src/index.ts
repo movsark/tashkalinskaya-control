@@ -1124,3 +1124,108 @@ export interface NotificationsWorkspaceView {
     readonly totalUnread: number;
   };
 }
+
+export const REPORT_CODES = [
+  "MOVEMENTS",
+  "PLAN_FACT",
+  "DEFECTS",
+  "RECEIPTS",
+  "LOADINGS",
+  "RETURNS",
+  "SPOILAGE",
+  "INVENTORY",
+  "NORMS",
+  "ATTENDANCE",
+  "UNCONFIRMED",
+] as const;
+
+export type ReportCode = (typeof REPORT_CODES)[number];
+export type ReportExportFormat = "PDF" | "XLSX";
+export type ReportJobStatus = "EXPIRED" | "FAILED" | "QUEUED" | "READY" | "RUNNING";
+
+export interface ControlMetricView {
+  readonly code:
+    | "ATTENDANCE_OPEN"
+    | "CRITICAL_ALERTS"
+    | "INVENTORY_OPEN"
+    | "LOADING_PENDING"
+    | "PLAN_QUANTITY"
+    | "PRODUCED_QUANTITY"
+    | "SPOILAGE_PENDING"
+    | "WAREHOUSE_FREE";
+  readonly href: string;
+  readonly label: string;
+  readonly status: "ALERT" | "OK" | "WARNING";
+  readonly unit: "PEOPLE" | "PIECES" | "ROWS";
+  readonly value: number;
+}
+
+export interface ControlIssueView {
+  readonly code: string;
+  readonly count: number;
+  readonly href: string;
+  readonly label: string;
+  readonly severity: "CRITICAL" | "HIGH" | "NORMAL";
+}
+
+export interface ControlCenterView {
+  readonly generatedAt: string;
+  readonly issues: readonly ControlIssueView[];
+  readonly metrics: readonly ControlMetricView[];
+  readonly selectedDate: string;
+}
+
+export interface ReportCatalogItemView {
+  readonly code: ReportCode;
+  readonly description: string;
+  readonly formats: readonly ReportExportFormat[];
+  readonly personalData: boolean;
+  readonly title: string;
+}
+
+export interface ReportJobView {
+  readonly completedAt: string | null;
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly errorMessage: string | null;
+  readonly expiresAt: string;
+  readonly fileName: string | null;
+  readonly format: ReportExportFormat;
+  readonly id: string;
+  readonly reportCode: ReportCode;
+  readonly reportTitle: string;
+  readonly requestedAt: string;
+  readonly requestedByName: string;
+  readonly rowCount: number;
+  readonly sha256: string | null;
+  readonly status: ReportJobStatus;
+}
+
+export interface ReportsWorkspaceView {
+  readonly catalog: readonly ReportCatalogItemView[];
+  readonly jobs: readonly ReportJobView[];
+  readonly serverTime: string;
+}
+
+export interface ReportSnapshotColumn {
+  readonly key: string;
+  readonly label: string;
+  readonly numeric: boolean;
+  readonly total: boolean;
+  readonly width: number;
+}
+
+export type ReportSnapshotCell = boolean | number | string | null;
+
+export interface ReportSnapshot {
+  readonly columns: readonly ReportSnapshotColumn[];
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly generatedAt: string;
+  readonly reportCode: ReportCode;
+  readonly requesterName: string;
+  readonly rows: readonly Readonly<Record<string, ReportSnapshotCell>>[];
+  readonly templateVersion: string;
+  readonly title: string;
+  readonly totals: Readonly<Record<string, number>>;
+}

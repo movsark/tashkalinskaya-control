@@ -66,6 +66,11 @@ const foundations = [
     state: "B17.1",
     title: "Уведомления",
   },
+  {
+    detail: "Контроль на дату, 11 воспроизводимых отчетов, фоновые Excel/PDF и архив файлов",
+    state: "B18.1",
+    title: "Контроль и отчеты",
+  },
 ];
 
 export default function HomePage() {
@@ -126,6 +131,9 @@ export default function HomePage() {
             <a className="text-link" href="/notifications">
               Уведомления
             </a>
+            <a className="text-link" href="/reports">
+              Контроль и отчеты
+            </a>
           </div>
         </div>
 
@@ -173,12 +181,11 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B18 · Отчёты, печать, Excel и PDF</h2>
+          <h2>B19 · Подготовка интеграции с 1С / Agent Plus</h2>
         </div>
         <p>
-          Значимые события уже собираются в надёжную ленту, доставляются Web Push и повторяются по
-          уровню критичности. Следующий срез соберёт единый контрольный экран и воспроизводимые
-          отчёты без дублирования бизнес-логики.
+          Центр контроля и фоновые выгрузки уже используют подтвержденные операции. Следующий срез
+          зафиксирует стабильную границу будущего обмена, не включая саму интеграцию в MVP.
         </p>
       </section>
 

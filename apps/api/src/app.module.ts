@@ -15,6 +15,7 @@ import { LoadingModule } from "./loading/loading.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PlanningModule } from "./planning/planning.module";
 import { ProductionModule } from "./production/production.module";
+import { ReportsModule } from "./reports/reports.module";
 import { StoreModule } from "./store/store.module";
 import { SpoilageModule } from "./spoilage/spoilage.module";
 import { WarehouseModule } from "./warehouse/warehouse.module";
@@ -32,6 +33,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     NotificationsModule,
     PlanningModule,
     ProductionModule,
+    ReportsModule,
     SpoilageModule,
     StoreModule,
     WarehouseModule,
