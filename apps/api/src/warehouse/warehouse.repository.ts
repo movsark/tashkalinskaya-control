@@ -491,9 +491,9 @@ async function sequential(client: PoolClient, actor: WarehouseActor) {
        coalesce(sum(sb.quantity) filter(where sb.bucket='FREE_STOCK'),0) free_quantity,
        coalesce(sum(sb.quantity) filter(where sb.bucket='RESERVED_FOR_LOADING'),0) reserved_loading_quantity,
        coalesce(sum(sb.quantity) filter(where sb.bucket='RESERVED_FOR_STORE'),0) reserved_store_quantity,
-       coalesce(sum(sb.quantity) filter(where sb.bucket='RETURN_POOL'),0) return_pool_quantity,
+       coalesce(sum(sb.quantity) filter(where sb.bucket in ('RETURN_POOL','RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING')),0) return_pool_quantity,
        coalesce(sum(sb.quantity) filter(where sb.bucket='BLOCKED_FOR_WRITEOFF'),0) blocked_quantity,
-       coalesce(sum(sb.quantity) filter(where sb.bucket in ('FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL','BLOCKED_FOR_WRITEOFF')),0) on_hand_quantity
+       coalesce(sum(sb.quantity) filter(where sb.bucket in ('FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL','RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING','BLOCKED_FOR_WRITEOFF')),0) on_hand_quantity
      from warehouse.stock_balance sb join catalog.product p on p.id=sb.product_id
      left join ledger l on l.product_id=sb.product_id and l.bucket=sb.bucket
      where sb.warehouse_id=$1

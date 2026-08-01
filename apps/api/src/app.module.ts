@@ -7,6 +7,7 @@ import { CoreModule } from "./core.module";
 import { CorrelationIdMiddleware } from "./correlation-id.middleware";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
+import { GoodReturnsModule } from "./good-returns/good-returns.module";
 import { IdentityModule } from "./identity/identity.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { LogisticsModule } from "./logistics/logistics.module";
@@ -21,6 +22,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     AttendanceModule,
     CatalogModule,
     CoreModule,
+    GoodReturnsModule,
     IdentityModule,
     InventoryModule,
     LogisticsModule,

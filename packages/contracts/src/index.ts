@@ -769,7 +769,9 @@ export interface InventoryLineView {
   readonly snapshotFree: number;
   readonly snapshotReservedLoading: number;
   readonly snapshotReservedStore: number;
+  readonly snapshotReturnAllocated: number;
   readonly snapshotReturnPool: number;
+  readonly snapshotReturnReserved: number;
   readonly systemQuantity: number;
   readonly version: number;
 }
@@ -913,6 +915,81 @@ export interface LoadingWarehouseDayView {
 
 export interface LoadingDriverDayView {
   readonly dispatchDate: string;
+  readonly priorityReturns: readonly GoodReturnPriorityView[];
   readonly serverTime: string;
   readonly sessions: readonly LoadingSessionView[];
+}
+
+export interface GoodReturnPriorityView {
+  readonly allocationId: string;
+  readonly dispatchDate: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly reservedQuantity: number;
+  readonly status: "ACTIVE" | "CONSUMED" | "PARTIALLY_CONSUMED" | "RESERVED";
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+}
+
+export interface GoodReturnPoolLineView {
+  readonly allocatedQuantity: number;
+  readonly availableQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly totalQuantity: number;
+}
+
+export interface GoodReturnReceiptView {
+  readonly businessDate: string;
+  readonly comment: string | null;
+  readonly id: string;
+  readonly lines: readonly {
+    readonly productCode: string;
+    readonly productId: string;
+    readonly productName: string;
+    readonly quantity: number;
+  }[];
+  readonly receivedAt: string;
+  readonly receivedByName: string;
+  readonly sourceDriverId: string;
+  readonly sourceDriverName: string;
+  readonly totalQuantity: number;
+}
+
+export interface GoodReturnAllocationView {
+  readonly allocatedQuantity: number;
+  readonly consumedQuantity: number;
+  readonly dispatchDate: string;
+  readonly id: string;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly reservedQuantity: number;
+  readonly status: "ACTIVE" | "CANCELLED" | "CONSUMED" | "PARTIALLY_CONSUMED" | "RESERVED";
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly version: number;
+}
+
+export interface GoodReturnsWorkspaceView {
+  readonly allocations: readonly GoodReturnAllocationView[];
+  readonly dispatchDate: string;
+  readonly drivers: readonly { readonly id: string; readonly name: string }[];
+  readonly planPublished: boolean;
+  readonly pool: readonly GoodReturnPoolLineView[];
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+  }[];
+  readonly receipts: readonly GoodReturnReceiptView[];
+  readonly serverTime: string;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly number: number;
+  }[];
 }

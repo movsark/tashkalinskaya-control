@@ -127,6 +127,31 @@ export default function DriverLogisticsPage() {
       {error ? <p className="form-error loading-message">{error}</p> : null}
       {success ? <p className="logistics-success loading-message">{success}</p> : null}
 
+      {loading?.priorityReturns.length ? (
+        <section className="driver-return-priority">
+          <div>
+            <p className="eyebrow">Сначала возврат</p>
+            <h2>Приоритетный блок маршрута</h2>
+          </div>
+          <div>
+            {loading.priorityReturns.map((item) => (
+              <article key={item.allocationId}>
+                <span>
+                  Территория {item.territoryNumber} · {item.productCode}
+                </span>
+                <strong>{item.productName}</strong>
+                <b>{item.quantity} шт.</b>
+                <small>
+                  {item.reservedQuantity > 0
+                    ? `${item.reservedQuantity} уже в погрузке`
+                    : "ожидает погрузки"}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="driver-loading-list">
         {loading?.sessions.length ? (
           loading.sessions.map((item) => (
