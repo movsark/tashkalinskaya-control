@@ -11,11 +11,13 @@ import type { Pool, PoolClient } from "pg";
 import { loadWorkerConfig } from "./config";
 import { log } from "./logger";
 import { NotificationProcessor } from "./notification.processor";
+import { ReportProcessor } from "./report.processor";
 
 const config = loadWorkerConfig();
 let pool: Pool | undefined;
 let stopping = false;
 let notifications: NotificationProcessor | undefined;
+let reports: ReportProcessor | undefined;
 
 if (isDatabaseConfigured(config.databaseUrl)) {
   pool = createDatabasePool({
@@ -24,6 +26,7 @@ if (isDatabaseConfigured(config.databaseUrl)) {
     sslMode: config.databaseSsl,
   });
   notifications = new NotificationProcessor(pool, config);
+  reports = new ReportProcessor(pool);
 } else if (config.databaseRequired) {
   throw new Error("DATABASE_URL is required for this worker environment");
 }
@@ -40,6 +43,7 @@ async function runCycle(): Promise<void> {
     const missingExitCount = await markMissingExits(pool);
     const planning = await publishPlanIfDue(pool);
     const notificationResult = await notifications!.runCycle();
+    const reportResult = await reports!.runCycle();
     const result = await pool.query<{ pending_count: string }>(`
       select count(*)::text as pending_count
       from system.outbox_message
@@ -56,6 +60,9 @@ async function runCycle(): Promise<void> {
       notificationDeliveries: notificationResult.deliveries,
       notificationEscalations: notificationResult.escalations,
       notificationOutboxProcessed: notificationResult.outbox,
+      reportArtifactsExpired: reportResult.expired,
+      reportJobsFailed: reportResult.failed,
+      reportJobsGenerated: reportResult.generated,
       version: config.appVersion,
     });
   } catch (error) {

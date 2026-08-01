@@ -4909,6 +4909,358 @@ select:focus {
   }
 }
 
+.reports-page {
+  background: #f4f1eb;
+  min-height: 100vh;
+  padding-bottom: 70px;
+}
+
+.reports-hero {
+  align-items: end;
+  display: flex;
+  gap: 36px;
+  justify-content: space-between;
+  padding: 48px 0 26px;
+}
+
+.reports-hero h1 {
+  font-size: clamp(42px, 7vw, 78px);
+  margin: 0 0 12px;
+}
+
+.reports-hero > div > p:last-child,
+.report-request > p,
+.report-request > small {
+  color: #686f6a;
+  line-height: 1.55;
+  max-width: 660px;
+}
+
+.reports-hero form {
+  align-items: end;
+  background: white;
+  border: 1px solid #ded9cf;
+  border-radius: 16px;
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+}
+
+.reports-hero label,
+.report-dates label {
+  color: #606762;
+  display: grid;
+  font-size: 0.74rem;
+  font-weight: 750;
+  gap: 5px;
+}
+
+.reports-hero input,
+.report-dates input {
+  border: 1px solid #d5d0c7;
+  border-radius: 9px;
+  font: inherit;
+  min-height: 40px;
+  padding: 7px 10px;
+}
+
+.reports-notice {
+  border-radius: 12px;
+  margin: 0 0 16px;
+  padding: 12px 15px;
+}
+
+.reports-metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 14px 0 26px;
+}
+
+.report-metric {
+  background: white;
+  border: 1px solid #ded9cf;
+  border-radius: 16px;
+  display: grid;
+  min-height: 132px;
+  padding: 18px;
+  text-decoration: none;
+}
+
+.report-metric span {
+  color: #66706a;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.report-metric b {
+  color: #173c34;
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin-top: 12px;
+}
+
+.report-metric small {
+  color: #7d837f;
+  margin-top: 4px;
+}
+
+.report-metric.is-warning {
+  border-color: #d5a43f;
+  box-shadow: inset 0 4px #e2b557;
+}
+
+.report-metric.is-alert {
+  background: #9f342e;
+  border-color: #9f342e;
+}
+
+.report-metric.is-alert span,
+.report-metric.is-alert b,
+.report-metric.is-alert small {
+  color: white;
+}
+
+.reports-layout {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 350px;
+  margin: 24px 0;
+}
+
+.reports-catalog,
+.report-request,
+.report-registry {
+  background: white;
+  border: 1px solid #ded9cf;
+  border-radius: 20px;
+  box-shadow: 0 12px 38px rgb(40 36 28 / 5%);
+  padding: 22px;
+}
+
+.reports-heading {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.reports-heading h2,
+.report-request h2 {
+  margin: 0;
+}
+
+.reports-heading > span {
+  background: #edf1ed;
+  border-radius: 999px;
+  color: #36554c;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.report-picker {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-picker button {
+  background: #faf8f3;
+  border: 1px solid #e2ddd3;
+  border-radius: 13px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  min-height: 110px;
+  padding: 15px;
+  text-align: left;
+}
+
+.report-picker button:hover,
+.report-picker button.is-active {
+  background: #e7efe9;
+  border-color: #5c8275;
+}
+
+.report-picker small {
+  color: #6e746f;
+  line-height: 1.4;
+}
+
+.report-picker em {
+  color: #9e3b32;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.report-request {
+  display: grid;
+  gap: 15px;
+  position: sticky;
+  top: 16px;
+}
+
+.report-dates {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.report-request fieldset {
+  border: 0;
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.report-request legend {
+  color: #606762;
+  font-size: 0.74rem;
+  font-weight: 750;
+  margin-bottom: 7px;
+}
+
+.report-request fieldset label {
+  align-items: center;
+  display: flex;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.report-registry {
+  margin-top: 18px;
+}
+
+.report-job-list {
+  display: grid;
+  gap: 9px;
+}
+
+.report-job {
+  align-items: center;
+  border: 1px solid #e2ddd3;
+  border-left: 5px solid #999d99;
+  border-radius: 13px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.report-job.is-ready {
+  border-left-color: #27805d;
+}
+
+.report-job.is-failed {
+  border-left-color: #b23f35;
+}
+
+.report-job span {
+  background: #e8ede9;
+  border-radius: 6px;
+  color: #315449;
+  display: inline-flex;
+  font-size: 0.66rem;
+  font-weight: 900;
+  padding: 4px 6px;
+}
+
+.report-job h3 {
+  margin: 6px 0 3px;
+}
+
+.report-job p,
+.report-job small,
+.report-job code,
+.report-job em {
+  color: #6b716d;
+  display: block;
+  font-size: 0.73rem;
+  margin: 2px 0 0;
+}
+
+.report-job code {
+  font-family: ui-monospace, monospace;
+}
+
+.report-job em {
+  color: #9d372f;
+  font-style: normal;
+}
+
+@media (max-width: 1050px) {
+  .reports-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .reports-layout {
+    grid-template-columns: 1fr;
+  }
+  .report-request {
+    position: static;
+  }
+}
+
+@media (max-width: 650px) {
+  .reports-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .reports-hero form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .reports-metrics,
+  .report-picker,
+  .report-dates {
+    grid-template-columns: 1fr;
+  }
+  .report-metric {
+    min-height: 112px;
+  }
+  .reports-catalog,
+  .report-request,
+  .report-registry {
+    padding: 15px;
+  }
+  .report-job {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  .report-job .primary-button {
+    width: 100%;
+  }
+}
+
+@media print {
+  .reports-page .workspace-header,
+  .reports-hero form,
+  .reports-layout,
+  .report-registry,
+  .notification-shortcut {
+    display: none !important;
+  }
+  .reports-page {
+    background: white;
+    padding: 0;
+  }
+  .reports-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .report-metric {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}
+
 .spoilage-page {
   background: #f4f1eb;
   min-height: 100vh;
