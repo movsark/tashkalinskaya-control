@@ -12,6 +12,8 @@ import type {
   GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
+  SpoilagePhotoView,
+  SpoilageWorkspaceView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
   NormChangeRequestView,
@@ -1169,6 +1171,95 @@ export async function cancelGoodReturnAllocation(
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });
+}
+
+export async function getSpoilageWorkspace(): Promise<SpoilageWorkspaceView> {
+  return request("/spoilage/workspace");
+}
+
+export async function uploadSpoilagePhoto(
+  file: File,
+  csrfToken: string,
+): Promise<SpoilagePhotoView> {
+  const body = new FormData();
+  body.set("file", file);
+  return request("/spoilage/photos", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createWriteoffRequest(
+  input: {
+    businessDate: string;
+    comment: string;
+    externalDocumentNumber?: string;
+    idempotencyKey: string;
+    photoUploadId?: string;
+    physicalSourceKind?: "DRIVER" | "OTHER" | "STORE";
+    productId: string;
+    quantity: number;
+    reasonId: string;
+    sourceDriverId?: string;
+    sourceKind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
+    sourceLabel?: string;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request("/spoilage/requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideWriteoffRequest(
+  requestId: string,
+  input: {
+    comment: string;
+    decision: "APPROVE" | "REJECT";
+    idempotencyKey: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request(`/spoilage/requests/${requestId}/decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function checkWriteoffExternalDocument(
+  requestId: string,
+  input: {
+    comment?: string;
+    externalDocumentNumber: string;
+    idempotencyKey: string;
+    result: "MATCHED" | "MISMATCH";
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request(`/spoilage/requests/${requestId}/external-checks`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getSpoilagePhotoUrl(photoId: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/spoilage/photos/${photoId}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+  } catch {
+    throw new ApiRequestError("Нет связи с сервером", 0, "NETWORK_ERROR");
+  }
+  if (!response.ok) throw new ApiRequestError("Не удалось открыть фотографию", response.status);
+  return URL.createObjectURL(await response.blob());
 }
 export async function claimWarehouseBatch(
   batchId: string,

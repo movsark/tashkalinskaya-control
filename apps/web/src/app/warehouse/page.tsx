@@ -86,6 +86,7 @@ export default function WarehousePage() {
           <span>{session.employee.fullName}</span>
           <small>
             Склад · <Link href="/returns">годный возврат</Link> ·{" "}
+            <Link href="/spoilage">порча и списания</Link> ·{" "}
             <Link href="/warehouse/inventory">инвентаризация</Link> ·{" "}
             <Link href="/production">производство</Link> · <Link href="/">главная</Link>
           </small>
