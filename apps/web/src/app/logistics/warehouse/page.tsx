@@ -195,7 +195,8 @@ export default function WarehouseLogisticsPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Склад · <Link href="/warehouse">остатки и приёмка</Link>
+            Склад · <Link href="/returns">годный возврат</Link> ·{" "}
+            <Link href="/warehouse">остатки и приёмка</Link>
           </small>
         </div>
       </header>

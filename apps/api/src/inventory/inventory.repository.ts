@@ -102,8 +102,8 @@ export class InventoryRepository {
           `insert into warehouse.inventory_line(
              id,inventory_session_id,product_id,product_code_snapshot,product_name_snapshot,
              snapshot_free,snapshot_reserved_loading,snapshot_reserved_store,snapshot_return_pool,
-             snapshot_blocked,system_quantity
-           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+             snapshot_return_allocated,snapshot_return_reserved,snapshot_blocked,system_quantity
+           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
             randomUUID(),
             sessionId,
@@ -114,6 +114,8 @@ export class InventoryRepository {
             product.snapshotReservedLoading,
             product.snapshotReservedStore,
             product.snapshotReturnPool,
+            product.snapshotReturnAllocated,
+            product.snapshotReturnReserved,
             product.snapshotBlocked,
             product.systemQuantity,
           ],
@@ -498,13 +500,17 @@ async function snapshotProducts(client: PoolClient) {
     snapshot_free: number;
     snapshot_reserved_loading: number;
     snapshot_reserved_store: number;
+    snapshot_return_allocated: number;
     snapshot_return_pool: number;
+    snapshot_return_reserved: number;
   }>(
     `select p.id product_id,p.product_code,p.name product_name,
             coalesce(sum(sb.quantity) filter(where sb.bucket='FREE_STOCK'),0)::int snapshot_free,
             coalesce(sum(sb.quantity) filter(where sb.bucket='RESERVED_FOR_LOADING'),0)::int snapshot_reserved_loading,
             coalesce(sum(sb.quantity) filter(where sb.bucket='RESERVED_FOR_STORE'),0)::int snapshot_reserved_store,
             coalesce(sum(sb.quantity) filter(where sb.bucket='RETURN_POOL'),0)::int snapshot_return_pool,
+            coalesce(sum(sb.quantity) filter(where sb.bucket='RETURN_ALLOCATED'),0)::int snapshot_return_allocated,
+            coalesce(sum(sb.quantity) filter(where sb.bucket='RETURN_RESERVED_FOR_LOADING'),0)::int snapshot_return_reserved,
             coalesce(sum(sb.quantity) filter(where sb.bucket='BLOCKED_FOR_WRITEOFF'),0)::int snapshot_blocked
      from catalog.product p
      left join warehouse.stock_balance sb on sb.product_id=p.id and sb.warehouse_id=$1
@@ -521,11 +527,15 @@ async function snapshotProducts(client: PoolClient) {
     snapshotReservedLoading: row.snapshot_reserved_loading,
     snapshotReservedStore: row.snapshot_reserved_store,
     snapshotReturnPool: row.snapshot_return_pool,
+    snapshotReturnAllocated: row.snapshot_return_allocated,
+    snapshotReturnReserved: row.snapshot_return_reserved,
     systemQuantity:
       row.snapshot_free +
       row.snapshot_reserved_loading +
       row.snapshot_reserved_store +
       row.snapshot_return_pool +
+      row.snapshot_return_allocated +
+      row.snapshot_return_reserved +
       row.snapshot_blocked,
   }));
 }
@@ -663,7 +673,9 @@ interface LineRow {
   readonly snapshot_free: number;
   readonly snapshot_reserved_loading: number;
   readonly snapshot_reserved_store: number;
+  readonly snapshot_return_allocated: number;
   readonly snapshot_return_pool: number;
+  readonly snapshot_return_reserved: number;
   readonly system_quantity: number;
   readonly version: number;
 }
@@ -725,7 +737,9 @@ function mapLine(row: LineRow): InventoryLineView {
     snapshotFree: row.snapshot_free,
     snapshotReservedLoading: row.snapshot_reserved_loading,
     snapshotReservedStore: row.snapshot_reserved_store,
+    snapshotReturnAllocated: row.snapshot_return_allocated,
     snapshotReturnPool: row.snapshot_return_pool,
+    snapshotReturnReserved: row.snapshot_return_reserved,
     systemQuantity: row.system_quantity,
     version: row.version,
   };

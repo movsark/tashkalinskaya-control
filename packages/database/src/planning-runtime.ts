@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-export const PLANNING_ENGINE_VERSION = "b14.1-v3";
+export const PLANNING_ENGINE_VERSION = "b15.1-v4";
 
 export interface PlanningSnapshotLine {
   readonly allocatedFreeStock: number;
@@ -701,9 +701,28 @@ async function buildSnapshot(
         };
   });
   const missingStoreOrder = storeOrders.some((order) => order.state === "MISSING");
+  const returnAllocations = await client.query<{
+    allocated_quantity: number;
+    consumed_quantity: number;
+    dispatch_date: string;
+    product_id: string;
+    territory_id: string;
+  }>(
+    `select dispatch_date::text,territory_id,product_id,allocated_quantity,consumed_quantity
+     from returns.return_allocation
+     where dispatch_date=any($1::date[]) and status not in ('CANCELLED','CONSUMED')`,
+    [[...new Set(links.rows.map((row) => row.dispatch_date))]],
+  );
+  const returnsByDemand = new Map(
+    returnAllocations.rows.map((row) => [
+      `${row.dispatch_date}:${row.territory_id}:${row.product_id}`,
+      Math.max(0, row.allocated_quantity - row.consumed_quantity),
+    ]),
+  );
   const territoryDemandLines: PlanningSnapshotLine[] = links.rows.map((row) => ({
     allocatedFreeStock: 0,
-    allocatedGoodReturn: 0,
+    allocatedGoodReturn:
+      returnsByDemand.get(`${row.dispatch_date}:${row.territory_id}:${row.product_id}`) ?? 0,
     dispatchDate: row.dispatch_date,
     directionKind: "TERRITORY",
     oneOffQuantity: row.one_off_quantity,
@@ -754,7 +773,8 @@ async function buildSnapshot(
     ? await client.query<{ available_quantity: number; product_id: string }>(
         `select product_id,
                 greatest(0,actual_quantity-snapshot_reserved_loading-snapshot_reserved_store-
-                  snapshot_return_pool-snapshot_blocked)::int available_quantity
+                  snapshot_return_pool-snapshot_return_allocated-snapshot_return_reserved-
+                  snapshot_blocked)::int available_quantity
          from warehouse.inventory_line
          where inventory_session_id=$1`,
         [confirmedInventory.id],
@@ -799,7 +819,7 @@ function allocateFreeStock(
   return [...lines].sort(compareSnapshot).map((line) => {
     const available = availableByProduct.get(line.productId) ?? 0;
     const demand = line.oneOffQuantity ?? line.weeklyNormQuantity ?? line.storeOrderQuantity;
-    const allocatedFreeStock = Math.min(available, demand);
+    const allocatedFreeStock = Math.min(available, Math.max(0, demand - line.allocatedGoodReturn));
     availableByProduct.set(line.productId, available - allocatedFreeStock);
     return { ...line, allocatedFreeStock };
   });

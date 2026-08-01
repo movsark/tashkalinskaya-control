@@ -126,6 +126,9 @@ interface LockedLineRow extends QueryResultRow {
 interface CurrentRevisionRow extends QueryResultRow {
   id: string;
   quantity: number;
+  reserved_free_quantity: number;
+  reserved_return_quantity: number;
+  return_allocation_id: string | null;
 }
 
 const warehouseId = "15000000-0000-4000-8000-000000000001";
@@ -172,11 +175,47 @@ export class LoadingRepository {
 
   driverDay(date: string, actor: LoadingActor): Promise<LoadingDriverDayView> {
     assertRole(actor, ["DRIVER"]);
-    return this.database.transaction(async (client) => ({
-      dispatchDate: date,
-      serverTime: new Date().toISOString(),
-      sessions: await loadSessions(client, date, actor.employeeId),
-    }));
+    return this.database.transaction(async (client) => {
+      const priority = await client.query<{
+        allocated_quantity: number;
+        consumed_quantity: number;
+        dispatch_date: string;
+        id: string;
+        product_code: string;
+        product_id: string;
+        product_name: string;
+        reserved_quantity: number;
+        status: "ACTIVE" | "CONSUMED" | "PARTIALLY_CONSUMED" | "RESERVED";
+        territory_id: string;
+        territory_number: number;
+      }>(
+        `select a.id,a.dispatch_date::text,a.product_id,p.product_code,p.name product_name,
+           a.territory_id,t.territory_number,a.allocated_quantity,a.reserved_quantity,a.consumed_quantity,a.status
+         from returns.return_allocation a join catalog.product p on p.id=a.product_id
+         join logistics.territory t on t.id=a.territory_id
+         join logistics.territory_run r on r.dispatch_date=a.dispatch_date and r.territory_id=a.territory_id
+         where a.dispatch_date=$1 and r.driver_employee_id=$2 and a.status<>'CANCELLED'
+         order by t.territory_number,p.name`,
+        [date, actor.employeeId],
+      );
+      return {
+        dispatchDate: date,
+        priorityReturns: priority.rows.map((row) => ({
+          allocationId: row.id,
+          dispatchDate: row.dispatch_date,
+          productCode: row.product_code,
+          productId: row.product_id,
+          productName: row.product_name,
+          quantity: Math.max(0, row.allocated_quantity - row.consumed_quantity),
+          reservedQuantity: row.reserved_quantity,
+          status: row.status,
+          territoryId: row.territory_id,
+          territoryNumber: row.territory_number,
+        })),
+        serverTime: new Date().toISOString(),
+        sessions: await loadSessions(client, date, actor.employeeId),
+      };
+    });
   }
 
   openGroup(
@@ -313,24 +352,23 @@ export class LoadingRepository {
         throw new ConflictException("Этот товар уже есть в рейсе");
       const lineId = randomUUID(),
         revisionId = randomUUID();
-      const documentId = await moveStock(client, {
-        actor: command.actor,
-        businessDate: session.dispatch_date,
-        correlationId: command.correlationId,
-        idempotencyKey: command.idempotencyKey,
-        productId: command.productId,
-        quantity: command.quantity,
-        source: "FREE_STOCK",
-        sourceId: revisionId,
-        target: "RESERVED_FOR_LOADING",
-        type: "RESERVE",
-      });
       const plan = await planSnapshot(
         client,
         session.dispatch_date,
         session.territory_id,
         command.productId,
       );
+      const reservation = await reserveForTerritory(client, {
+        actor: command.actor,
+        businessDate: session.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous: null,
+        productId: command.productId,
+        quantity: command.quantity,
+        sourceId: revisionId,
+        territoryId: session.territory_id,
+      });
       await client.query(
         `insert into loading.loading_line(id,loading_session_id,product_id) values($1,$2,$3)`,
         [lineId, command.sessionId, command.productId],
@@ -343,7 +381,10 @@ export class LoadingRepository {
         lineId,
         plan,
         quantity: command.quantity,
-        reservationDocumentId: documentId,
+        reservationDocumentId: reservation.documentId,
+        reservedFreeQuantity: reservation.freeQuantity,
+        reservedReturnQuantity: reservation.returnQuantity,
+        returnAllocationId: reservation.allocationId,
         revisionId,
         revisionNo: 1,
       });
@@ -387,21 +428,6 @@ export class LoadingRepository {
       if (session.status !== "IN_PROGRESS")
         throw new ConflictException("Сессия уже зафиксирована складом");
       const previous = await currentRevision(client, line);
-      const delta = command.quantity - previous.quantity;
-      let documentId: string | null = null;
-      if (delta !== 0)
-        documentId = await moveStock(client, {
-          actor: command.actor,
-          businessDate: session.dispatch_date,
-          correlationId: command.correlationId,
-          idempotencyKey: command.idempotencyKey,
-          productId: line.product_id,
-          quantity: Math.abs(delta),
-          source: delta > 0 ? "FREE_STOCK" : "RESERVED_FOR_LOADING",
-          sourceId: command.lineId,
-          target: delta > 0 ? "RESERVED_FOR_LOADING" : "FREE_STOCK",
-          type: delta > 0 ? "RESERVE" : "RESERVE_RELEASE",
-        });
       const revisionId = randomUUID(),
         revisionNo = line.current_revision_no + 1;
       const plan = await planSnapshot(
@@ -410,6 +436,17 @@ export class LoadingRepository {
         session.territory_id,
         line.product_id,
       );
+      const reservation = await reserveForTerritory(client, {
+        actor: command.actor,
+        businessDate: session.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous,
+        productId: line.product_id,
+        quantity: command.quantity,
+        sourceId: revisionId,
+        territoryId: session.territory_id,
+      });
       await insertRevision(client, {
         actor: command.actor,
         comment: command.comment,
@@ -418,7 +455,10 @@ export class LoadingRepository {
         lineId: command.lineId,
         plan,
         quantity: command.quantity,
-        reservationDocumentId: documentId,
+        reservationDocumentId: reservation.documentId,
+        reservedFreeQuantity: reservation.freeQuantity,
+        reservedReturnQuantity: reservation.returnQuantity,
+        returnAllocationId: reservation.allocationId,
         revisionId,
         revisionNo,
       });
@@ -497,6 +537,17 @@ export class LoadingRepository {
         target.territory_id,
         line.product_id,
       );
+      const reservation = await reserveForTerritory(client, {
+        actor: command.actor,
+        businessDate: target.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous,
+        productId: line.product_id,
+        quantity: previous.quantity,
+        sourceId: revisionId,
+        territoryId: target.territory_id,
+      });
       await insertRevision(client, {
         actor: command.actor,
         comment: command.reason,
@@ -505,7 +556,10 @@ export class LoadingRepository {
         lineId: command.lineId,
         plan,
         quantity: previous.quantity,
-        reservationDocumentId: null,
+        reservationDocumentId: reservation.documentId,
+        reservedFreeQuantity: reservation.freeQuantity,
+        reservedReturnQuantity: reservation.returnQuantity,
+        returnAllocationId: reservation.allocationId,
         revisionId,
         revisionNo,
       });
@@ -708,19 +762,56 @@ export class LoadingRepository {
           idempotencyKey,
         ],
       );
-      const totals = new Map<string, number>();
-      for (const line of lines)
-        totals.set(line.product_id, (totals.get(line.product_id) ?? 0) + line.quantity);
-      for (const [productId, quantity] of [...totals].sort(([a], [b]) => a.localeCompare(b)))
-        await moveWithDocument(
-          client,
-          documentId,
-          productId,
-          "RESERVED_FOR_LOADING",
-          "DISPATCHED",
-          quantity,
-          session.dispatch_date,
+      const freeTotals = new Map<string, number>();
+      const returnTotals = new Map<string, { productId: string; quantity: number }>();
+      for (const line of lines) {
+        freeTotals.set(
+          line.product_id,
+          (freeTotals.get(line.product_id) ?? 0) + line.reserved_free_quantity,
         );
+        if (line.return_allocation_id)
+          returnTotals.set(line.return_allocation_id, {
+            productId: line.product_id,
+            quantity:
+              (returnTotals.get(line.return_allocation_id)?.quantity ?? 0) +
+              line.reserved_return_quantity,
+          });
+      }
+      for (const [productId, quantity] of [...freeTotals].sort(([a], [b]) => a.localeCompare(b)))
+        if (quantity > 0)
+          await moveWithDocument(
+            client,
+            documentId,
+            productId,
+            "RESERVED_FOR_LOADING",
+            "DISPATCHED",
+            quantity,
+            session.dispatch_date,
+          );
+      for (const [allocationId, item] of [...returnTotals].sort(([a], [b]) => a.localeCompare(b))) {
+        if (item.quantity > 0)
+          await moveWithDocument(
+            client,
+            documentId,
+            item.productId,
+            "RETURN_RESERVED_FOR_LOADING",
+            "DISPATCHED",
+            item.quantity,
+            session.dispatch_date,
+          );
+        const updated = await client.query<{
+          allocated_quantity: number;
+          consumed_quantity: number;
+        }>(
+          `update returns.return_allocation
+           set reserved_quantity=reserved_quantity-$2,consumed_quantity=consumed_quantity+$2,
+             status=case when consumed_quantity+$2=allocated_quantity then 'CONSUMED' else 'PARTIALLY_CONSUMED' end,
+             version=version+1 where id=$1 and reserved_quantity>=$2
+           returning allocated_quantity,consumed_quantity`,
+          [allocationId, item.quantity],
+        );
+        if (!updated.rows[0]) throw new ConflictException("Резерв возврата уже изменился");
+      }
       await client.query(
         `insert into loading.session_confirmation(id,loading_session_id,confirmation_kind,actor_employee_id,actor_role,total_quantity,summary_hash,movement_document_id,idempotency_key,correlation_id)
          values($1,$2,'DRIVER_FINAL',$3,'DRIVER',$4,$5,$6,$7,$8)`,
@@ -913,7 +1004,8 @@ async function currentRevision(
   line: LockedLineRow,
 ): Promise<CurrentRevisionRow> {
   const result = await client.query<CurrentRevisionRow>(
-    `select id,quantity from loading.loading_line_revision where loading_line_id=$1 and revision_no=$2`,
+    `select id,quantity,reserved_free_quantity,reserved_return_quantity,return_allocation_id
+     from loading.loading_line_revision where loading_line_id=$1 and revision_no=$2`,
     [line.id, line.current_revision_no],
   );
   if (!result.rows[0]) throw new ConflictException("Нарушена цепочка версий строки");
@@ -924,10 +1016,14 @@ async function confirmedLines(client: PoolClient, sessionId: string, lock: boole
     id: string;
     product_id: string;
     quantity: number;
+    reserved_free_quantity: number;
+    reserved_return_quantity: number;
+    return_allocation_id: string | null;
     revision_id: string;
     status: string;
   }>(
-    `select l.id,l.product_id,l.status,r.id revision_id,r.quantity from loading.loading_line l
+    `select l.id,l.product_id,l.status,r.id revision_id,r.quantity,r.reserved_free_quantity,
+       r.reserved_return_quantity,r.return_allocation_id from loading.loading_line l
      join loading.loading_line_revision r on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
      where l.loading_session_id=$1 order by l.product_id ${lock ? "for update of l" : ""}`,
     [sessionId],
@@ -986,6 +1082,9 @@ async function insertRevision(
     plan: LoadingPlanSnapshotView;
     quantity: number;
     reservationDocumentId: string | null;
+    reservedFreeQuantity: number;
+    reservedReturnQuantity: number;
+    returnAllocationId: string | null;
     revisionId: string;
     revisionNo: number;
   },
@@ -993,8 +1092,9 @@ async function insertRevision(
   await client.query(
     `insert into loading.loading_line_revision(id,loading_line_id,revision_no,quantity,weekly_norm_quantity,one_off_quantity,
        allocated_free_stock,allocated_good_return,new_production,planned_quantity,comment,created_by,actor_role,
-       idempotency_key,correlation_id,reservation_document_id)
-     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+       idempotency_key,correlation_id,reservation_document_id,reserved_free_quantity,reserved_return_quantity,
+       return_allocation_id)
+     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     [
       input.revisionId,
       input.lineId,
@@ -1012,8 +1112,142 @@ async function insertRevision(
       input.idempotencyKey,
       input.correlationId,
       input.reservationDocumentId,
+      input.reservedFreeQuantity,
+      input.reservedReturnQuantity,
+      input.returnAllocationId,
     ],
   );
+}
+
+async function reserveForTerritory(
+  client: PoolClient,
+  input: {
+    actor: LoadingActor;
+    businessDate: string;
+    correlationId: string;
+    idempotencyKey: string;
+    previous: CurrentRevisionRow | null;
+    productId: string;
+    quantity: number;
+    sourceId: string;
+    territoryId: string;
+  },
+) {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `loading-reserve:${warehouseId}:${input.productId}`,
+  ]);
+  const documentId = randomUUID();
+  await client.query(
+    `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,source_id,
+       actor_id,actor_role,correlation_id,idempotency_key)
+     values($1,$2,'RESERVE',$3,'LOADING_LINE',$4,$5,$6,$7,$8)`,
+    [
+      documentId,
+      warehouseId,
+      input.businessDate,
+      input.sourceId,
+      input.actor.employeeId,
+      activeRole(input.actor),
+      input.correlationId,
+      input.idempotencyKey,
+    ],
+  );
+  if (input.previous?.reserved_free_quantity)
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "RESERVED_FOR_LOADING",
+      "FREE_STOCK",
+      input.previous.reserved_free_quantity,
+      input.businessDate,
+    );
+  if (input.previous?.reserved_return_quantity && input.previous.return_allocation_id) {
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "RETURN_RESERVED_FOR_LOADING",
+      "RETURN_ALLOCATED",
+      input.previous.reserved_return_quantity,
+      input.businessDate,
+    );
+    await changeAllocationReservation(
+      client,
+      input.previous.return_allocation_id,
+      -input.previous.reserved_return_quantity,
+    );
+  }
+  const allocation = await client.query<{
+    allocated_quantity: number;
+    consumed_quantity: number;
+    id: string;
+    reserved_quantity: number;
+  }>(
+    `select id,allocated_quantity,reserved_quantity,consumed_quantity
+     from returns.return_allocation
+     where dispatch_date=$1 and territory_id=$2 and product_id=$3
+       and status not in ('CANCELLED','CONSUMED') for update`,
+    [input.businessDate, input.territoryId, input.productId],
+  );
+  const current = allocation.rows[0] ?? null;
+  const returnQuantity = current
+    ? Math.min(
+        input.quantity,
+        current.allocated_quantity - current.reserved_quantity - current.consumed_quantity,
+      )
+    : 0;
+  if (current && returnQuantity > 0) {
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "RETURN_ALLOCATED",
+      "RETURN_RESERVED_FOR_LOADING",
+      returnQuantity,
+      input.businessDate,
+    );
+    await changeAllocationReservation(client, current.id, returnQuantity);
+  }
+  const freeQuantity = input.quantity - returnQuantity;
+  if (freeQuantity > 0)
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "FREE_STOCK",
+      "RESERVED_FOR_LOADING",
+      freeQuantity,
+      input.businessDate,
+    );
+  return {
+    allocationId: returnQuantity > 0 ? current!.id : null,
+    documentId,
+    freeQuantity,
+    returnQuantity,
+  };
+}
+
+async function changeAllocationReservation(
+  client: PoolClient,
+  allocationId: string,
+  delta: number,
+) {
+  const result = await client.query(
+    `update returns.return_allocation
+     set reserved_quantity=reserved_quantity+$2,
+       status=case
+         when consumed_quantity>0 then 'PARTIALLY_CONSUMED'
+         when reserved_quantity+$2>0 then 'RESERVED'
+         else 'ACTIVE'
+       end,
+       version=version+1
+     where id=$1 and reserved_quantity+$2>=0
+       and reserved_quantity+$2+consumed_quantity<=allocated_quantity
+     returning id`,
+    [allocationId, delta],
+  );
+  if (!result.rowCount) throw new ConflictException("Распределение возврата уже изменилось");
 }
 async function repeatedRevision(client: PoolClient, actorId: string, key: string) {
   const result = await client.query<{ loading_line_id: string }>(
@@ -1035,48 +1269,6 @@ async function requireProduct(client: PoolClient, id: string) {
       .rowCount
   )
     throw new NotFoundException("Товар не найден");
-}
-async function moveStock(
-  client: PoolClient,
-  input: {
-    actor: LoadingActor;
-    businessDate: string;
-    correlationId: string;
-    idempotencyKey: string;
-    productId: string;
-    quantity: number;
-    source: string;
-    sourceId: string;
-    target: string;
-    type: "RESERVE" | "RESERVE_RELEASE";
-  },
-) {
-  const documentId = randomUUID();
-  await client.query(
-    `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,source_id,actor_id,actor_role,correlation_id,idempotency_key)
-     values($1,$2,$3,$4,'LOADING_LINE',$5,$6,$7,$8,$9)`,
-    [
-      documentId,
-      warehouseId,
-      input.type,
-      input.businessDate,
-      input.sourceId,
-      input.actor.employeeId,
-      activeRole(input.actor),
-      input.correlationId,
-      input.idempotencyKey,
-    ],
-  );
-  await moveWithDocument(
-    client,
-    documentId,
-    input.productId,
-    input.source,
-    input.target,
-    input.quantity,
-    input.businessDate,
-  );
-  return documentId;
 }
 async function moveWithDocument(
   client: PoolClient,

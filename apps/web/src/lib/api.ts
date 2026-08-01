@@ -9,6 +9,7 @@ import type {
   EmployeeListResponse,
   EmployeeSummary,
   DriverLogisticsDayView,
+  GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
   ManualAttendanceReasonView,
@@ -1103,6 +1104,71 @@ export async function downloadImportIssues(batchId: string): Promise<void> {
 
 export async function getWarehouseWorkspace(): Promise<WarehouseWorkspaceView> {
   return request("/warehouse/workspace");
+}
+
+export async function getGoodReturnsWorkspace(
+  dispatchDate: string,
+): Promise<GoodReturnsWorkspaceView> {
+  return request(`/returns/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
+export async function receiveGoodReturn(
+  input: {
+    businessDate: string;
+    comment?: string;
+    idempotencyKey: string;
+    lines: ReadonlyArray<{ productId: string; quantity: number }>;
+    sourceDriverId: string;
+  },
+  csrfToken: string,
+): Promise<{ receiptId: string }> {
+  return request("/returns/receipts", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function allocateGoodReturn(
+  input: {
+    dispatchDate: string;
+    idempotencyKey: string;
+    productId: string;
+    quantity: number;
+    reason?: string;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<{ allocationId: string }> {
+  return request("/returns/allocations", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function reviseGoodReturnAllocation(
+  allocationId: string,
+  input: { idempotencyKey: string; quantity: number; reason: string; version: number },
+  csrfToken: string,
+): Promise<{ allocationId: string }> {
+  return request(`/returns/allocations/${allocationId}/revise`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function cancelGoodReturnAllocation(
+  allocationId: string,
+  input: { idempotencyKey: string; reason: string; version: number },
+  csrfToken: string,
+): Promise<{ allocationId: string }> {
+  return request(`/returns/allocations/${allocationId}/cancel`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 export async function claimWarehouseBatch(
   batchId: string,

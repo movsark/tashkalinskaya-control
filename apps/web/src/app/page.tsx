@@ -51,6 +51,11 @@ const foundations = [
     state: "B14.1",
     title: "Инвентаризация",
   },
+  {
+    detail: "Приём от водителя, общий пул, назначения территориям и приоритет в погрузке",
+    state: "B15.1",
+    title: "Годный возврат",
+  },
 ];
 
 export default function HomePage() {
@@ -71,7 +76,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B14</p>
+          <p className="eyebrow">Разработка MVP · B05–B15</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -101,6 +106,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/warehouse/inventory">
               Инвентаризация
+            </a>
+            <a className="text-link" href="/returns">
+              Годный возврат
             </a>
           </div>
         </div>
@@ -137,7 +145,7 @@ export default function HomePage() {
         <div className="foundation-grid">
           {foundations.map((foundation, index) => (
             <article className="foundation-card" key={foundation.title}>
-              <span className="foundation-card__number">0{index + 1}</span>
+              <span className="foundation-card__number">{String(index + 1).padStart(2, "0")}</span>
               <span className="foundation-card__state">{foundation.state}</span>
               <h3>{foundation.title}</h3>
               <p>{foundation.detail}</p>
@@ -149,12 +157,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B15 · Годный возврат и общий пул</h2>
+          <h2>B16 · Порча и запросы на списание</h2>
         </div>
         <p>
-          Ежедневный пересчёт уже связан с системным остатком и планом производства. Следующий срез
-          примет годный возврат от водителей и даст администратору распределять общий пул между
-          территориями.
+          Годный возврат уже отделён от свободного остатка, распределяется по территориям и проходит
+          двойное подтверждение погрузки. Следующий срез оформит повреждённый возврат, фотографии и
+          согласование списания.
         </p>
       </section>
 

@@ -448,7 +448,8 @@ function InventoryLineCard({
         <small>
           Свободно {line.snapshotFree} · резервы{" "}
           {line.snapshotReservedLoading + line.snapshotReservedStore} · возврат{" "}
-          {line.snapshotReturnPool} · блок {line.snapshotBlocked}
+          {line.snapshotReturnPool} · распределено {line.snapshotReturnAllocated} · в погрузке{" "}
+          {line.snapshotReturnReserved} · блок {line.snapshotBlocked}
         </small>
       </div>
       <div className="inventory-system-number">
