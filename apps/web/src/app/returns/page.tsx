@@ -108,8 +108,8 @@ export default function GoodReturnsPage() {
         <div className="workspace-user">
           <span>{session.employee.fullName}</span>
           <small>
-            Годный возврат · <Link href="/warehouse">склад</Link> ·{" "}
-            <Link href="/logistics/warehouse">погрузка</Link>
+            Годный возврат · <Link href="/spoilage">порча</Link> ·{" "}
+            <Link href="/warehouse">склад</Link> · <Link href="/logistics/warehouse">погрузка</Link>
           </small>
         </div>
       </header>

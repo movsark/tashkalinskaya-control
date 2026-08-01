@@ -11,6 +11,8 @@ describe("loadApiConfig", () => {
     expect(config.port).toBe(4000);
     expect(config.databaseRequired).toBe(false);
     expect(config.corsOrigins).toEqual(["http://localhost:3000"]);
+    expect(config.fileStorageDriver).toBe("local");
+    expect(config.s3).toBeNull();
     expect(config.sessionTokenPepper.length).toBeGreaterThanOrEqual(32);
   });
 
@@ -20,5 +22,9 @@ describe("loadApiConfig", () => {
 
   it("does not allow local identity secrets in production", () => {
     expect(() => loadApiConfig({ NODE_ENV: "production" })).toThrow("AUTH_TOKEN_PEPPER");
+  });
+
+  it("requires a complete private S3 configuration", () => {
+    expect(() => loadApiConfig({ FILE_STORAGE_DRIVER: "s3" })).toThrow("S3_ENDPOINT");
   });
 });

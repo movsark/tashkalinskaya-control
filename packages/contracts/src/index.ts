@@ -993,3 +993,82 @@ export interface GoodReturnsWorkspaceView {
     readonly number: number;
   }[];
 }
+
+export type WriteoffSourceKind = "PHYSICAL_SPOILAGE" | "RETURN_POOL";
+export type WriteoffStatus = "EXECUTED" | "REJECTED" | "SUBMITTED";
+export type ExternalCheckResult = "MATCHED" | "MISMATCH";
+
+export interface SpoilageReasonView {
+  readonly code: string;
+  readonly displayName: string;
+  readonly id: string;
+  readonly photoRequired: boolean;
+}
+
+export interface SpoilagePhotoView {
+  readonly contentType: "image/jpeg" | "image/png" | "image/webp";
+  readonly height: number;
+  readonly id: string;
+  readonly originalFileName: string;
+  readonly storedSize: number;
+  readonly width: number;
+}
+
+export interface ExternalDocumentCheckView {
+  readonly checkedAt: string;
+  readonly checkedByName: string;
+  readonly comment: string | null;
+  readonly externalDocumentNumber: string;
+  readonly id: string;
+  readonly result: ExternalCheckResult;
+  readonly revisionNo: number;
+}
+
+export interface WriteoffRequestView {
+  readonly businessDate: string;
+  readonly comment: string;
+  readonly createdAt: string;
+  readonly createdByName: string;
+  readonly decision: {
+    readonly comment: string;
+    readonly decidedAt: string;
+    readonly decidedByName: string;
+    readonly type: "APPROVE" | "REJECT";
+  } | null;
+  readonly externalCheck: ExternalDocumentCheckView | null;
+  readonly externalDocumentNumber: string | null;
+  readonly id: string;
+  readonly photo: SpoilagePhotoView | null;
+  readonly physicalSourceKind: "DRIVER" | "OTHER" | "STORE" | null;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly reasonCode: string;
+  readonly reasonName: string;
+  readonly sourceDriverName: string | null;
+  readonly sourceKind: WriteoffSourceKind;
+  readonly sourceLabel: string | null;
+  readonly status: WriteoffStatus;
+  readonly version: number;
+}
+
+export interface SpoilageWorkspaceView {
+  readonly blockedQuantity: number;
+  readonly drivers: readonly { readonly id: string; readonly name: string }[];
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+  }[];
+  readonly reasons: readonly SpoilageReasonView[];
+  readonly requests: readonly WriteoffRequestView[];
+  readonly returnPool: readonly {
+    readonly availableQuantity: number;
+    readonly productCode: string;
+    readonly productId: string;
+    readonly productName: string;
+  }[];
+  readonly serverTime: string;
+  readonly writtenOffQuantity: number;
+}

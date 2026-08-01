@@ -15,6 +15,7 @@ import { LoadingModule } from "./loading/loading.module";
 import { PlanningModule } from "./planning/planning.module";
 import { ProductionModule } from "./production/production.module";
 import { StoreModule } from "./store/store.module";
+import { SpoilageModule } from "./spoilage/spoilage.module";
 import { WarehouseModule } from "./warehouse/warehouse.module";
 
 @Module({
@@ -29,6 +30,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     LoadingModule,
     PlanningModule,
     ProductionModule,
+    SpoilageModule,
     StoreModule,
     WarehouseModule,
   ],
