@@ -112,7 +112,7 @@ describe.runIf(hasDatabase)("NotificationsRepository with PostgreSQL", () => {
       version: 1,
     });
     expect(updated).toMatchObject({ normalPushEnabled: false, version: 2 });
-    await expect(
+    expect(() =>
       repository.updatePreference({
         actor: admin,
         normalPushEnabled: true,
@@ -131,7 +131,7 @@ describe.runIf(hasDatabase)("NotificationsRepository with PostgreSQL", () => {
         quietHoursStart: "07:00",
         version: 2,
       }),
-    ).rejects.toThrow("переходить через полночь");
+    ).toThrow("переходить через полночь");
   });
 
   it("stores one encrypted subscription and revokes it from the same personal device", async () => {

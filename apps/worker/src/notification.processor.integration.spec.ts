@@ -123,7 +123,7 @@ describe.runIf(hasDatabase)("NotificationProcessor with PostgreSQL", () => {
 
   it("delivers only safe text and records an immutable attempt", async () => {
     const delivery = await database!.query<{ id: string }>(
-      `select id from notification.push_delivery d
+      `select d.id from notification.push_delivery d
        join notification.feed_item f on f.id=d.feed_item_id
        where f.source_outbox_id=$1 and d.delivery_kind='INITIAL'`,
       [outboxId],

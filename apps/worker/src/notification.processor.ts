@@ -184,7 +184,8 @@ export class NotificationProcessor {
              title,safe_body,href,occurred_at,first_escalation_minutes,second_escalation_minutes,
              next_escalation_at)
            values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-             case when $12::int is null then null else $11+$12*interval '1 minute' end)
+             case when $12::int is null then null
+               else $11::timestamptz+$12::int*interval '1 minute' end)
            on conflict(source_outbox_id,employee_id) do nothing returning id`,
           [
             randomUUID(),
