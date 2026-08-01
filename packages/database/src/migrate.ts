@@ -72,4 +72,20 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+function formatMigrationError(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "unknown")
+      : "unknown";
+  const message = error instanceof Error ? error.message : String(error);
+  const redactedMessage = message
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "<redacted-database-url>")
+    .replace(/password\s*=\s*\S+/gi, "password=<redacted>");
+
+  return `Migration failed [${code}]: ${redactedMessage}`;
+}
+
+void main().catch((error: unknown) => {
+  process.stdout.write(`${formatMigrationError(error)}\n`);
+  process.exitCode = 1;
+});
