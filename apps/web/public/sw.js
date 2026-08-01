@@ -27,3 +27,42 @@ self.addEventListener("fetch", (event) => {
     }),
   );
 });
+
+self.addEventListener("push", (event) => {
+  let message = {
+    body: "Откройте приложение для просмотра события.",
+    notificationId: "unknown",
+    severity: "NORMAL",
+    title: "Ташкалинская",
+    url: "/notifications",
+  };
+  try {
+    if (event.data) message = { ...message, ...event.data.json() };
+  } catch {
+    // Поврежденный payload заменяется безопасным текстом без производственных деталей.
+  }
+  event.waitUntil(
+    self.registration.showNotification(message.title, {
+      badge: "/icon.svg",
+      body: message.body,
+      data: { notificationId: message.notificationId, url: message.url },
+      icon: "/icon.svg",
+      renotify: message.severity !== "NORMAL",
+      requireInteraction: message.severity === "CRITICAL",
+      tag: `factory-${message.notificationId}`,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = event.notification.data?.url || "/notifications";
+  const target = `${self.location.origin}${path.startsWith("/") ? path : "/notifications"}`;
+  event.waitUntil(
+    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((clients) => {
+      const existing = clients.find((client) => client.url.startsWith(self.location.origin));
+      if (existing) return existing.navigate(target).then(() => existing.focus());
+      return self.clients.openWindow(target);
+    }),
+  );
+});

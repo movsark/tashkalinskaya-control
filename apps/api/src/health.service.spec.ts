@@ -14,6 +14,8 @@ const localConfig: ApiConfig = {
   fileStorageLocalDirectory: "var/test-private-files",
   nodeEnvironment: "test",
   port: 4000,
+  pushSubscriptionEncryptionKey: "test-push-subscription-secret-32-characters",
+  pushVapidPublicKey: null,
   s3: null,
   sessionTokenPepper: "test-session-pepper-32-characters",
   webauthnOrigins: ["http://localhost:3000"],

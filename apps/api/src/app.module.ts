@@ -12,6 +12,7 @@ import { IdentityModule } from "./identity/identity.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { LogisticsModule } from "./logistics/logistics.module";
 import { LoadingModule } from "./loading/loading.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { PlanningModule } from "./planning/planning.module";
 import { ProductionModule } from "./production/production.module";
 import { StoreModule } from "./store/store.module";
@@ -28,6 +29,7 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     InventoryModule,
     LogisticsModule,
     LoadingModule,
+    NotificationsModule,
     PlanningModule,
     ProductionModule,
     SpoilageModule,

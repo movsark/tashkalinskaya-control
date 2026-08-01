@@ -834,7 +834,11 @@ export class AttendanceRepository {
             ? "attendance.correction-approved"
             : "attendance.correction-rejected",
           input.correctionId,
-          JSON.stringify({ correctionId: input.correctionId, decision: input.decision }),
+          JSON.stringify({
+            correctionId: input.correctionId,
+            decision: input.decision,
+            employeeId: shift.employee_id,
+          }),
         ],
       );
       return this.getCorrection(client, input.correctionId);

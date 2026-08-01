@@ -38,12 +38,16 @@ export default function LoginPage() {
       });
       saveDeviceId(session.deviceId);
       const roles = session.employee.roles.map((role) => role.roleCode);
+      const requested = new URLSearchParams(window.location.search).get("returnTo");
+      const safeReturnTo =
+        requested?.startsWith("/") && !requested.startsWith("//") ? requested : null;
       router.push(
-        roles.includes("ADMIN")
-          ? "/employees"
-          : roles.some((role) => ["ACCOUNTANT", "MANAGER", "WORKSHOP_MANAGER"].includes(role))
-            ? "/attendance/control"
-            : "/attendance/me",
+        safeReturnTo ??
+          (roles.includes("ADMIN")
+            ? "/employees"
+            : roles.some((role) => ["ACCOUNTANT", "MANAGER", "WORKSHOP_MANAGER"].includes(role))
+              ? "/attendance/control"
+              : "/attendance/me"),
       );
     } catch (caught) {
       setError(

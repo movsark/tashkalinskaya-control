@@ -13,6 +13,7 @@ describe("loadApiConfig", () => {
     expect(config.corsOrigins).toEqual(["http://localhost:3000"]);
     expect(config.fileStorageDriver).toBe("local");
     expect(config.s3).toBeNull();
+    expect(config.pushVapidPublicKey).toBeNull();
     expect(config.sessionTokenPepper.length).toBeGreaterThanOrEqual(32);
   });
 

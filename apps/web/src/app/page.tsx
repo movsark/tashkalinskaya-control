@@ -61,6 +61,11 @@ const foundations = [
     state: "B16.1",
     title: "Порча и списания",
   },
+  {
+    detail: "Надёжная лента, приватный Web Push, тихие часы, повторы и контроль критичных тревог",
+    state: "B17.1",
+    title: "Уведомления",
+  },
 ];
 
 export default function HomePage() {
@@ -81,7 +86,7 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">Разработка MVP · B05–B16</p>
+          <p className="eyebrow">Разработка MVP · B05–B17</p>
           <h1>Рабочий контур внутреннего контроля</h1>
           <p className="hero__lead">
             Приложение развивается последовательными рабочими модулями. Реальные товары и сотрудники
@@ -117,6 +122,9 @@ export default function HomePage() {
             </a>
             <a className="text-link" href="/spoilage">
               Порча и списания
+            </a>
+            <a className="text-link" href="/notifications">
+              Уведомления
             </a>
           </div>
         </div>
@@ -165,12 +173,12 @@ export default function HomePage() {
       <section className="next-step">
         <div>
           <p className="eyebrow">Дальше</p>
-          <h2>B17 · Уведомления и эскалации</h2>
+          <h2>B18 · Отчёты, печать, Excel и PDF</h2>
         </div>
         <p>
-          Порча уже блокируется отдельным складским движением, списывается только администратором и
-          сверяется с внешним документом. Следующий срез соберёт события модулей в управляемые
-          уведомления и эскалации.
+          Значимые события уже собираются в надёжную ленту, доставляются Web Push и повторяются по
+          уровню критичности. Следующий срез соберёт единый контрольный экран и воспроизводимые
+          отчёты без дублирования бизнес-логики.
         </p>
       </section>
 

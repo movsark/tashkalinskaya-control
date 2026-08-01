@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { PwaRegistration } from "../components/pwa-registration";
+import { NotificationShortcut } from "../components/notification-shortcut";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="ru">
       <body>
         <PwaRegistration />
+        <NotificationShortcut />
         {children}
       </body>
     </html>

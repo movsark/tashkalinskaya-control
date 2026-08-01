@@ -5,6 +5,12 @@ const booleanFromEnvironment = z
   .default("false")
   .transform((value) => value === "true");
 
+const optionalTrimmed = (minimum: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().min(minimum).optional(),
+  );
+
 const environmentSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_VERSION: z.string().trim().min(1).default("0.1.0"),
@@ -17,6 +23,11 @@ const environmentSchema = z.object({
   FILE_STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   FILE_STORAGE_LOCAL_DIR: z.string().trim().min(1).default("var/private-files"),
   NODE_ENV: z.enum(["development", "test", "staging", "production"]).default("development"),
+  PUSH_SUBSCRIPTION_ENCRYPTION_KEY: z
+    .string()
+    .min(32)
+    .default("local-push-subscription-secret-change-me"),
+  PUSH_VAPID_PUBLIC_KEY: optionalTrimmed(20),
   S3_ACCESS_KEY_ID: z.string().trim().min(1).optional(),
   S3_BUCKET: z.string().trim().min(1).optional(),
   S3_ENDPOINT: z.string().url().optional(),
@@ -40,6 +51,8 @@ export interface ApiConfig {
   readonly fileStorageLocalDirectory: string;
   readonly nodeEnvironment: "development" | "test" | "staging" | "production";
   readonly port: number;
+  readonly pushSubscriptionEncryptionKey: string;
+  readonly pushVapidPublicKey: string | null;
   readonly s3: {
     readonly accessKeyId: string;
     readonly bucket: string;
@@ -65,6 +78,7 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
       "SESSION_TOKEN_PEPPER",
       "WEBAUTHN_ORIGINS",
       "WEBAUTHN_RP_ID",
+      "PUSH_SUBSCRIPTION_ENCRYPTION_KEY",
     ] as const) {
       if (environment[name] === undefined) {
         throw new Error(`${name} must be provided explicitly in ${parsed.NODE_ENV}`);
@@ -100,6 +114,8 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
     fileStorageLocalDirectory: parsed.FILE_STORAGE_LOCAL_DIR,
     nodeEnvironment: parsed.NODE_ENV,
     port: parsed.API_PORT,
+    pushSubscriptionEncryptionKey: parsed.PUSH_SUBSCRIPTION_ENCRYPTION_KEY,
+    pushVapidPublicKey: parsed.PUSH_VAPID_PUBLIC_KEY ?? null,
     s3:
       parsed.FILE_STORAGE_DRIVER === "s3"
         ? {
