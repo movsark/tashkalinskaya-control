@@ -86,6 +86,7 @@ jobs:
     strategy:
       matrix:
         service:
+          - app
           - api
           - web
           - worker
