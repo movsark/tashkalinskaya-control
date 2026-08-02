@@ -42,6 +42,7 @@ async function main(): Promise<void> {
           [
             "DB_CERTIFICATE_BEGIN",
             certificate.toString().trim(),
+            `DB_CERTIFICATE_DER_BASE64=${peer.raw.toString("base64")}`,
             `DB_CERTIFICATE_SHA256=${certificate.fingerprint256}`,
             `DB_CERTIFICATE_VALID_FROM=${certificate.validFrom}`,
             `DB_CERTIFICATE_VALID_TO=${certificate.validTo}`,
