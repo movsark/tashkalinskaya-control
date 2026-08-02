@@ -76,7 +76,6 @@ export async function getSession(): Promise<AuthenticatedUser> {
 }
 
 export async function loginOptions(input: {
-  deviceId: string;
   login: string;
 }): Promise<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
   return request("/auth/login/options", {
@@ -88,7 +87,6 @@ export async function loginOptions(input: {
 export async function login(input: {
   challengeId: string;
   credential: AuthenticationResponseJSON;
-  deviceId: string;
   login: string;
   password: string;
 }): Promise<AuthenticatedUser> {

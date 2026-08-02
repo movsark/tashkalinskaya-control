@@ -94,9 +94,6 @@ export class LoginOptionsDto {
   @IsString()
   @Length(1, 100)
   login!: string;
-
-  @IsUUID()
-  deviceId!: string;
 }
 
 export class LoginDto extends LoginOptionsDto {
