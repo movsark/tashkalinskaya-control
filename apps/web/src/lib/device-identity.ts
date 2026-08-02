@@ -20,10 +20,6 @@ export async function authenticateDevice(options: PublicKeyCredentialRequestOpti
   return startAuthentication({ optionsJSON: options });
 }
 
-export function readDeviceId(): string | null {
-  return globalThis.localStorage?.getItem(deviceIdKey) ?? null;
-}
-
 export function saveDeviceId(deviceId: string): void {
   globalThis.localStorage?.setItem(deviceIdKey, deviceId);
 }

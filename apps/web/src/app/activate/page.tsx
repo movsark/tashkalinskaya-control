@@ -70,7 +70,7 @@ export default function ActivatePage() {
           <ol className="activation-steps">
             <li>Введите логин и код от администратора.</li>
             <li>Назовите устройство понятным именем.</li>
-            <li>Создайте парольную фразу не короче 15 символов.</li>
+            <li>Создайте парольную фразу не короче 8 символов.</li>
             <li>Подтвердите системным PIN, Face ID или Touch ID.</li>
           </ol>
         </div>
@@ -110,19 +110,19 @@ export default function ActivatePage() {
               Новая парольная фраза
               <input
                 autoComplete="new-password"
-                minLength={15}
+                minLength={8}
                 onChange={(event) => setPassword(event.target.value)}
                 required
                 type="password"
                 value={password}
               />
-              <small>От 15 до 128 символов; пробелы и русские буквы разрешены.</small>
+              <small>От 8 до 128 символов; пробелы и русские буквы разрешены.</small>
             </label>
             <label>
               Повторите парольную фразу
               <input
                 autoComplete="new-password"
-                minLength={15}
+                minLength={8}
                 onChange={(event) => setConfirmation(event.target.value)}
                 required
                 type="password"

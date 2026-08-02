@@ -2,37 +2,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import { ApiRequestError, login, loginOptions } from "../../lib/api";
-import { authenticateDevice, readDeviceId, saveDeviceId } from "../../lib/device-identity";
+import { authenticateDevice, saveDeviceId } from "../../lib/device-identity";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [deviceId, setDeviceId] = useState("");
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => setDeviceId(readDeviceId() ?? ""), []);
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    if (!deviceId) {
-      setError("На этом устройстве нет активной привязки. Используйте код активации.");
-      return;
-    }
     setSubmitting(true);
     try {
-      const ceremony = await loginOptions({ deviceId, login: loginValue });
+      const ceremony = await loginOptions({ login: loginValue });
       const credential = await authenticateDevice(ceremony.options);
       const session = await login({
         challengeId: ceremony.challengeId,
         credential,
-        deviceId,
         login: loginValue,
         password,
       });

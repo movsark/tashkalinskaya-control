@@ -63,7 +63,7 @@ export class ActivateAccountDto {
   activationCode!: string;
 
   @IsString()
-  @Length(15, 128)
+  @Length(8, 128)
   password!: string;
 
   @IsString()
@@ -94,9 +94,6 @@ export class LoginOptionsDto {
   @IsString()
   @Length(1, 100)
   login!: string;
-
-  @IsUUID()
-  deviceId!: string;
 }
 
 export class LoginDto extends LoginOptionsDto {
@@ -143,7 +140,7 @@ export class RecoveryOptionsDto {
 
 export class RecoverAccountDto extends RecoveryOptionsDto {
   @IsString()
-  @Length(15, 128)
+  @Length(8, 128)
   password!: string;
 
   @IsString()

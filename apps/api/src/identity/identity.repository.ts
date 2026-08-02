@@ -210,21 +210,37 @@ export class IdentityRepository {
       `,
       [deviceId],
     );
-    const row = result.rows[0];
-    return row === undefined
-      ? null
-      : {
-          employeeId: row.employee_id,
-          id: row.id,
-          platformFamily: row.platform_family,
-          status: row.status,
-          webauthnBackedUp: row.webauthn_backed_up,
-          webauthnCounter: Number(row.webauthn_counter),
-          webauthnCredentialId: row.webauthn_credential_id,
-          webauthnDeviceType: row.webauthn_device_type,
-          webauthnPublicKey: row.webauthn_public_key,
-          webauthnTransports: row.webauthn_transports,
-        };
+    return mapDevice(result.rows[0]);
+  }
+
+  async findActiveDeviceByEmployee(employeeId: string): Promise<DeviceRecord | null> {
+    const result = await this.database.query<DeviceRow>(
+      `
+        select
+          id, employee_id, platform_family, status, webauthn_credential_id,
+          webauthn_public_key, webauthn_counter::text, webauthn_transports,
+          webauthn_device_type, webauthn_backed_up
+        from identity.personal_device
+        where employee_id = $1 and status = 'ACTIVE'
+      `,
+      [employeeId],
+    );
+    return mapDevice(result.rows[0]);
+  }
+
+  async findActiveDeviceByCredentialId(credentialId: string): Promise<DeviceRecord | null> {
+    const result = await this.database.query<DeviceRow>(
+      `
+        select
+          id, employee_id, platform_family, status, webauthn_credential_id,
+          webauthn_public_key, webauthn_counter::text, webauthn_transports,
+          webauthn_device_type, webauthn_backed_up
+        from identity.personal_device
+        where webauthn_credential_id = $1 and status = 'ACTIVE'
+      `,
+      [credentialId],
+    );
+    return mapDevice(result.rows[0]);
   }
 
   async createEmployee(command: CreateEmployeeCommand): Promise<EmployeeSummary> {
@@ -1176,4 +1192,21 @@ function mapAccount(row: AccountRow): AccountRecord {
     lockedUntil: row.locked_until,
     passwordHash: row.password_hash,
   };
+}
+
+function mapDevice(row: DeviceRow | undefined): DeviceRecord | null {
+  return row === undefined
+    ? null
+    : {
+        employeeId: row.employee_id,
+        id: row.id,
+        platformFamily: row.platform_family,
+        status: row.status,
+        webauthnBackedUp: row.webauthn_backed_up,
+        webauthnCounter: Number(row.webauthn_counter),
+        webauthnCredentialId: row.webauthn_credential_id,
+        webauthnDeviceType: row.webauthn_device_type,
+        webauthnPublicKey: row.webauthn_public_key,
+        webauthnTransports: row.webauthn_transports,
+      };
 }

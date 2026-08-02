@@ -14,6 +14,7 @@ const securityRepository = new DeviceSecurityRepository(database);
 const employeeId = randomUUID();
 const accountId = randomUUID();
 const deviceId = randomUUID();
+const credentialId = `credential-${employeeId}`;
 const login = `integration-${employeeId}`;
 
 describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
@@ -61,10 +62,14 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
     await database.query(
       `
         insert into identity.personal_device (
-          id, employee_id, public_key, device_label, platform_family, status, paired_at
-        ) values ($1, $2, 'test-public-key', 'Первое устройство', 'IOS', 'ACTIVE', now())
+          id, employee_id, public_key, device_label, platform_family, status, paired_at,
+          webauthn_credential_id, webauthn_public_key
+        ) values (
+          $1, $2, 'test-public-key', 'Первое устройство', 'IOS', 'ACTIVE', now(),
+          $3, decode('010203', 'hex')
+        )
       `,
-      [deviceId, employeeId],
+      [deviceId, employeeId, credentialId],
     );
     await expect(
       database.query(
@@ -76,6 +81,18 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
         [randomUUID(), employeeId],
       ),
     ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("finds the active device by employee and WebAuthn credential", async () => {
+    await expect(repository.findActiveDeviceByEmployee(employeeId)).resolves.toMatchObject({
+      employeeId,
+      id: deviceId,
+      webauthnCredentialId: credentialId,
+    });
+    await expect(repository.findActiveDeviceByCredentialId(credentialId)).resolves.toMatchObject({
+      employeeId,
+      id: deviceId,
+    });
   });
 
   it("returns the employee access card with device history", async () => {

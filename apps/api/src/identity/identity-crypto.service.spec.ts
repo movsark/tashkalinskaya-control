@@ -16,8 +16,13 @@ describe("IdentityCryptoService", () => {
   });
 
   it("rejects short and common passwords", async () => {
-    await expect(service.hashPassword("короткий")).rejects.toThrow();
-    await expect(service.hashPassword("123456789012345")).rejects.toThrow();
+    await expect(service.hashPassword("1234567")).rejects.toThrow();
+    await expect(service.hashPassword("12345678")).rejects.toThrow();
+    await expect(service.hashPassword("аааааааа")).rejects.toThrow();
+  });
+
+  it("accepts a non-common password with eight characters", async () => {
+    await expect(service.hashPassword("торт2026")).resolves.toContain("$argon2id$");
   });
 
   it("never stores access and session tokens in their raw form", () => {

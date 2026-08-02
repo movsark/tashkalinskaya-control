@@ -120,7 +120,10 @@ export class AuthService {
   async loginOptions(dto: LoginOptionsDto) {
     const loginNormalized = this.crypto.normalizeLogin(dto.login);
     const account = await this.repository.findAccountByLogin(loginNormalized);
-    const device = await this.repository.findActiveDevice(dto.deviceId);
+    const device =
+      account === null
+        ? null
+        : await this.repository.findActiveDeviceByEmployee(account.employeeId);
     if (
       account === null ||
       account.accountStatus !== "ACTIVE" ||
@@ -148,7 +151,8 @@ export class AuthService {
       account?.passwordHash ?? null,
       dto.password,
     );
-    const device = await this.repository.findActiveDevice(dto.deviceId);
+    const response = dto.credential as unknown as AuthenticationResponseJSON;
+    const device = await this.repository.findActiveDeviceByCredentialId(response.id);
     const accessAllowed =
       account !== null &&
       account.accountStatus === "ACTIVE" &&
@@ -171,7 +175,7 @@ export class AuthService {
         challengeId: dto.challengeId,
         device,
         purpose: "LOGIN",
-        response: dto.credential as unknown as AuthenticationResponseJSON,
+        response,
       })
       .catch(async (error) => {
         await this.repository.recordLoginBucketFailure(rateLimitBucket);

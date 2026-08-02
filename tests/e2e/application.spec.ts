@@ -79,12 +79,24 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(serviceWorker.status()).toBe(200);
   });
 
-  test("login explains that an unpaired device cannot authenticate", async ({ page }) => {
+  test("login starts from the system credential without browser-local device data", async ({
+    page,
+  }) => {
+    let optionsRequest: unknown = null;
+    await page.route("**/api/v1/auth/login/options", async (route) => {
+      optionsRequest = route.request().postDataJSON();
+      await json(
+        route,
+        { code: "AUTHENTICATION_FAILED", message: "Не удалось выполнить вход" },
+        401,
+      );
+    });
     await page.goto("/login");
     await page.getByLabel("Логин").fill("test-user");
     await page.getByLabel("Парольная фраза").fill("correct horse battery staple");
     await page.getByRole("button", { name: "Войти" }).click();
-    await expect(page.getByText("На этом устройстве нет активной привязки")).toBeVisible();
+    await expect(page.getByText("Не удалось выполнить вход")).toBeVisible();
+    expect(optionsRequest).toEqual({ login: "test-user" });
   });
 
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
