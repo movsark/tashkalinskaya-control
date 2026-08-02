@@ -166,6 +166,7 @@ recovery или неподписанном UAT.
 ## 9. Актуальные основания Timeweb
 
 - [Docker Compose в App Platform](https://timeweb.cloud/docs/apps/deploying-with-docker-compose);
+- [приватная сеть App Platform выбирается до первого деплоя](https://timeweb.cloud/docs/apps/deploying-backend-applications);
 - [PostgreSQL и асинхронная репликация](https://timeweb.cloud/docs/dbaas/postgresql);
 - [физические резервные копии](https://timeweb.cloud/docs/dbaas/dbaas-manage/backup);
 - [Terraform Timeweb](https://timeweb.cloud/docs/terraform).
