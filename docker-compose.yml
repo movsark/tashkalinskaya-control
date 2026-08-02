@@ -46,12 +46,41 @@ services:
       NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
     restart: "no"
 
+  bootstrap-admin:
+    build: *app-build
+    command:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        if [ "$${BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ]; then
+          node apps/api/dist/identity/bootstrap-admin.js
+        else
+          echo "Bootstrap admin is disabled"
+        fi
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
+      BOOTSTRAP_ADMIN_ACTIVATION_CODE: ${BOOTSTRAP_ADMIN_ACTIVATION_CODE:-}
+      BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-false}
+      BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
+      BOOTSTRAP_ADMIN_LOGIN: ${BOOTSTRAP_ADMIN_LOGIN:-}
+      BOOTSTRAP_ADMIN_PERSONNEL_NUMBER: ${BOOTSTRAP_ADMIN_PERSONNEL_NUMBER:-}
+      DATABASE_SSL: require
+      DATABASE_URL: ${DATABASE_URL}
+      NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
+    restart: "no"
+
   api:
     build: *app-build
     command:
       - node
       - apps/api/dist/main.js
     depends_on:
+      bootstrap-admin:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
     environment:
