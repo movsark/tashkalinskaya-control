@@ -142,6 +142,7 @@ Manifest содержит только checksum и количества; стр�
 
 ```bash
 RECOVERY_DATABASE_URL='...' RECOVERY_DATABASE_SSL=require \
+  RECOVERY_DATABASE_TLS_SHA256='AA:BB:...' \
   npm run test:recovery:capture -- --output var/recovery/baseline.json
 ```
 
@@ -149,17 +150,21 @@ RECOVERY_DATABASE_URL='...' RECOVERY_DATABASE_SSL=require \
 
 ```bash
 RECOVERY_DATABASE_URL='...' RECOVERY_DATABASE_SSL=require \
+  RECOVERY_DATABASE_TLS_SHA256='AA:BB:...' \
   npm run test:recovery:verify -- --input var/recovery/baseline.json
 ```
 
-`NODE_EXTRA_CA_CERTS` указывает на закреплённый сертификат конкретного кластера
-Managed PostgreSQL Timeweb. Публичный адрес кластера не совпадает с DNS-именем
-в его самоподписанном сертификате, поэтому приложение проверяет цепочку доверия
-по закреплённому сертификату, но не выполняет несовместимую проверку hostname.
+Приватный IP Managed PostgreSQL Timeweb не показывает корневой сертификат для
+скачивания в панели управления. Поэтому соединение остаётся зашифрованным TLS, а
+приложение сверяет SHA-256 отпечаток фактического сертификата при создании каждого
+соединения. Отпечаток staging закреплён как `DATABASE_TLS_SHA256` в манифесте
+App Platform; публичный доступ к БД для этого не требуется.
 Параметры `sslmode` из `DATABASE_URL` удаляются внутри database-пакета, чтобы
 `pg-connection-string` не перезаписал эту явно заданную политику TLS.
-При пересоздании кластера сертификат нужно получить заново, сверить fingerprint
-и обновить `deploy/timeweb/managed-db-ca.crt`. Проверка восстановления требует
+При пересоздании кластера или ротации сертификата новый fingerprint сначала
+сверяется по внутреннему журналу TLS и затем обновляется в манифесте. Для
+изолированного кластера восстановления его собственный отпечаток передаётся через
+`RECOVERY_DATABASE_TLS_SHA256`. Проверка восстановления требует
 полного совпадения миграций и критичных
 таблиц, а также нулевых расхождений ledger/stock balance. Затем выполняется полный
 [протокол восстановления](B20_RECOVERY_PROTOCOL.md) с фиксацией T0/T1.

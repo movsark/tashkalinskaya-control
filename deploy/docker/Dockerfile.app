@@ -41,7 +41,5 @@ COPY --from=build /app/templates/import templates/import
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static apps/web/.next/static
 COPY --from=build /app/apps/web/public apps/web/public
-COPY deploy/timeweb/managed-db-ca.crt /app/config/timeweb-managed-db-ca.crt
-
 USER node
 CMD ["node", "apps/web/server.js"]

@@ -29,7 +29,5 @@ COPY --from=build /app/apps/worker/dist apps/worker/dist
 COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/database/dist packages/database/dist
 COPY --from=build /app/packages/database/migrations packages/database/migrations
-COPY deploy/timeweb/managed-db-ca.crt /app/config/timeweb-managed-db-ca.crt
-
 USER node
 CMD ["node", "apps/worker/dist/main.js"]
