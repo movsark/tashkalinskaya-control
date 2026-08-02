@@ -1,7 +1,9 @@
 # B20.2. Развёртывание и проверка staging в Timeweb
 
-Статус: исполняемый комплект подготовлен; платные ресурсы, домен, реальные
-устройства, recovery drill и подпись UAT ещё не выполнены.
+Статус: staging развёрнут 02.08.2026, публичный smoke пройден; авторизованная
+нагрузка, целевые устройства, recovery drill, независимая проверка и подпись UAT
+ещё не выполнены. Факты и открытые ворота собраны в
+[доказательствах staging](B20_2_STAGING_EVIDENCE.md).
 
 ## 1. Граница этого среза
 
@@ -164,6 +166,7 @@ recovery или неподписанном UAT.
 ## 9. Актуальные основания Timeweb
 
 - [Docker Compose в App Platform](https://timeweb.cloud/docs/apps/deploying-with-docker-compose);
+- [приватная сеть App Platform выбирается до первого деплоя](https://timeweb.cloud/docs/apps/deploying-backend-applications);
 - [PostgreSQL и асинхронная репликация](https://timeweb.cloud/docs/dbaas/postgresql);
 - [физические резервные копии](https://timeweb.cloud/docs/dbaas/dbaas-manage/backup);
 - [Terraform Timeweb](https://timeweb.cloud/docs/terraform).
