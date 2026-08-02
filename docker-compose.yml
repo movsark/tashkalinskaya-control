@@ -1,13 +1,22 @@
 # Timeweb App Platform staging manifest. Local development uses compose.yaml.
 # The web service must remain first: App Platform proxies the public domain only to it.
+# Every service uses one shared image so App Platform performs one sequential build
+# instead of three concurrent npm/TypeScript/Next.js builds on the staging server.
+x-app-image: &app-image
+  image: tashkalinskaya-staging-app
+
 services:
   web:
+    <<: *app-image
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile.web
+      dockerfile: deploy/docker/Dockerfile.app
       args:
         INTERNAL_API_URL: http://api:4000/api/v1
         NEXT_PUBLIC_API_URL: /api/v1
+    command:
+      - node
+      - apps/web/server.js
     depends_on:
       api:
         condition: service_healthy
@@ -28,9 +37,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.worker
+    <<: *app-image
     command:
       - node
       - packages/database/dist/migrate.js
@@ -41,9 +48,10 @@ services:
     restart: "no"
 
   api:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.api
+    <<: *app-image
+    command:
+      - node
+      - apps/api/dist/main.js
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,9 +90,10 @@ services:
     restart: unless-stopped
 
   worker:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.worker
+    <<: *app-image
+    command:
+      - node
+      - apps/worker/dist/main.js
     depends_on:
       migrate:
         condition: service_completed_successfully
