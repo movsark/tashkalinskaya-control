@@ -118,12 +118,27 @@ export function compareRecoveryManifests(expectedValue, actualValue) {
   return differences;
 }
 
-async function captureManifest(connectionString, sslRequired) {
+async function captureManifest(connectionString, sslRequired, tlsFingerprintSha256) {
+  const normalizedFingerprint =
+    sslRequired && tlsFingerprintSha256
+      ? normalizeSha256Fingerprint(tlsFingerprintSha256)
+      : undefined;
   const pool = new Pool({
     application_name: "tashkalinskaya-recovery-verification",
     connectionString,
     max: 1,
-    ...(sslRequired ? { ssl: { rejectUnauthorized: true } } : {}),
+    ...(sslRequired
+      ? {
+          ssl: { rejectUnauthorized: normalizedFingerprint === undefined },
+          ...(normalizedFingerprint === undefined
+            ? {}
+            : {
+                onConnect: (client) => {
+                  assertPinnedTlsCertificate(client, normalizedFingerprint);
+                },
+              }),
+        }
+      : {}),
   });
   const client = await pool.connect();
   try {
@@ -187,6 +202,31 @@ async function captureManifest(connectionString, sslRequired) {
   }
 }
 
+function normalizeSha256Fingerprint(fingerprint) {
+  const normalized = fingerprint.trim().replaceAll(":", "").toUpperCase();
+  if (!/^[A-F0-9]{64}$/.test(normalized)) {
+    throw new Error(
+      "RECOVERY_DATABASE_TLS_SHA256 must contain a valid SHA-256 certificate fingerprint",
+    );
+  }
+  return normalized;
+}
+
+function assertPinnedTlsCertificate(client, expectedFingerprint) {
+  const stream = client.connection?.stream;
+  if (stream?.encrypted !== true || typeof stream.getPeerCertificate !== "function") {
+    throw new Error("PostgreSQL recovery connection is not protected by TLS");
+  }
+  const rawCertificate = stream.getPeerCertificate().raw;
+  if (!rawCertificate?.length) {
+    throw new Error("PostgreSQL did not provide a TLS certificate during recovery verification");
+  }
+  const actualFingerprint = createHash("sha256").update(rawCertificate).digest("hex").toUpperCase();
+  if (actualFingerprint !== expectedFingerprint) {
+    throw new Error("PostgreSQL recovery TLS certificate fingerprint does not match");
+  }
+}
+
 function argument(name) {
   const index = process.argv.indexOf(name);
   return index === -1 ? undefined : process.argv[index + 1];
@@ -197,11 +237,14 @@ async function main() {
   const connectionString = process.env.RECOVERY_DATABASE_URL;
   if (!connectionString) throw new Error("RECOVERY_DATABASE_URL is required");
   const sslRequired = process.env.RECOVERY_DATABASE_SSL === "require";
+  const tlsFingerprintSha256 = process.env.RECOVERY_DATABASE_TLS_SHA256;
 
   if (command === "capture") {
     const outputPath = argument("--output");
     if (!outputPath) throw new Error("Usage: recovery-manifest.mjs capture --output <file>");
-    const manifest = validateRecoveryManifest(await captureManifest(connectionString, sslRequired));
+    const manifest = validateRecoveryManifest(
+      await captureManifest(connectionString, sslRequired, tlsFingerprintSha256),
+    );
     if (manifest.stockIntegrityMismatches !== 0) {
       throw new Error(
         `Cannot capture an inconsistent baseline: ${manifest.stockIntegrityMismatches} stock mismatches`,
@@ -217,7 +260,9 @@ async function main() {
     const inputPath = argument("--input");
     if (!inputPath) throw new Error("Usage: recovery-manifest.mjs verify --input <file>");
     const expected = validateRecoveryManifest(JSON.parse(await readFile(inputPath, "utf8")));
-    const actual = validateRecoveryManifest(await captureManifest(connectionString, sslRequired));
+    const actual = validateRecoveryManifest(
+      await captureManifest(connectionString, sslRequired, tlsFingerprintSha256),
+    );
     const differences = compareRecoveryManifests(expected, actual);
     if (differences.length > 0) {
       process.stderr.write(`${JSON.stringify({ differences, passed: false }, null, 2)}\n`);
