@@ -63,7 +63,7 @@ export class ActivateAccountDto {
   activationCode!: string;
 
   @IsString()
-  @Length(15, 128)
+  @Length(8, 128)
   password!: string;
 
   @IsString()
@@ -143,7 +143,7 @@ export class RecoveryOptionsDto {
 
 export class RecoverAccountDto extends RecoveryOptionsDto {
   @IsString()
-  @Length(15, 128)
+  @Length(8, 128)
   password!: string;
 
   @IsString()

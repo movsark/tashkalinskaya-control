@@ -103,7 +103,7 @@ export default function RecoverPage() {
               Новая парольная фраза
               <input
                 autoComplete="new-password"
-                minLength={15}
+                minLength={8}
                 onChange={(event) => setPassword(event.target.value)}
                 required
                 type="password"
@@ -114,7 +114,7 @@ export default function RecoverPage() {
               Повторите парольную фразу
               <input
                 autoComplete="new-password"
-                minLength={15}
+                minLength={8}
                 onChange={(event) => setConfirmation(event.target.value)}
                 required
                 type="password"

@@ -6,9 +6,13 @@ import { Algorithm, hash, verify } from "@node-rs/argon2";
 import { API_CONFIG, type ApiConfig } from "../config";
 
 const COMMON_PASSWORDS = new Set([
+  "password",
   "passwordpassword",
+  "qwerty12",
   "qwertyqwertyqwerty",
+  "12345678",
   "123456789012345",
+  "пароль123",
   "парольпарольпароль",
   "ташкалинская",
 ]);
@@ -34,15 +38,15 @@ export class IdentityCryptoService {
   }
 
   validatePassword(password: string): void {
-    if (password.length < 15 || password.length > 128) {
+    if (password.length < 8 || password.length > 128) {
       throw new BadRequestException({
         code: "PASSWORD_POLICY",
-        message: "Парольная фраза должна содержать от 15 до 128 символов",
+        message: "Парольная фраза должна содержать от 8 до 128 символов",
       });
     }
 
     const normalized = password.normalize("NFKC").toLocaleLowerCase("ru-RU");
-    if (COMMON_PASSWORDS.has(normalized) || /^(.)\1{14,}$/u.test(normalized)) {
+    if (COMMON_PASSWORDS.has(normalized) || /^(.)\1{7,}$/u.test(normalized)) {
       throw new BadRequestException({
         code: "PASSWORD_COMPROMISED",
         message: "Выберите менее распространенную парольную фразу",
