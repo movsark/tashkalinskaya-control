@@ -1,149 +1,37 @@
-# Timeweb App Platform staging manifest. Local development uses compose.yaml.
-# The web service must remain first: App Platform proxies the public domain only to it.
-# Every service declares the same build so App Platform always rebuilds the
-# selected commit. BuildKit shares identical layers and executes the costly
-# npm/TypeScript/Next.js build only once.
-x-app-build: &app-build
-  context: .
-  dockerfile: deploy/docker/Dockerfile.app
-  args:
-    INTERNAL_API_URL: http://api:4000/api/v1
-    NEXT_PUBLIC_API_URL: /api/v1
-
+# Temporary private-VPC certificate probe. This branch is never merged into main.
 services:
-  web:
-    build: *app-build
-    command:
-      - node
-      - apps/web/server.js
-    depends_on:
-      api:
-        condition: service_healthy
-    environment:
-      HOSTNAME: 0.0.0.0
-      PORT: 3000
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://localhost:3000/').then(r=>{if(!r.ok)process.exit(1)})
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-
-  migrate:
-    build: *app-build
-    command:
-      - node
-      - packages/database/dist/migrate.js
-    environment:
-      DATABASE_SSL: require
-      DATABASE_URL: ${DATABASE_URL}
-      NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
-    restart: "no"
-
   inspect-db-certificate:
-    build: *app-build
+    image: node:24-bookworm-slim
     command:
       - node
-      - packages/database/dist/inspect-certificate.js
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    restart: "no"
-
-  bootstrap-admin:
-    build: *app-build
-    command:
-      - /bin/sh
-      - -eu
-      - -c
+      - -e
       - |
-        if [ "$${BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ]; then
-          node apps/api/dist/identity/bootstrap-admin.js
-        else
-          echo "Bootstrap admin is disabled"
-        fi
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
+        const { X509Certificate } = require('node:crypto');
+        const net = require('node:net');
+        const tls = require('node:tls');
+        const url = new URL(process.env.DATABASE_URL);
+        const socket = net.connect({ host: url.hostname, port: Number(url.port || '5432') });
+        socket.once('connect', () => socket.write(Buffer.from([0, 0, 0, 8, 4, 210, 22, 47])));
+        socket.once('data', (response) => {
+          if (response[0] !== 83) throw new Error('PostgreSQL rejected SSL request');
+          const secure = tls.connect({ socket, rejectUnauthorized: false });
+          secure.once('secureConnect', () => {
+            const raw = secure.getPeerCertificate(true).raw;
+            const certificate = new X509Certificate(raw);
+            console.log('DB_CERTIFICATE_DER_BASE64=' + raw.toString('base64'));
+            console.log('DB_CERTIFICATE_SHA256=' + certificate.fingerprint256);
+            secure.end();
+            setTimeout(() => process.exit(75), 50);
+          });
+          secure.once('error', (error) => {
+            console.log('DB_CERTIFICATE_PROBE_FAILED=' + error.message);
+            process.exit(76);
+          });
+        });
+        socket.once('error', (error) => {
+          console.log('DB_CERTIFICATE_PROBE_FAILED=' + error.message);
+          process.exit(77);
+        });
     environment:
-      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
-      BOOTSTRAP_ADMIN_ACTIVATION_CODE: ${BOOTSTRAP_ADMIN_ACTIVATION_CODE:-}
-      BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-false}
-      BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
-      BOOTSTRAP_ADMIN_LOGIN: ${BOOTSTRAP_ADMIN_LOGIN:-}
-      BOOTSTRAP_ADMIN_PERSONNEL_NUMBER: ${BOOTSTRAP_ADMIN_PERSONNEL_NUMBER:-}
-      DATABASE_SSL: require
       DATABASE_URL: ${DATABASE_URL}
-      NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
     restart: "no"
-
-  api:
-    build: *app-build
-    command:
-      - node
-      - apps/api/dist/main.js
-    depends_on:
-      bootstrap-admin:
-        condition: service_completed_successfully
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      API_PORT: 4000
-      APP_VERSION: ${APP_VERSION}
-      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
-      CORS_ORIGINS: ${PUBLIC_ORIGIN}
-      CSRF_SECRET: ${CSRF_SECRET}
-      DATABASE_REQUIRED: "true"
-      DATABASE_SSL: require
-      DATABASE_URL: ${DATABASE_URL}
-      FILE_STORAGE_DRIVER: s3
-      NODE_ENV: staging
-      NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
-      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY}
-      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
-      S3_BUCKET: ${S3_BUCKET}
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      S3_REGION: ${S3_REGION}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
-      SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER}
-      WEBAUTHN_ORIGINS: ${PUBLIC_ORIGIN}
-      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
-      WEBAUTHN_RP_NAME: Ташкалинская фабрика — staging
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://localhost:4000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)})
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-
-  worker:
-    build: *app-build
-    command:
-      - node
-      - apps/worker/dist/main.js
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      APP_VERSION: ${APP_VERSION}
-      DATABASE_REQUIRED: "true"
-      DATABASE_SSL: require
-      DATABASE_URL: ${DATABASE_URL}
-      NODE_ENV: staging
-      NODE_EXTRA_CA_CERTS: /app/config/timeweb-managed-db-ca.crt
-      PUSH_SUBSCRIPTION_ENCRYPTION_KEY: ${PUSH_SUBSCRIPTION_ENCRYPTION_KEY}
-      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY}
-      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY}
-      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT}
-      WORKER_POLL_INTERVAL_MS: 5000
-    restart: unless-stopped
