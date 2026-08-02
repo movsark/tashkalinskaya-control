@@ -14,9 +14,14 @@ export function isDatabaseConfigured(
 }
 
 export function createDatabasePool(options: DatabasePoolOptions): Pool {
+  const connectionString =
+    options.sslMode === "require"
+      ? connectionStringWithoutSslOverrides(options.connectionString)
+      : options.connectionString;
+
   return new Pool({
     application_name: options.applicationName,
-    connectionString: options.connectionString,
+    connectionString,
     max: options.maxConnections ?? 10,
     ...(options.sslMode === "require"
       ? {
@@ -38,6 +43,23 @@ export async function checkDatabase(pool: Pool): Promise<void> {
   if (result.rowCount !== 1) {
     throw new Error("Database health query returned an unexpected result");
   }
+}
+
+function connectionStringWithoutSslOverrides(connectionString: string): string {
+  const url = new URL(connectionString);
+
+  for (const parameter of [
+    "sslcert",
+    "sslkey",
+    "sslmode",
+    "sslnegotiation",
+    "sslrootcert",
+    "uselibpqcompat",
+  ]) {
+    url.searchParams.delete(parameter);
+  }
+
+  return url.toString();
 }
 
 export * from "./planning-runtime";
