@@ -17,10 +17,11 @@ describe("createDatabasePool", () => {
   it("keeps certificate verification for a pinned Timeweb certificate", async () => {
     const pool = createDatabasePool({
       applicationName: "database-test",
-      connectionString: "postgresql://localhost/factory",
+      connectionString: "postgresql://localhost/factory?sslmode=require",
       sslMode: "require",
     });
 
+    expect(pool.options.connectionString).toBe("postgresql://localhost/factory");
     expect(pool.options.ssl).toMatchObject({ rejectUnauthorized: true });
     expect(typeof (pool.options.ssl as { checkServerIdentity?: unknown }).checkServerIdentity).toBe(
       "function",
