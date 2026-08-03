@@ -128,6 +128,36 @@ export interface AttendanceQrView {
   readonly visibleUntil: string;
 }
 
+export interface AttendanceDepartmentOption {
+  readonly code: string;
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface AttendanceShiftOption {
+  readonly crossesMidnight: boolean;
+  readonly departmentId: string;
+  readonly endLocalTime: string;
+  readonly id: string;
+  readonly isDepartmentDefault: boolean;
+  readonly name: string;
+  readonly startLocalTime: string;
+}
+
+export interface AttendanceSetupView {
+  readonly departments: readonly AttendanceDepartmentOption[];
+  readonly shifts: readonly AttendanceShiftOption[];
+}
+
+export interface EmployeeAttendanceAssignmentView {
+  readonly departmentId: string | null;
+  readonly departmentName: string | null;
+  readonly employeeId: string;
+  readonly shiftName: string | null;
+  readonly shiftTemplateId: string | null;
+  readonly validFrom: string | null;
+}
+
 export interface AttendanceScanResult extends AttendanceEventView {
   readonly employeeName: string;
   readonly repeated: boolean;

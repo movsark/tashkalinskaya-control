@@ -1189,6 +1189,86 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.access-section--attendance {
+  grid-column: 1 / -1;
+}
+
+.attendance-assignment-form,
+.attendance-setup-inline,
+.attendance-shift-creator {
+  display: grid;
+  gap: 12px;
+}
+
+.attendance-assignment-form {
+  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+}
+
+.attendance-assignment-form label,
+.attendance-shift-creator label {
+  display: grid;
+  gap: 7px;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.attendance-shift-creator {
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.attendance-shift-creator summary {
+  cursor: pointer;
+  color: var(--forest);
+  font-weight: 850;
+}
+
+.attendance-time-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.attendance-checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.attendance-checkbox input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.attendance-setup-inline {
+  align-items: center;
+  grid-template-columns: minmax(160px, auto) minmax(220px, 1fr) auto;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--forest-soft);
+}
+
+.attendance-setup-inline--secondary {
+  margin-top: 4px;
+  background: #eeece5;
+}
+
+.attendance-setup-success {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .access-section__note,
 .device-list p {
   margin: 0;
@@ -1304,6 +1384,11 @@ select:focus {
 .attendance-qr-frame--offline {
   border-color: #a24434;
   background: #fff4f0;
+}
+
+.attendance-qr-frame--blocked {
+  border-color: #b87d21;
+  background: #fff8e7;
 }
 
 .attendance-qr-placeholder {
@@ -2057,6 +2142,16 @@ select:focus {
     grid-column: auto;
   }
 
+  .access-section--attendance {
+    grid-column: auto;
+  }
+
+  .attendance-assignment-form,
+  .attendance-setup-inline {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
   .terminal-scanner {
     grid-template-columns: 1fr;
   }
@@ -2234,6 +2329,10 @@ select:focus {
   .device-list article {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .attendance-time-grid {
+    grid-template-columns: 1fr;
   }
 
   .attendance-layout,

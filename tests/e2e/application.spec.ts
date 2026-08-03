@@ -161,6 +161,109 @@ test.describe("B20 browser and HTTP regression", () => {
     });
   });
 
+  test("an administrator assigns a department and shift from the employee card", async ({
+    page,
+  }) => {
+    const employeeId = "20000000-0000-4000-8000-000000000050";
+    const departmentId = "20000000-0000-4000-8000-000000000051";
+    const shiftTemplateId = "20000000-0000-4000-8000-000000000052";
+    const employee = {
+      accountStatus: "ACTIVE",
+      departmentId: null,
+      employmentStatus: "ACTIVE",
+      fullName: "Сотрудник для назначения",
+      id: employeeId,
+      login: "assignment-user",
+      personnelNumber: "QR-ASSIGNMENT",
+      roles: [
+        {
+          id: "20000000-0000-4000-8000-000000000053",
+          roleCode: "ATTENDANCE_ONLY",
+          scopeId: null,
+          scopeType: "FACTORY",
+        },
+      ],
+      version: 1,
+    };
+    let assignmentRequest: unknown = null;
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-admin-assignment",
+        deviceId: "20000000-0000-4000-8000-000000000054",
+        employee: {
+          ...employee,
+          fullName: "Администратор назначения",
+          id: "20000000-0000-4000-8000-000000000055",
+          login: "assignment-admin",
+          personnelNumber: "ADMIN-ASSIGNMENT",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000056",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/employees/invitations/options", (route) =>
+      json(route, { roles: [] }),
+    );
+    await page.route("**/api/v1/employees", (route) =>
+      json(route, { items: [employee], total: 1 }),
+    );
+    await page.route(`**/api/v1/employees/${employeeId}/access`, (route) =>
+      json(route, { devices: [], employee }),
+    );
+    await page.route("**/api/v1/attendance/setup", (route) =>
+      json(route, {
+        departments: [{ code: "TEST", id: departmentId, name: "Тестовый цех" }],
+        shifts: [
+          {
+            crossesMidnight: false,
+            departmentId,
+            endLocalTime: "18:00",
+            id: shiftTemplateId,
+            isDepartmentDefault: true,
+            name: "Дневная смена",
+            startLocalTime: "08:00",
+          },
+        ],
+      }),
+    );
+    await page.route(`**/api/v1/attendance/setup/employees/${employeeId}`, async (route) => {
+      if (route.request().method() === "PUT") {
+        assignmentRequest = route.request().postDataJSON();
+        await json(route, {
+          departmentId,
+          departmentName: "Тестовый цех",
+          employeeId,
+          shiftName: "Дневная смена",
+          shiftTemplateId,
+          validFrom: "2026-08-03",
+        });
+        return;
+      }
+      await json(route, {
+        departmentId: null,
+        departmentName: null,
+        employeeId,
+        shiftName: null,
+        shiftTemplateId: null,
+        validFrom: null,
+      });
+    });
+
+    await page.goto("/employees");
+    await page.getByRole("button", { name: "Управление" }).click();
+    await expect(page.getByRole("heading", { name: "Подразделение и смена" })).toBeVisible();
+    await page.getByRole("button", { name: "Назначить сотруднику" }).click();
+    await expect(page.getByText("QR на телефоне обновится автоматически.")).toBeVisible();
+    expect(assignmentRequest).toEqual({ departmentId, shiftTemplateId });
+  });
+
   test("an employee scans an invitation and completes the short registration form", async ({
     page,
   }) => {
@@ -226,6 +329,54 @@ test.describe("B20 browser and HTTP regression", () => {
       platformFamily: "OTHER",
     });
     expect(registrationRequest?.deviceId).toMatch(/^[0-9a-f-]{36}$/u);
+  });
+
+  test("an employee without a shift sees an actionable setup message instead of a network error", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-attendance-setup",
+        deviceId: "20000000-0000-4000-8000-000000000040",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Сотрудник без смены",
+          id: "20000000-0000-4000-8000-000000000041",
+          login: "no-shift",
+          personnelNumber: "QR-NO-SHIFT",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000042",
+              roleCode: "ATTENDANCE_ONLY",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/attendance/me/qr", (route) =>
+      json(
+        route,
+        {
+          code: "SCHEDULE_MISSING",
+          message: "Сотруднику не назначено подразделение и расписание",
+        },
+        422,
+      ),
+    );
+
+    await page.goto("/attendance/me");
+    await expect(page.getByText("Не настроено", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Сотруднику не назначено подразделение и расписание"),
+    ).toBeVisible();
+    await expect(page.getByText("Нет связи", { exact: true })).toHaveCount(0);
   });
 
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {

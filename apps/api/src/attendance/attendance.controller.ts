@@ -1,12 +1,21 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 
-import { CsrfGuard, SessionAuthGuard, TerminalSessionAuthGuard } from "../identity/identity.guards";
+import {
+  CsrfGuard,
+  RequireRoles,
+  RolesGuard,
+  SessionAuthGuard,
+  TerminalSessionAuthGuard,
+} from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   AttendanceControlQueryDto,
   AttendanceCorrectionQueryDto,
+  AssignEmployeeAttendanceDto,
+  CreateAttendanceDepartmentDto,
   CreateAttendanceCorrectionDto,
+  CreateAttendanceShiftDto,
   DecideAttendanceCorrectionDto,
   ManualAttendanceDto,
   ScanAttendanceQrDto,
@@ -17,6 +26,57 @@ import { AttendanceService } from "./attendance.service";
 @Controller("attendance")
 export class AttendanceController {
   constructor(private readonly attendance: AttendanceService) {}
+
+  @Get("setup")
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
+  @RequireRoles("ADMIN")
+  setup() {
+    return this.attendance.setup();
+  }
+
+  @Post("setup/departments")
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
+  @RequireRoles("ADMIN")
+  createDepartment(
+    @Body() dto: CreateAttendanceDepartmentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.attendance.createDepartment(
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("setup/shifts")
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
+  @RequireRoles("ADMIN")
+  createShift(@Body() dto: CreateAttendanceShiftDto, @Req() request: AuthenticatedRequest) {
+    return this.attendance.createShift(dto, requireActor(request), requireCorrelationId(request));
+  }
+
+  @Get("setup/employees/:employeeId")
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
+  @RequireRoles("ADMIN")
+  assignment(@Param("employeeId") employeeId: string) {
+    return this.attendance.assignment(employeeId);
+  }
+
+  @Put("setup/employees/:employeeId")
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
+  @RequireRoles("ADMIN")
+  assignEmployee(
+    @Param("employeeId") employeeId: string,
+    @Body() dto: AssignEmployeeAttendanceDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.attendance.assignEmployee(
+      employeeId,
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
 
   @Get("control")
   @UseGuards(SessionAuthGuard, CsrfGuard)

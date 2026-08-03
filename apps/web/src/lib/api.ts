@@ -2,14 +2,18 @@ import type {
   ApiError,
   AttendanceControlView,
   AttendanceCorrectionView,
+  AttendanceDepartmentOption,
   AttendanceQrView,
   AttendanceScanResult,
+  AttendanceSetupView,
+  AttendanceShiftOption,
   AuthenticatedUser,
   EmployeeAccessDetail,
   EmployeeInvitationOptions,
   EmployeeInvitationPreview,
   EmployeeInvitationResult,
   EmployeeListResponse,
+  EmployeeAttendanceAssignmentView,
   EmployeeSummary,
   DriverLogisticsDayView,
   GoodReturnsWorkspaceView,
@@ -258,6 +262,56 @@ export async function issueAttendanceQr(csrfToken: string): Promise<AttendanceQr
   return request("/attendance/me/qr", {
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
+  });
+}
+
+export async function getAttendanceSetup(): Promise<AttendanceSetupView> {
+  return request("/attendance/setup");
+}
+
+export async function createAttendanceDepartment(
+  input: { name: string },
+  csrfToken: string,
+): Promise<AttendanceDepartmentOption> {
+  return request("/attendance/setup/departments", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createAttendanceShift(
+  input: {
+    crossesMidnight: boolean;
+    departmentId: string;
+    endLocalTime: string;
+    name: string;
+    startLocalTime: string;
+  },
+  csrfToken: string,
+): Promise<AttendanceShiftOption> {
+  return request("/attendance/setup/shifts", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getEmployeeAttendanceAssignment(
+  employeeId: string,
+): Promise<EmployeeAttendanceAssignmentView> {
+  return request(`/attendance/setup/employees/${employeeId}`);
+}
+
+export async function assignEmployeeAttendance(
+  employeeId: string,
+  input: { departmentId: string; shiftTemplateId: string },
+  csrfToken: string,
+): Promise<EmployeeAttendanceAssignmentView> {
+  return request(`/attendance/setup/employees/${employeeId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PUT",
   });
 }
 

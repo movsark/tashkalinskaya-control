@@ -4,8 +4,12 @@ import { ForbiddenException, Injectable, UnprocessableEntityException } from "@n
 import type {
   AttendanceControlView,
   AttendanceCorrectionView,
+  AttendanceDepartmentOption,
   AttendanceQrView,
   AttendanceScanResult,
+  AttendanceSetupView,
+  AttendanceShiftOption,
+  EmployeeAttendanceAssignmentView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
 } from "@tashkalinskaya/contracts";
@@ -16,7 +20,10 @@ import { AttendanceRepository } from "./attendance.repository";
 import type {
   AttendanceControlQueryDto,
   AttendanceCorrectionQueryDto,
+  AssignEmployeeAttendanceDto,
+  CreateAttendanceDepartmentDto,
   CreateAttendanceCorrectionDto,
+  CreateAttendanceShiftDto,
   DecideAttendanceCorrectionDto,
   ManualAttendanceDto,
   ScanAttendanceQrDto,
@@ -28,6 +35,79 @@ export class AttendanceService {
     private readonly crypto: AttendanceCryptoService,
     private readonly repository: AttendanceRepository,
   ) {}
+
+  setup(): Promise<AttendanceSetupView> {
+    return this.repository.getSetup();
+  }
+
+  async createDepartment(
+    dto: CreateAttendanceDepartmentDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ): Promise<AttendanceDepartmentOption> {
+    try {
+      return await this.repository.createDepartment({
+        actor,
+        correlationId,
+        departmentId: randomUUID(),
+        name: dto.name.trim(),
+      });
+    } catch (error) {
+      throw mapAttendanceError(error);
+    }
+  }
+
+  async createShift(
+    dto: CreateAttendanceShiftDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ): Promise<AttendanceShiftOption> {
+    if (!dto.crossesMidnight && dto.endLocalTime <= dto.startLocalTime) {
+      throw new UnprocessableEntityException({
+        code: "SHIFT_TIME_INVALID",
+        message: "Время окончания дневной смены должно быть позже начала",
+      });
+    }
+    try {
+      return await this.repository.createShift({
+        actor,
+        correlationId,
+        crossesMidnight: dto.crossesMidnight,
+        departmentId: dto.departmentId,
+        endLocalTime: dto.endLocalTime,
+        name: dto.name.trim(),
+        shiftTemplateId: randomUUID(),
+        startLocalTime: dto.startLocalTime,
+      });
+    } catch (error) {
+      throw mapAttendanceError(error);
+    }
+  }
+
+  assignment(employeeId: string): Promise<EmployeeAttendanceAssignmentView> {
+    return this.repository.getEmployeeAssignment(employeeId).catch((error: unknown) => {
+      throw mapAttendanceError(error);
+    });
+  }
+
+  async assignEmployee(
+    employeeId: string,
+    dto: AssignEmployeeAttendanceDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ): Promise<EmployeeAttendanceAssignmentView> {
+    try {
+      return await this.repository.assignEmployee({
+        actor,
+        correlationId,
+        departmentId: dto.departmentId,
+        employeeId,
+        shiftTemplateId: dto.shiftTemplateId,
+      });
+    } catch (error) {
+      throw mapAttendanceError(error);
+    }
+  }
 
   control(
     query: AttendanceControlQueryDto,

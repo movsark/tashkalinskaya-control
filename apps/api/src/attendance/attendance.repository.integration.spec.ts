@@ -117,6 +117,58 @@ describe.runIf(hasDatabase)("AttendanceRepository with PostgreSQL", () => {
     await database.onApplicationShutdown();
   });
 
+  it("creates a department and shift, assigns an employee and enables the QR", async () => {
+    const admin = withFactoryRole(actor, "ADMIN");
+    const nextDepartmentId = randomUUID();
+    const department = await repository.createDepartment({
+      actor: admin,
+      correlationId: randomUUID(),
+      departmentId: nextDepartmentId,
+      name: `Цех назначения ${nextDepartmentId.slice(0, 8)}`,
+    });
+    const shiftTemplateId = randomUUID();
+    const shift = await repository.createShift({
+      actor: admin,
+      correlationId: randomUUID(),
+      crossesMidnight: false,
+      departmentId: department.id,
+      endLocalTime: "23:59",
+      name: "Полная смена назначения",
+      shiftTemplateId,
+      startLocalTime: "00:00",
+    });
+    const employee = await createAdditionalActor("B06-ASSIGNMENT");
+    await database.query(`update identity.employee set department_id = null where id = $1`, [
+      employee.employee.id,
+    ]);
+
+    const assigned = await repository.assignEmployee({
+      actor: admin,
+      correlationId: randomUUID(),
+      departmentId: department.id,
+      employeeId: employee.employee.id,
+      shiftTemplateId: shift.id,
+    });
+
+    expect(assigned).toMatchObject({
+      departmentId: department.id,
+      employeeId: employee.employee.id,
+      shiftTemplateId: shift.id,
+    });
+    const issued = await repository.issueToken({
+      actor: {
+        ...employee,
+        employee: { ...employee.employee, departmentId: department.id },
+      },
+      tokenHash: crypto.hashSecret(crypto.generateSecret()),
+      tokenId: randomUUID(),
+    });
+    expect(issued.action).toBe("ARRIVAL");
+    const setup = await repository.getSetup();
+    expect(setup.departments).toContainEqual(department);
+    expect(setup.shifts).toContainEqual(shift);
+  });
+
   it("creates one immutable arrival and returns it for a replay", async () => {
     const secret = crypto.generateSecret();
     const issued = await repository.issueToken({
