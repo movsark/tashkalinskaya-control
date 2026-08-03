@@ -62,8 +62,8 @@ test.describe("B20 browser and HTTP regression", () => {
         }),
       );
       await page.goto("/");
-      await expect(page.getByRole("heading", { level: 1 })).toContainText("Рабочий контур");
-      await expect(page.getByRole("link", { name: "Войти в систему" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1 })).toContainText("Ташкалинская");
+      await expect(page.getByRole("link", { name: "Войти" })).toBeVisible();
       const dimensions = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
@@ -116,7 +116,14 @@ test.describe("B20 browser and HTTP regression", () => {
       }),
     );
     await page.goto("/");
-    await expect(page).toHaveURL(/\/employees$/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText("Выберите, что нужно сделать сейчас.")).toBeVisible();
+    const primaryNavigation = page.getByRole("navigation", { name: "Основная навигация" });
+    await expect(primaryNavigation).toBeVisible();
+    await primaryNavigation.getByRole("button", { name: "Меню" }).click();
+    const menu = page.getByRole("dialog", { name: "Разделы приложения" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("link", { exact: true, name: "Сотрудники" })).toBeVisible();
   });
 
   test("a bound personal device signs in with login and password only", async ({ page }) => {
@@ -153,7 +160,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByLabel("Логин").fill("test-user");
     await page.getByLabel("Пароль").fill("correct horse battery staple");
     await page.getByRole("button", { name: "Войти" }).click();
-    await expect(page).toHaveURL(/\/employees$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(loginRequest).toEqual({
       deviceId,
       login: "test-user",
@@ -529,7 +536,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByLabel("Повторите пароль").fill("торт-2026");
     await page.getByRole("button", { name: "Зарегистрироваться и войти" }).click();
 
-    await expect(page).toHaveURL(/\/attendance\/me$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(registrationRequest).toMatchObject({
       firstName: "Марина",
       invitationCode: "one-time-invitation-code",
