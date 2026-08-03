@@ -164,10 +164,7 @@ export function destinationShortLabelFor(
 }
 
 function isRegularDriver(roles: readonly RoleCode[]): boolean {
-  return (
-    roles.includes("DRIVER") &&
-    !roles.some((role) => ["ADMIN", "MANAGER"].includes(role))
-  );
+  return roles.includes("DRIVER") && !roles.some((role) => ["ADMIN", "MANAGER"].includes(role));
 }
 
 export function primaryDestinationFor(roles: readonly RoleCode[]): AppDestination {

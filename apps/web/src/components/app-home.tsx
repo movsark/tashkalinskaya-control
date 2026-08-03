@@ -5,11 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { getSession } from "../lib/api";
-import {
-  destinationLabelFor,
-  destinationsFor,
-  primaryDestinationFor,
-} from "../lib/navigation";
+import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
 
 export function AppHome() {

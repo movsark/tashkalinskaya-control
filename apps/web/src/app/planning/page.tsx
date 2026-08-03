@@ -41,8 +41,10 @@ export default function PlanningPage() {
   const isDriver = useMemo(
     () =>
       (session?.employee.roles.some((role) => role.roleCode === "DRIVER") ?? false) &&
-      !(session?.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode)) ??
-        false),
+      !(
+        session?.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode)) ??
+        false
+      ),
     [session],
   );
 
