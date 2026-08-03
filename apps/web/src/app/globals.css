@@ -509,7 +509,10 @@ footer {
 
 input,
 select {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 50px;
   padding: 0 14px;
   border: 1px solid #c9cec8;
@@ -1166,31 +1169,25 @@ select:focus {
 .access-panel__grid {
   display: grid;
   align-items: start;
-  gap: 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .access-section {
   display: grid;
+  min-width: 0;
   gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: #faf9f5;
+  padding: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .access-section h3 {
   margin: 0;
   color: var(--forest);
   font-size: 19px;
-}
-
-.access-section--devices {
-  grid-column: 1 / -1;
-}
-
-.access-section--attendance {
-  grid-column: 1 / -1;
 }
 
 .attendance-simple-form {
@@ -1217,28 +1214,11 @@ select:focus {
   min-width: 0;
 }
 
-.attendance-simple-form input[type="time"] {
-  display: block;
-  font-size: 16px;
-}
-
-.attendance-simple-checkbox {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 10px;
-  padding: 14px 0;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.attendance-simple-checkbox input {
-  flex: 0 0 20px;
-  width: 20px;
-  min-height: 20px;
-  margin: 0;
-  accent-color: var(--forest);
+.attendance-simple-hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .attendance-simple-message {
