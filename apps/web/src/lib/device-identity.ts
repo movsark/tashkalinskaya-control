@@ -28,6 +28,14 @@ export function readDeviceId(): string | null {
   return globalThis.localStorage?.getItem(deviceIdKey) ?? null;
 }
 
+export function ensureDeviceId(): string {
+  const existing = readDeviceId();
+  if (existing !== null) return existing;
+  const created = crypto.randomUUID();
+  saveDeviceId(created);
+  return created;
+}
+
 export function detectPlatform(): "ANDROID" | "IOS" | "IPADOS" | "OTHER" {
   const userAgent = navigator.userAgent.toLocaleLowerCase();
   if (userAgent.includes("android")) return "ANDROID";

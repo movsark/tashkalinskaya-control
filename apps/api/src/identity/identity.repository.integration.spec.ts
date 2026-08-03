@@ -16,6 +16,11 @@ const accountId = randomUUID();
 const deviceId = randomUUID();
 const credentialId = `credential-${employeeId}`;
 const login = `integration-${employeeId}`;
+const invitedEmployeeId = randomUUID();
+const invitedAccountId = randomUUID();
+const invitedDeviceId = randomUUID();
+const invitationId = randomUUID();
+const invitationTokenHash = `invitation-${randomUUID()}`;
 
 describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   beforeAll(async () => {
@@ -38,6 +43,18 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   });
 
   afterAll(async () => {
+    await database.query("delete from identity.session where account_id = $1", [invitedAccountId]);
+    await database.query("delete from identity.employee_invitation where id = $1", [invitationId]);
+    await database.query("delete from identity.role_assignment where employee_id = $1", [
+      invitedEmployeeId,
+    ]);
+    await database.query("delete from identity.personal_device where employee_id = $1", [
+      invitedEmployeeId,
+    ]);
+    await database.query("delete from identity.user_account where employee_id = $1", [
+      invitedEmployeeId,
+    ]);
+    await database.query("delete from identity.employee where id = $1", [invitedEmployeeId]);
     await database.query("delete from identity.authentication_challenge where account_id = $1", [
       accountId,
     ]);
@@ -107,6 +124,53 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
       ],
       employee: { id: employeeId, login },
     });
+  });
+
+  it("consumes a QR invitation atomically and creates one active personal device", async () => {
+    const invitation = await repository.createEmployeeInvitation({
+      actorEmployeeId: employeeId,
+      correlationId: randomUUID(),
+      id: invitationId,
+      roleCode: "ATTENDANCE_ONLY",
+      scopeId: null,
+      scopeType: "FACTORY",
+      tokenHash: invitationTokenHash,
+    });
+    expect(invitation).toMatchObject({ roleDisplayName: "Только табель" });
+
+    const now = Date.now();
+    await repository.registerEmployeeFromInvitation({
+      accountId: invitedAccountId,
+      correlationId: randomUUID(),
+      deviceId: invitedDeviceId,
+      employeeId: invitedEmployeeId,
+      fullName: "Иванова Марина",
+      invitationId,
+      loginNormalized: `invited-${invitedEmployeeId}`,
+      passwordHash: "test-password-hash",
+      platformFamily: "ANDROID",
+      session: {
+        absoluteExpiresAt: new Date(now + 60_000),
+        accessExpiresAt: new Date(now + 60_000),
+        accountId: invitedAccountId,
+        authorizationVersion: 1,
+        deviceId: invitedDeviceId,
+        id: randomUUID(),
+        refreshExpiresAt: null,
+        tokenHash: `session-${randomUUID()}`,
+      },
+    });
+
+    await expect(repository.getEmployee(invitedEmployeeId)).resolves.toMatchObject({
+      accountStatus: "ACTIVE",
+      fullName: "Иванова Марина",
+      roles: [{ roleCode: "ATTENDANCE_ONLY", scopeType: "FACTORY" }],
+    });
+    await expect(repository.findActiveDevice(invitedDeviceId)).resolves.toMatchObject({
+      employeeId: invitedEmployeeId,
+      id: invitedDeviceId,
+    });
+    await expect(repository.findEmployeeInvitation(invitationTokenHash)).resolves.toBeNull();
   });
 
   it("stores a single-use WebAuthn challenge bound to account and device", async () => {

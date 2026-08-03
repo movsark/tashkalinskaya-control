@@ -53,6 +53,8 @@ const publicCeremonies = new Set([
   "AuthController.loginOptions",
   "AuthController.recover",
   "AuthController.recoveryOptions",
+  "AuthController.registerEmployee",
+  "AuthController.registrationPreview",
   "AuthController.refresh",
   "AuthController.refreshOptions",
   "HealthController.getLiveness",

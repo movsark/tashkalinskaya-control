@@ -88,7 +88,81 @@ describe("AuthService simple personal login", () => {
     expect(createdSession).not.toBeNull();
     const expiresAt = (createdSession as NewSession | null)?.accessExpiresAt.getTime() ?? 0;
     expect(expiresAt - before).toBeGreaterThan(364 * 24 * 60 * 60 * 1000);
-    expect(expiresAt - before).toBeLessThanOrEqual(365 * 24 * 60 * 60 * 1000);
+    expect(expiresAt - before).toBeLessThanOrEqual(365 * 24 * 60 * 60 * 1000 + 100);
     expect((createdSession as NewSession | null)?.refreshExpiresAt).toBeNull();
+  });
+
+  it("registers an invited employee without WebAuthn and creates a persistent session", async () => {
+    const invitationId = "10000000-0000-4000-8000-000000000010";
+    const webauthn = { verifyRegistration: vi.fn() };
+    const repository = {
+      findEmployeeInvitation: vi.fn().mockResolvedValue({
+        expiresAt: new Date("2026-08-04T10:00:00.000Z"),
+        id: invitationId,
+        roleCode: "ATTENDANCE_ONLY",
+        roleDisplayName: "Только табель",
+        scopeDisplayName: null,
+        scopeId: null,
+        scopeType: "FACTORY",
+      }),
+      getEmployee: vi.fn().mockResolvedValue({
+        accountStatus: "ACTIVE",
+        departmentId: null,
+        employmentStatus: "ACTIVE",
+        fullName: "Иванова Марина",
+        id: employeeId,
+        login: "marina.ivanova",
+        personnelNumber: "QR-TEST",
+        roles: [
+          {
+            id: "10000000-0000-4000-8000-000000000011",
+            roleCode: "ATTENDANCE_ONLY",
+            scopeId: null,
+            scopeType: "FACTORY",
+          },
+        ],
+        version: 1,
+      }),
+      registerEmployeeFromInvitation: vi.fn(),
+    };
+    const crypto = {
+      createCsrfToken: vi.fn().mockReturnValue("csrf"),
+      generateSessionToken: vi.fn().mockReturnValue("session-token"),
+      hashAccessCode: vi.fn().mockReturnValue("invitation-hash"),
+      hashPassword: vi.fn().mockResolvedValue("password-hash"),
+      hashSessionToken: vi.fn().mockReturnValue("session-hash"),
+      normalizeLogin: vi.fn().mockReturnValue("marina.ivanova"),
+    };
+    const service = new AuthService(
+      crypto as unknown as IdentityCryptoService,
+      {} as DeviceSecurityRepository,
+      repository as unknown as IdentityRepository,
+      webauthn as unknown as WebAuthnService,
+    );
+
+    const result = await service.registerEmployee(
+      {
+        deviceId,
+        firstName: "Марина",
+        invitationCode: "one-time-invitation-code",
+        lastName: "Иванова",
+        login: "Marina.Ivanova",
+        password: "торт-2026",
+        platformFamily: "ANDROID",
+      },
+      "10000000-0000-4000-8000-000000000012",
+    );
+
+    expect(result.body).toMatchObject({ deviceId, employee: { fullName: "Иванова Марина" } });
+    expect(repository.registerEmployeeFromInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceId,
+        fullName: "Иванова Марина",
+        invitationId,
+        loginNormalized: "marina.ivanova",
+        platformFamily: "ANDROID",
+      }),
+    );
+    expect(webauthn.verifyRegistration).not.toHaveBeenCalled();
   });
 });

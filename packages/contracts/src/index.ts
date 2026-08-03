@@ -66,6 +66,33 @@ export interface EmployeeListResponse {
   readonly total: number;
 }
 
+export interface EmployeeInvitationScopeOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface EmployeeInvitationRoleOption {
+  readonly displayName: string;
+  readonly roleCode: RoleCode;
+  readonly scopeType: ScopeType;
+  readonly scopes: readonly EmployeeInvitationScopeOption[];
+}
+
+export interface EmployeeInvitationOptions {
+  readonly roles: readonly EmployeeInvitationRoleOption[];
+}
+
+export interface EmployeeInvitationPreview {
+  readonly expiresAt: string;
+  readonly roleCode: RoleCode;
+  readonly roleDisplayName: string;
+  readonly scopeDisplayName: string | null;
+}
+
+export interface EmployeeInvitationResult extends EmployeeInvitationPreview {
+  readonly invitationCode: string;
+}
+
 export interface PersonalDeviceView {
   readonly deviceLabel: string;
   readonly id: string;

@@ -9,6 +9,7 @@ import {
 import type {
   AccountStatus,
   EmployeeAccessDetail,
+  EmployeeInvitationOptions,
   EmployeeSummary,
   EmploymentStatus,
   RoleAssignmentView,
@@ -23,6 +24,7 @@ import type {
   AuthenticatedActor,
   CreateEmployeeCommand,
   DeviceRecord,
+  EmployeeInvitationRecord,
 } from "./identity.types";
 
 interface EmployeeRow {
@@ -90,6 +92,16 @@ interface RefreshSessionRow {
   readonly refresh_expires_at: Date;
   readonly session_authorization_version: number;
   readonly session_id: string;
+}
+
+interface InvitationRow {
+  readonly expires_at: Date;
+  readonly id: string;
+  readonly role_code: RoleCode;
+  readonly role_display_name: string;
+  readonly scope_display_name: string | null;
+  readonly scope_id: string | null;
+  readonly scope_type: ScopeType;
 }
 
 const employeeSelect = `
@@ -317,6 +329,256 @@ export class IdentityRepository {
     });
 
     return this.getEmployee(command.employeeId);
+  }
+
+  async employeeInvitationOptions(): Promise<EmployeeInvitationOptions> {
+    const [roles, workshops, territories, stores] = await Promise.all([
+      this.database.query<{ code: RoleCode; display_name: string }>(
+        "select code, display_name from identity.role order by display_name",
+      ),
+      this.database.query<{ id: string; name: string }>(
+        "select id, name from identity.department where status = 'ACTIVE' order by name",
+      ),
+      this.database.query<{ id: string; name: string }>(
+        "select id, name from logistics.territory where status = 'ACTIVE' order by territory_number",
+      ),
+      this.database.query<{ id: string; name: string }>(
+        "select id, display_name as name from commerce.store where status = 'ACTIVE' order by display_name",
+      ),
+    ]);
+    const workshopScopes = workshops.rows;
+    const territoryScopes = territories.rows;
+    const storeScopes = stores.rows;
+    return {
+      roles: roles.rows.map((role) => {
+        const scopeType = invitationScopeByRole[role.code];
+        const scopes =
+          scopeType === "WORKSHOP"
+            ? workshopScopes
+            : scopeType === "TERRITORY"
+              ? territoryScopes
+              : scopeType === "STORE"
+                ? storeScopes
+                : [];
+        return {
+          displayName: role.display_name,
+          roleCode: role.code,
+          scopeType,
+          scopes,
+        };
+      }),
+    };
+  }
+
+  async createEmployeeInvitation(input: {
+    actorEmployeeId: string;
+    correlationId: string;
+    id: string;
+    roleCode: RoleCode;
+    scopeId: string | null;
+    scopeType: ScopeType;
+    tokenHash: string;
+  }): Promise<EmployeeInvitationRecord> {
+    const scopeDisplayName = await this.resolveInvitationScope(input.scopeType, input.scopeId);
+    const result = await this.database.transaction(async (client) => {
+      const role = await client.query<{ display_name: string }>(
+        "select display_name from identity.role where code = $1",
+        [input.roleCode],
+      );
+      if (role.rowCount !== 1) throw new NotFoundException("Должность не найдена");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await client.query(
+        `
+          insert into identity.employee_invitation (
+            id, token_hash, role_code, scope_type, scope_id, created_by, expires_at
+          ) values ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [
+          input.id,
+          input.tokenHash,
+          input.roleCode,
+          input.scopeType,
+          input.scopeId,
+          input.actorEmployeeId,
+          expiresAt,
+        ],
+      );
+      await this.insertAudit(client, {
+        action: "EMPLOYEE_INVITATION_CREATED",
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: {
+          expiresAt: expiresAt.toISOString(),
+          roleCode: input.roleCode,
+          scopeId: input.scopeId,
+          scopeType: input.scopeType,
+        },
+        objectId: input.id,
+        objectType: "EMPLOYEE_INVITATION",
+      });
+      return {
+        expiresAt,
+        id: input.id,
+        roleCode: input.roleCode,
+        roleDisplayName: role.rows[0]!.display_name,
+        scopeDisplayName,
+        scopeId: input.scopeId,
+        scopeType: input.scopeType,
+      } satisfies EmployeeInvitationRecord;
+    });
+    return result;
+  }
+
+  async findEmployeeInvitation(tokenHash: string): Promise<EmployeeInvitationRecord | null> {
+    const result = await this.database.query<InvitationRow>(
+      `
+        select
+          i.id,
+          i.role_code,
+          r.display_name as role_display_name,
+          i.scope_type,
+          i.scope_id,
+          i.expires_at,
+          case i.scope_type
+            when 'WORKSHOP' then (select d.name from identity.department d where d.id = i.scope_id)
+            when 'TERRITORY' then (select t.name from logistics.territory t where t.id = i.scope_id)
+            when 'STORE' then (select s.display_name from commerce.store s where s.id = i.scope_id)
+            else null
+          end as scope_display_name
+        from identity.employee_invitation i
+        join identity.role r on r.code = i.role_code
+        where i.token_hash = $1
+          and i.consumed_at is null
+          and i.revoked_at is null
+          and i.expires_at > now()
+      `,
+      [tokenHash],
+    );
+    return result.rows[0] === undefined ? null : mapInvitation(result.rows[0]);
+  }
+
+  async registerEmployeeFromInvitation(input: {
+    accountId: string;
+    correlationId: string;
+    deviceId: string;
+    employeeId: string;
+    fullName: string;
+    invitationId: string;
+    loginNormalized: string;
+    passwordHash: string;
+    platformFamily: DeviceRecord["platformFamily"];
+    session: NewSession;
+  }): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const invitation = await client.query<{
+        role_code: RoleCode;
+        scope_id: string | null;
+        scope_type: ScopeType;
+      }>(
+        `
+          select role_code, scope_type, scope_id
+          from identity.employee_invitation
+          where id = $1 and consumed_at is null and revoked_at is null and expires_at > now()
+          for update
+        `,
+        [input.invitationId],
+      );
+      const selected = invitation.rows[0];
+      if (selected === undefined) throw new UnauthorizedException("Приглашение уже использовано");
+      const personnelNumber = `QR-${input.employeeId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
+      await client.query(
+        `
+          insert into identity.employee (
+            id, personnel_number, personnel_number_normalized, full_name
+          ) values ($1, $2, $2, $3)
+        `,
+        [input.employeeId, personnelNumber, input.fullName],
+      );
+      await client.query(
+        `
+          insert into identity.user_account (
+            id, employee_id, login_normalized, status, password_hash, password_changed_at
+          ) values ($1, $2, $3, 'ACTIVE', $4, now())
+        `,
+        [input.accountId, input.employeeId, input.loginNormalized, input.passwordHash],
+      );
+      await client.query(
+        `
+          insert into identity.role_assignment (
+            id, employee_id, role_code, scope_type, scope_id, created_by
+          )
+          select $1, $2, role_code, scope_type, scope_id, created_by
+          from identity.employee_invitation where id = $3
+        `,
+        [randomUUID(), input.employeeId, input.invitationId],
+      );
+      await client.query(
+        `
+          insert into identity.personal_device (
+            id, employee_id, public_key, device_label, platform_family, status, paired_at,
+            last_seen_at
+          ) values ($1, $2, $3, $4, $5, 'ACTIVE', now(), now())
+        `,
+        [
+          input.deviceId,
+          input.employeeId,
+          `device-id:${input.deviceId}`,
+          personalDeviceLabel(input.platformFamily, input.fullName),
+          input.platformFamily,
+        ],
+      );
+      await client.query(
+        `
+          update identity.employee_invitation
+          set consumed_at = now(), consumed_by_employee_id = $2
+          where id = $1
+        `,
+        [input.invitationId, input.employeeId],
+      );
+      await this.insertSession(client, input.session);
+      await this.insertAudit(client, {
+        action: "EMPLOYEE_SELF_REGISTERED",
+        actorEmployeeId: input.employeeId,
+        correlationId: input.correlationId,
+        metadata: {
+          deviceId: input.deviceId,
+          invitationId: input.invitationId,
+          platformFamily: input.platformFamily,
+          roleCode: selected.role_code,
+          scopeId: selected.scope_id,
+          scopeType: selected.scope_type,
+        },
+        objectId: input.employeeId,
+        objectType: "EMPLOYEE",
+      });
+      await this.insertOutbox(client, "identity.employee.created", input.employeeId, {
+        employeeId: input.employeeId,
+      });
+    });
+  }
+
+  private async resolveInvitationScope(
+    scopeType: ScopeType,
+    scopeId: string | null,
+  ): Promise<string | null> {
+    if (scopeType === "FACTORY") return null;
+    const source =
+      scopeType === "WORKSHOP"
+        ? { name: "name", table: "identity.department" }
+        : scopeType === "TERRITORY"
+          ? { name: "name", table: "logistics.territory" }
+          : scopeType === "STORE"
+            ? { name: "display_name", table: "commerce.store" }
+            : null;
+    if (source === null || scopeId === null)
+      throw new NotFoundException("Область должности не найдена");
+    const result = await this.database.query<{ name: string }>(
+      `select ${source.name} as name from ${source.table} where id = $1 and status = 'ACTIVE'`,
+      [scopeId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new NotFoundException("Область должности не найдена");
+    return row.name;
   }
 
   async findValidAccessToken(
@@ -1228,3 +1490,39 @@ function mapDevice(row: DeviceRow | undefined): DeviceRecord | null {
         webauthnTransports: row.webauthn_transports,
       };
 }
+
+function mapInvitation(row: InvitationRow): EmployeeInvitationRecord {
+  return {
+    expiresAt: row.expires_at,
+    id: row.id,
+    roleCode: row.role_code,
+    roleDisplayName: row.role_display_name,
+    scopeDisplayName: row.scope_display_name,
+    scopeId: row.scope_id,
+    scopeType: row.scope_type,
+  };
+}
+
+function personalDeviceLabel(platform: DeviceRecord["platformFamily"], fullName: string): string {
+  const platformName =
+    platform === "IOS"
+      ? "iPhone"
+      : platform === "IPADOS"
+        ? "iPad"
+        : platform === "ANDROID"
+          ? "Android"
+          : "Устройство";
+  return `${platformName} · ${fullName}`.slice(0, 100);
+}
+
+const invitationScopeByRole: Record<RoleCode, ScopeType> = {
+  ACCOUNTANT: "FACTORY",
+  ADMIN: "FACTORY",
+  ATTENDANCE_ONLY: "FACTORY",
+  CONFECTIONER: "WORKSHOP",
+  DRIVER: "TERRITORY",
+  MANAGER: "FACTORY",
+  STORE_SELLER: "STORE",
+  WAREHOUSE_KEEPER: "FACTORY",
+  WORKSHOP_MANAGER: "WORKSHOP",
+};

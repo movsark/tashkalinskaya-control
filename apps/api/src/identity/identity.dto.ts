@@ -5,6 +5,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  Matches,
   IsOptional,
   IsObject,
   IsString,
@@ -51,6 +52,51 @@ export class CreateEmployeeDto {
   @ValidateNested({ each: true })
   @Type(() => RoleInputDto)
   roles!: RoleInputDto[];
+}
+
+export class CreateEmployeeInvitationDto {
+  @ValidateNested()
+  @Type(() => RoleInputDto)
+  role!: RoleInputDto;
+}
+
+export class PreviewEmployeeRegistrationDto {
+  @IsString()
+  @Length(20, 100)
+  invitationCode!: string;
+}
+
+export class RegisterEmployeeDto extends PreviewEmployeeRegistrationDto {
+  @IsString()
+  @Length(1, 60)
+  @Matches(/\S/u)
+  firstName!: string;
+
+  @IsString()
+  @Length(1, 60)
+  @Matches(/\S/u)
+  lastName!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 60)
+  @Matches(/\S/u)
+  patronymic?: string;
+
+  @IsString()
+  @Length(1, 100)
+  @Matches(/\S/u)
+  login!: string;
+
+  @IsString()
+  @Length(8, 128)
+  password!: string;
+
+  @IsUUID()
+  deviceId!: string;
+
+  @IsIn(["ANDROID", "IOS", "IPADOS", "OTHER"])
+  platformFamily!: "ANDROID" | "IOS" | "IPADOS" | "OTHER";
 }
 
 export class ActivateAccountDto {
