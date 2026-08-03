@@ -7,7 +7,6 @@ import type {
   ProductionWarehouseQueueView,
   ProductionWorkspaceView,
 } from "@tashkalinskaya/contracts";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -132,23 +131,20 @@ export default function ProductionPage() {
   }
 
   return (
-    <main className="workspace-layout production-layout">
+    <main className="workspace-layout production-layout simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session?.employee.fullName}</span>
-          <small>
-            Производство · <Link href="/planning/plan">план</Link> ·{" "}
-            <Link href="/warehouse">склад</Link> · <Link href="/">главная</Link>
-          </small>
+          <small>Производство</small>
         </div>
       </header>
 
       <section className="production-hero">
         <div>
-          <p className="eyebrow">B11 · работа цехов</p>
+          <p className="eyebrow">Сегодня в цехах</p>
           <h1>Производство</h1>
-          <p>Задания, исполнители, выпуск партиями, невыполнение и производственный брак.</p>
+          <p>План, выпуск и проблемы по каждому заданию.</p>
         </div>
         <div className="production-filters">
           <label>
@@ -213,7 +209,7 @@ export default function ProductionPage() {
         </div>
         {workspace.tasks.length === 0 ? (
           <p className="logistics-empty">
-            Заданий пока нет. Администратор создаёт их из опубликованного плана B09.
+            Заданий пока нет. Администратор создаёт их из утверждённого плана.
           </p>
         ) : (
           <div className="production-task-grid">
@@ -235,17 +231,35 @@ export default function ProductionPage() {
       </section>
 
       {canManage ? (
-        <TransferPanel
-          busy={busy}
-          isAdmin={isAdmin}
-          onAction={run}
-          onReload={reload}
-          session={session!}
-          workspace={workspace}
-        />
+        <details className="workspace-more">
+          <summary>
+            <span>Передача между цехами</span>
+            <b>{workspace.transfers.length}</b>
+          </summary>
+          <div className="workspace-more__content">
+            <TransferPanel
+              busy={busy}
+              isAdmin={isAdmin}
+              onAction={run}
+              onReload={reload}
+              session={session!}
+              workspace={workspace}
+            />
+          </div>
+        </details>
       ) : null}
 
-      {warehouseQueue ? <WarehouseQueue queue={warehouseQueue} /> : null}
+      {warehouseQueue ? (
+        <details className="workspace-more">
+          <summary>
+            <span>Ожидает склад</span>
+            <b>{warehouseQueue.batches.length}</b>
+          </summary>
+          <div className="workspace-more__content">
+            <WarehouseQueue queue={warehouseQueue} />
+          </div>
+        </details>
+      ) : null}
     </main>
   );
 }
@@ -946,7 +960,7 @@ function WarehouseQueue({ queue }: { queue: ProductionWarehouseQueueView }) {
     <section className="production-warehouse-queue">
       <div className="production-section-heading">
         <div>
-          <p className="eyebrow">Граница B12</p>
+          <p className="eyebrow">Передано из цехов</p>
           <h2>Очередь приёмки склада</h2>
         </div>
         <span>{queue.batches.length} партий</span>

@@ -6,7 +6,6 @@ import type {
   LoadingDriverDayView,
   LoadingLineView,
 } from "@tashkalinskaya/contracts";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -88,22 +87,20 @@ export default function DriverLogisticsPage() {
   }
 
   return (
-    <main className="workspace-layout logistics-role-layout driver-loading-workspace">
+    <main className="workspace-layout logistics-role-layout driver-loading-workspace simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
-          <small>
-            Водитель · <Link href="/attendance/me">мой табель</Link>
-          </small>
+          <small>Водитель</small>
         </div>
       </header>
 
       <section className="workspace-title logistics-title loading-title">
         <div>
           <p className="eyebrow">Мой маршрут</p>
-          <h1>Приём погрузки</h1>
-          <p>Подтверждайте каждую строку только после фактической передачи товара.</p>
+          <h1>Моя погрузка</h1>
+          <p>Сверьте товар и подтвердите фактически полученное количество.</p>
         </div>
         <label>
           Дата вывоза
@@ -195,15 +192,18 @@ export default function DriverLogisticsPage() {
                           {line.quantity} шт.
                         </strong>
                       </div>
-                      <div className="loading-plan-breakdown">
-                        <span>Норма {line.weeklyNormQuantity}</span>
-                        {line.oneOffQuantity !== null ? (
-                          <span>Изменение {line.oneOffQuantity}</span>
-                        ) : null}
-                        <span>Со склада {line.allocatedFreeStock}</span>
-                        <span>Возврат {line.allocatedGoodReturn}</span>
-                        <span>Новое {line.newProduction}</span>
-                      </div>
+                      <details className="driver-line-details">
+                        <summary>Из чего сложилось количество</summary>
+                        <div className="loading-plan-breakdown">
+                          <span>Норма {line.weeklyNormQuantity}</span>
+                          {line.oneOffQuantity !== null ? (
+                            <span>Изменение {line.oneOffQuantity}</span>
+                          ) : null}
+                          <span>Со склада {line.allocatedFreeStock}</span>
+                          <span>Возврат {line.allocatedGoodReturn}</span>
+                          <span>Новое {line.newProduction}</span>
+                        </div>
+                      </details>
                       {line.status === "SENT_TO_DRIVER" ? (
                         <div className="driver-line-actions">
                           <button

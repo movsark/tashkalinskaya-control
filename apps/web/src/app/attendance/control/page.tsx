@@ -9,7 +9,6 @@ import type {
   ManualAttendanceReasonView,
   ManualAttendanceResult,
 } from "@tashkalinskaya/contracts";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -233,22 +232,20 @@ export default function AttendanceControlPage() {
   const selectedReason = reasons.find((reason) => reason.id === manualReasonId);
   const selectedCorrectionReason = reasons.find((reason) => reason.id === correctionReasonId);
   return (
-    <main className="workspace-layout attendance-control-layout">
+    <main className="workspace-layout attendance-control-layout simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Контроль табеля"}</span>
-          <small>
-            B06 · <Link href="/attendance/me">мой QR</Link>
-          </small>
+          <small>Табель</small>
         </div>
       </header>
 
       <section className="workspace-title attendance-control-title">
         <div>
-          <p className="eyebrow">Текущая смена · B06.2</p>
-          <h1>Контроль присутствия</h1>
-          <p>Приходы и уходы подтверждены сервером. Ручные операции всегда видны отдельно.</p>
+          <p className="eyebrow">Сегодня</p>
+          <h1>Табель</h1>
+          <p>Сразу видно, кто на смене и кому нужна помощь.</p>
         </div>
         <div className="attendance-control-filters">
           <label>
@@ -386,52 +383,59 @@ export default function AttendanceControlPage() {
       </section>
 
       {corrections.length > 0 ? (
-        <section className="attendance-corrections">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Неизменяемая история</p>
-              <h2>Корректировки табеля</h2>
+        <details className="workspace-more">
+          <summary>
+            <span>История исправлений</span>
+            <b>{corrections.length}</b>
+          </summary>
+          <section className="attendance-corrections workspace-more__content">
+            <div className="section-heading">
+              <div>
+                <h2>Корректировки табеля</h2>
+              </div>
+              <p>
+                Исходные события остаются в системе; отчет использует только утвержденное значение.
+              </p>
             </div>
-            <p>
-              Исходные события остаются в системе; отчет использует только утвержденное значение.
-            </p>
-          </div>
-          <div className="attendance-correction-list">
-            {corrections.map((correction) => (
-              <article key={correction.id}>
-                <div>
-                  <strong>{correction.employeeName}</strong>
-                  <span>
-                    {correction.proposedEventType === "ARRIVAL" ? "Приход" : "Уход"} →{" "}
-                    {formatDateTime(correction.proposedEffectiveAt)}
-                  </span>
-                </div>
-                <div>
-                  <strong>{correction.reasonName}</strong>
-                  <span>{correction.comment ?? "Без комментария"}</span>
-                </div>
-                <div>
-                  <span className={`correction-status is-${correction.status.toLocaleLowerCase()}`}>
-                    {correction.status === "SUBMITTED"
-                      ? "На рассмотрении"
-                      : correction.status === "APPROVED"
-                        ? "Подтверждено"
-                        : "Отклонено"}
-                  </span>
-                  <small>{correction.createdByName}</small>
-                </div>
-                {isAdmin && correction.status === "SUBMITTED" ? (
-                  <button
-                    className="secondary-button"
-                    onClick={() => setDecisionCorrection(correction)}
-                  >
-                    Принять решение
-                  </button>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </section>
+            <div className="attendance-correction-list">
+              {corrections.map((correction) => (
+                <article key={correction.id}>
+                  <div>
+                    <strong>{correction.employeeName}</strong>
+                    <span>
+                      {correction.proposedEventType === "ARRIVAL" ? "Приход" : "Уход"} →{" "}
+                      {formatDateTime(correction.proposedEffectiveAt)}
+                    </span>
+                  </div>
+                  <div>
+                    <strong>{correction.reasonName}</strong>
+                    <span>{correction.comment ?? "Без комментария"}</span>
+                  </div>
+                  <div>
+                    <span
+                      className={`correction-status is-${correction.status.toLocaleLowerCase()}`}
+                    >
+                      {correction.status === "SUBMITTED"
+                        ? "На рассмотрении"
+                        : correction.status === "APPROVED"
+                          ? "Подтверждено"
+                          : "Отклонено"}
+                    </span>
+                    <small>{correction.createdByName}</small>
+                  </div>
+                  {isAdmin && correction.status === "SUBMITTED" ? (
+                    <button
+                      className="secondary-button"
+                      onClick={() => setDecisionCorrection(correction)}
+                    >
+                      Принять решение
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        </details>
       ) : null}
 
       {manualEmployee ? (

@@ -5,7 +5,6 @@ import type {
   WarehouseQueueItemView,
   WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../components/app-brand";
@@ -79,24 +78,19 @@ export default function WarehousePage() {
     onHand = data.balances.reduce((sum, item) => sum + item.onHandQuantity, 0),
     open = data.discrepancies.filter((item) => !item.status.startsWith("RESOLVED")).length;
   return (
-    <main className="workspace-layout warehouse-page">
+    <main className="workspace-layout warehouse-page simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session.employee.fullName}</span>
-          <small>
-            Склад · <Link href="/returns">годный возврат</Link> ·{" "}
-            <Link href="/spoilage">порча и списания</Link> ·{" "}
-            <Link href="/warehouse/inventory">инвентаризация</Link> ·{" "}
-            <Link href="/production">производство</Link> · <Link href="/">главная</Link>
-          </small>
+          <small>Склад</small>
         </div>
       </header>
       <section className="warehouse-hero">
         <div>
-          <p className="eyebrow">B12 · физическая приёмка</p>
+          <p className="eyebrow">Сегодня на складе</p>
           <h1>{data.warehouseName}</h1>
-          <p>Партия попадает в остаток только после физической проверки кладовщиком.</p>
+          <p>Сначала примите партии из цехов, затем проверьте остатки.</p>
         </div>
         <div className="warehouse-live">
           <span>Актуально</span>
@@ -139,65 +133,73 @@ export default function WarehousePage() {
           <p className="logistics-empty">Очередь пуста: все заявленные партии обработаны.</p>
         )}
       </section>
-      <section className="warehouse-panel">
-        <Heading
-          eyebrow="Источник истины — журнал"
-          title="Складские остатки"
-          count={data.balances.length}
-        />
-        <div className="warehouse-balances">
-          {data.balances.map((item) => (
-            <article
-              className={item.integrityStatus === "MISMATCH" ? "is-alert" : ""}
-              key={item.productId}
-            >
-              <div>
-                <span>{item.productCode}</span>
-                <strong>{item.productName}</strong>
-              </div>
-              <dl>
+      <details className="workspace-more">
+        <summary>
+          <span>Складские остатки</span>
+          <b>{data.balances.length}</b>
+        </summary>
+        <section className="warehouse-panel workspace-more__content">
+          <Heading eyebrow="По товарам" title="Остатки" count={data.balances.length} />
+          <div className="warehouse-balances">
+            {data.balances.map((item) => (
+              <article
+                className={item.integrityStatus === "MISMATCH" ? "is-alert" : ""}
+                key={item.productId}
+              >
                 <div>
-                  <dt>Свободно</dt>
-                  <dd>{item.freeQuantity}</dd>
+                  <span>{item.productCode}</span>
+                  <strong>{item.productName}</strong>
                 </div>
-                <div>
-                  <dt>Резервы</dt>
-                  <dd>{item.reservedLoadingQuantity + item.reservedStoreQuantity}</dd>
-                </div>
-                <div>
-                  <dt>Возврат</dt>
-                  <dd>{item.returnPoolQuantity}</dd>
-                </div>
-                <div>
-                  <dt>Блок</dt>
-                  <dd>{item.blockedQuantity}</dd>
-                </div>
-                <div>
-                  <dt>Всего</dt>
-                  <dd>{item.onHandQuantity}</dd>
-                </div>
-              </dl>
-              <small>
-                {item.integrityStatus === "OK"
-                  ? "Журнал и проекция совпадают"
-                  : "Расхождение проекции"}
-              </small>
-            </article>
-          ))}
+                <dl>
+                  <div>
+                    <dt>Свободно</dt>
+                    <dd>{item.freeQuantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Резервы</dt>
+                    <dd>{item.reservedLoadingQuantity + item.reservedStoreQuantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Возврат</dt>
+                    <dd>{item.returnPoolQuantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Блок</dt>
+                    <dd>{item.blockedQuantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Всего</dt>
+                    <dd>{item.onHandQuantity}</dd>
+                  </div>
+                </dl>
+                <small>
+                  {item.integrityStatus === "OK" ? "Данные совпадают" : "Есть расхождение"}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      </details>
+      <details className="workspace-more" open={open > 0}>
+        <summary>
+          <span>Расхождения</span>
+          <b>{open}</b>
+        </summary>
+        <div className="workspace-more__content">
+          <Discrepancies
+            busy={busy}
+            canExplain={canExplain}
+            data={data}
+            isAdmin={isAdmin}
+            run={run}
+            reload={reload}
+            session={session}
+          />
+          {isAdmin ? (
+            <CorrectionPanel busy={busy} data={data} run={run} reload={reload} session={session} />
+          ) : null}
         </div>
-      </section>
-      <Discrepancies
-        busy={busy}
-        canExplain={canExplain}
-        data={data}
-        isAdmin={isAdmin}
-        run={run}
-        reload={reload}
-        session={session}
-      />
-      {isAdmin ? (
-        <CorrectionPanel busy={busy} data={data} run={run} reload={reload} session={session} />
-      ) : null}
+      </details>
     </main>
   );
 }

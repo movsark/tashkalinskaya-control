@@ -596,6 +596,135 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Нет связи", { exact: true })).toHaveCount(0);
   });
 
+  test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-driver-simple-ui",
+        deviceId: "20000000-0000-4000-8000-000000000070",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Водитель теста",
+          id: "20000000-0000-4000-8000-000000000071",
+          login: "driver-simple-ui",
+          personnelNumber: "DRIVER-UI",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000072",
+              roleCode: "DRIVER",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-04",
+        runs: [
+          {
+            attendanceVerified: true,
+            comment: null,
+            dispatchDate: "2026-08-04",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000071",
+            driverName: "Водитель теста",
+            id: "20000000-0000-4000-8000-000000000073",
+            loadingGroupId: "20000000-0000-4000-8000-000000000074",
+            plannedEndAt: "2026-08-04T07:00:00.000Z",
+            plannedStartAt: "2026-08-04T06:00:00.000Z",
+            readyAt: "2026-08-04T05:50:00.000Z",
+            reasonCode: null,
+            runNo: 1,
+            sequenceNo: 1,
+            source: "DEFAULT",
+            status: "PUBLISHED",
+            territoryId: "20000000-0000-4000-8000-000000000075",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+            vehicleId: "20000000-0000-4000-8000-000000000076",
+            vehicleName: "Газель 03",
+            version: 1,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/loading/driver/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-04",
+        priorityReturns: [],
+        serverTime: "2026-08-04T06:15:00.000Z",
+        sessions: [
+          {
+            completedAt: null,
+            dispatchDate: "2026-08-04",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000071",
+            driverFinalAt: null,
+            driverName: "Водитель теста",
+            groupId: "20000000-0000-4000-8000-000000000074",
+            groupNo: 1,
+            id: "20000000-0000-4000-8000-000000000077",
+            lines: [
+              {
+                allocatedFreeStock: 2,
+                allocatedGoodReturn: 1,
+                comment: null,
+                counterQuantity: null,
+                currentRevisionId: "20000000-0000-4000-8000-000000000078",
+                currentRevisionNo: 1,
+                id: "20000000-0000-4000-8000-000000000079",
+                isOverPlan: false,
+                newProduction: 7,
+                oneOffQuantity: null,
+                plannedQuantity: 10,
+                productCode: "T-001",
+                productId: "20000000-0000-4000-8000-000000000080",
+                productName: "Торт тестовый",
+                quantity: 10,
+                responseReason: null,
+                responseType: null,
+                status: "SENT_TO_DRIVER",
+                version: 1,
+                weeklyNormQuantity: 10,
+              },
+            ],
+            runId: "20000000-0000-4000-8000-000000000073",
+            runNo: 1,
+            sequenceNo: 1,
+            startedAt: "2026-08-04T06:00:00.000Z",
+            status: "IN_PROGRESS",
+            territoryId: "20000000-0000-4000-8000-000000000075",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+            totalQuantity: 10,
+            unresolvedLines: 1,
+            vehicleName: "Газель 03",
+            version: 1,
+            warehouseFinalAt: null,
+          },
+        ],
+      }),
+    );
+
+    await page.goto("/logistics/today");
+    await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Подтвердить 10" })).toBeVisible();
+    await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
+    await page.getByText("Из чего сложилось количество", { exact: true }).click();
+    await expect(page.getByText("Норма 10", { exact: true })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, { code: "AUTHENTICATION_REQUIRED", message: "Требуется вход" }, 401),
