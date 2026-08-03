@@ -1,4 +1,5 @@
 import { SystemReadiness } from "../components/system-readiness";
+import { ExistingSessionRedirect } from "../components/existing-session-redirect";
 
 const foundations = [
   {
@@ -76,6 +77,7 @@ const foundations = [
 export default function HomePage() {
   return (
     <main>
+      <ExistingSessionRedirect />
       <header className="topbar">
         <a className="brand" href="/" aria-label="Ташкалинская — главная">
           <span className="brand-mark" aria-hidden="true">

@@ -22,7 +22,7 @@ export default function ActivatePage() {
     event.preventDefault();
     setError("");
     if (password !== confirmation) {
-      setError("Парольные фразы не совпадают");
+      setError("Пароли не совпадают");
       return;
     }
     setSubmitting(true);
@@ -64,13 +64,12 @@ export default function ActivatePage() {
           <p className="eyebrow">Первый вход</p>
           <h1>Привязка личного устройства</h1>
           <p>
-            Код действует 24 часа и используется один раз. Постоянную парольную фразу знает только
-            сотрудник.
+            Код действует 24 часа и используется один раз. Постоянный пароль знает только сотрудник.
           </p>
           <ol className="activation-steps">
             <li>Введите логин и код от администратора.</li>
             <li>Назовите устройство понятным именем.</li>
-            <li>Создайте парольную фразу не короче 8 символов.</li>
+            <li>Создайте пароль не короче 8 символов.</li>
             <li>Подтвердите системным PIN, Face ID или Touch ID.</li>
           </ol>
         </div>
@@ -107,7 +106,7 @@ export default function ActivatePage() {
               />
             </label>
             <label>
-              Новая парольная фраза
+              Новый пароль
               <input
                 autoComplete="new-password"
                 minLength={8}
@@ -119,7 +118,7 @@ export default function ActivatePage() {
               <small>От 8 до 128 символов; пробелы и русские буквы разрешены.</small>
             </label>
             <label>
-              Повторите парольную фразу
+              Повторите пароль
               <input
                 autoComplete="new-password"
                 minLength={8}

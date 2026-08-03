@@ -24,6 +24,10 @@ export function saveDeviceId(deviceId: string): void {
   globalThis.localStorage?.setItem(deviceIdKey, deviceId);
 }
 
+export function readDeviceId(): string | null {
+  return globalThis.localStorage?.getItem(deviceIdKey) ?? null;
+}
+
 export function detectPlatform(): "ANDROID" | "IOS" | "IPADOS" | "OTHER" {
   const userAgent = navigator.userAgent.toLocaleLowerCase();
   if (userAgent.includes("android")) return "ANDROID";

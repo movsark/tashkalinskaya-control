@@ -22,7 +22,7 @@ export default function RecoverPage() {
     event.preventDefault();
     setError("");
     if (password !== confirmation) {
-      setError("Парольные фразы не совпадают");
+      setError("Пароли не совпадают");
       return;
     }
     setSubmitting(true);
@@ -100,7 +100,7 @@ export default function RecoverPage() {
               />
             </label>
             <label>
-              Новая парольная фраза
+              Новый пароль
               <input
                 autoComplete="new-password"
                 minLength={8}
@@ -111,7 +111,7 @@ export default function RecoverPage() {
               />
             </label>
             <label>
-              Повторите парольную фразу
+              Повторите пароль
               <input
                 autoComplete="new-password"
                 minLength={8}

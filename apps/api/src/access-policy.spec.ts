@@ -63,18 +63,6 @@ const publicCeremonies = new Set([
   "TerminalsController.pairingOptions",
 ]);
 
-const stepUpOperations = new Set([
-  "AttendanceController.decideCorrection",
-  "CatalogController.apply",
-  "EmployeesController.create",
-  "EmployeesController.issueRecovery",
-  "EmployeesController.replaceRoles",
-  "EmployeesController.revokeDevice",
-  "EmployeesController.updateStatus",
-  "TerminalsController.create",
-  "TerminalsController.revoke",
-]);
-
 describe("API access policy regression", () => {
   const routes = discoverRoutes();
 
@@ -110,12 +98,12 @@ describe("API access policy regression", () => {
     }
   });
 
-  it("keeps step-up authentication on credential and access mutations", () => {
+  it("does not add a second authentication prompt after a valid personal session", () => {
     const protectedRoutes = routes
       .filter((route) => route.guards.includes("StepUpGuard"))
       .map((route) => route.key)
       .sort();
-    expect(protectedRoutes).toEqual([...stepUpOperations].sort());
+    expect(protectedRoutes).toEqual([]);
   });
 });
 

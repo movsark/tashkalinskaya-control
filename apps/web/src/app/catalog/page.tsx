@@ -14,10 +14,7 @@ import {
   getSession,
   listProducts,
   previewCatalogImport,
-  stepUp,
-  stepUpOptions,
 } from "../../lib/api";
-import { authenticateDevice } from "../../lib/device-identity";
 
 const statusLabels: Record<ImportPreview["status"], string> = {
   APPLIED: "Применен",
@@ -37,16 +34,12 @@ export default function CatalogPage() {
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [password, setPassword] = useState("");
-  const [securityUntil, setSecurityUntil] = useState<string | null>(null);
-  const [securityMessage, setSecurityMessage] = useState("");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
     [session],
   );
   const warningsReady = preview?.warningCodes.every((code) => acknowledged.includes(code)) ?? false;
-  const securityReady = securityUntil !== null && new Date(securityUntil) > new Date();
 
   useEffect(() => {
     async function load() {
@@ -77,27 +70,6 @@ export default function CatalogPage() {
       setAcknowledged([]);
     } catch (caught) {
       setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmAdministrator() {
-    if (session === null) return;
-    setBusy(true);
-    setSecurityMessage("");
-    try {
-      const ceremony = await stepUpOptions(session.csrfToken);
-      const credential = await authenticateDevice(ceremony.options);
-      const result = await stepUp(
-        { challengeId: ceremony.challengeId, credential, password },
-        session.csrfToken,
-      );
-      setSecurityUntil(result.expiresAt);
-      setPassword("");
-      setSecurityMessage("Применение импорта разрешено на 5 минут.");
-    } catch (caught) {
-      setSecurityMessage(messageOf(caught));
     } finally {
       setBusy(false);
     }
@@ -266,32 +238,18 @@ export default function CatalogPage() {
                 <p className="eyebrow">Шаг 3</p>
                 <h3>Подтвердить применение</h3>
                 <p>
-                  Нужны пароль и биометрия/системный PIN. Все изменения применяются одной
-                  транзакцией.
+                  Проверьте результат перед применением. Все изменения выполняются одной транзакцией
+                  и записываются в журнал действий.
                 </p>
               </div>
               <div className="import-apply__actions">
-                <input
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Парольная фраза"
-                  type="password"
-                  value={password}
-                />
-                <button
-                  className="secondary-button"
-                  disabled={busy || password.length === 0}
-                  onClick={() => void confirmAdministrator()}
-                >
-                  Подтвердить администратора
-                </button>
                 <button
                   className="primary-button"
-                  disabled={busy || !securityReady || !warningsReady}
+                  disabled={busy || !warningsReady}
                   onClick={() => void applyImport()}
                 >
                   Применить импорт
                 </button>
-                {securityMessage ? <small>{securityMessage}</small> : null}
               </div>
             </div>
           ) : null}

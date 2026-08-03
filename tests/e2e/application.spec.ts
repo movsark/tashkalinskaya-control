@@ -79,24 +79,86 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(serviceWorker.status()).toBe(200);
   });
 
-  test("login starts from the system credential without browser-local device data", async ({
+  test("an installed icon opens the saved administrator session without another login", async ({
     page,
   }) => {
-    let optionsRequest: unknown = null;
-    await page.route("**/api/v1/auth/login/options", async (route) => {
-      optionsRequest = route.request().postDataJSON();
-      await json(
-        route,
-        { code: "AUTHENTICATION_FAILED", message: "Не удалось выполнить вход" },
-        401,
-      );
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-saved-session",
+        deviceId: "20000000-0000-4000-8000-000000000020",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Администратор сохранённой сессии",
+          id: "20000000-0000-4000-8000-000000000021",
+          login: "saved-admin",
+          personnelNumber: "E2E-SAVED",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000022",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/health/live", (route) =>
+      json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-03T10:00:00.000Z",
+        version: "0.1.0",
+      }),
+    );
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/employees$/);
+  });
+
+  test("a bound personal device signs in with login and password only", async ({ page }) => {
+    const deviceId = "20000000-0000-4000-8000-000000000010";
+    let loginRequest: unknown = null;
+    await page.route("**/api/v1/auth/login", async (route) => {
+      loginRequest = route.request().postDataJSON();
+      await json(route, {
+        csrfToken: "csrf-login-token",
+        deviceId,
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Администратор теста",
+          id: "20000000-0000-4000-8000-000000000011",
+          login: "test-user",
+          personnelNumber: "E2E-LOGIN",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000012",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-01T10:00:00.000Z",
+      });
     });
     await page.goto("/login");
+    await page.evaluate((id) => localStorage.setItem("tashkalinskaya_device_id", id), deviceId);
     await page.getByLabel("Логин").fill("test-user");
-    await page.getByLabel("Парольная фраза").fill("correct horse battery staple");
+    await page.getByLabel("Пароль").fill("correct horse battery staple");
     await page.getByRole("button", { name: "Войти" }).click();
-    await expect(page.getByText("Не удалось выполнить вход")).toBeVisible();
-    expect(optionsRequest).toEqual({ login: "test-user" });
+    await expect(page).toHaveURL(/\/employees$/);
+    expect(loginRequest).toEqual({
+      deviceId,
+      login: "test-user",
+      password: "correct horse battery staple",
+    });
   });
 
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {

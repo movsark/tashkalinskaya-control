@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
-import { ApiRequestError, login, loginOptions } from "../../lib/api";
-import { authenticateDevice, saveDeviceId } from "../../lib/device-identity";
+import { ApiRequestError, login } from "../../lib/api";
+import { readDeviceId, saveDeviceId } from "../../lib/device-identity";
+import { homeRouteFor } from "../../lib/home-route";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,11 +21,13 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const ceremony = await loginOptions({ login: loginValue });
-      const credential = await authenticateDevice(ceremony.options);
+      const deviceId = readDeviceId();
+      if (deviceId === null) {
+        setError("Это устройство ещё не привязано. Используйте первичную активацию доступа.");
+        return;
+      }
       const session = await login({
-        challengeId: ceremony.challengeId,
-        credential,
+        deviceId,
         login: loginValue,
         password,
       });
@@ -33,14 +36,7 @@ export default function LoginPage() {
       const requested = new URLSearchParams(window.location.search).get("returnTo");
       const safeReturnTo =
         requested?.startsWith("/") && !requested.startsWith("//") ? requested : null;
-      router.push(
-        safeReturnTo ??
-          (roles.includes("ADMIN")
-            ? "/employees"
-            : roles.some((role) => ["ACCOUNTANT", "MANAGER", "WORKSHOP_MANAGER"].includes(role))
-              ? "/attendance/control"
-              : "/attendance/me"),
-      );
+      router.push(safeReturnTo ?? homeRouteFor(roles));
     } catch (caught) {
       setError(
         caught instanceof ApiRequestError ? caught.message : "Не удалось связаться с системой",
@@ -61,8 +57,8 @@ export default function LoginPage() {
           <p className="eyebrow">Персональный доступ</p>
           <h1>Вход в рабочую систему</h1>
           <p>
-            Используйте выданный логин и свою парольную фразу, затем подтвердите вход системным PIN
-            или биометрией. Вход разрешен только с одного привязанного личного устройства.
+            Введите логин и пароль. После входа приложение запомнит вас на этом устройстве и не
+            будет требовать повторный вход при обычном открытии.
           </p>
           <div className="security-note">
             <strong>Общий аккаунт цеха не используется.</strong>
@@ -81,7 +77,7 @@ export default function LoginPage() {
               />
             </label>
             <label>
-              Парольная фраза
+              Пароль
               <input
                 autoComplete="current-password"
                 onChange={(event) => setPassword(event.target.value)}
@@ -92,7 +88,7 @@ export default function LoginPage() {
             </label>
             {error ? <p className="form-error">{error}</p> : null}
             <button className="primary-button" disabled={submitting} type="submit">
-              {submitting ? "Ожидаем подтверждение устройства…" : "Войти"}
+              {submitting ? "Входим…" : "Войти"}
             </button>
           </form>
           <div className="auth-card__footer">

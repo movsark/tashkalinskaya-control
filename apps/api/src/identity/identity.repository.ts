@@ -790,6 +790,24 @@ export class IdentityRepository {
     );
   }
 
+  async extendSession(sessionId: string): Promise<Date> {
+    const result = await this.database.query<{ expires_at: Date }>(
+      `
+        update identity.session
+        set
+          access_expires_at = now() + interval '365 days',
+          absolute_expires_at = now() + interval '365 days',
+          last_seen_at = now()
+        where id = $1 and revoked_at is null
+        returning access_expires_at as expires_at
+      `,
+      [sessionId],
+    );
+    const expiresAt = result.rows[0]?.expires_at;
+    if (expiresAt === undefined) throw new UnauthorizedException("Сессия недействительна");
+    return expiresAt;
+  }
+
   async revokeSession(sessionId: string, employeeId: string, correlationId: string): Promise<void> {
     await this.database.transaction(async (client) => {
       await client.query(

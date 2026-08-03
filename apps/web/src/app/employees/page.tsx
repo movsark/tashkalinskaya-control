@@ -22,11 +22,8 @@ import {
   logoutAll,
   replaceEmployeeRoles,
   revokePersonalDevice,
-  stepUp,
-  stepUpOptions,
   updateEmployeeStatus,
 } from "../../lib/api";
-import { authenticateDevice } from "../../lib/device-identity";
 
 const roleLabels: Record<RoleCode, string> = {
   ACCOUNTANT: "Бухгалтер по табелю",
@@ -60,10 +57,6 @@ export default function EmployeesPage() {
     employeeName: string;
     expiresAt: string;
   } | null>(null);
-  const [securityPassword, setSecurityPassword] = useState("");
-  const [securityReadyUntil, setSecurityReadyUntil] = useState<string | null>(null);
-  const [securityMessage, setSecurityMessage] = useState("");
-  const [securityBusy, setSecurityBusy] = useState(false);
   const [recovery, setRecovery] = useState<{
     code: string;
     employeeName: string;
@@ -126,29 +119,6 @@ export default function EmployeesPage() {
     setShowCreate(false);
   }
 
-  async function confirmSensitiveOperations() {
-    if (session === null) return;
-    setSecurityBusy(true);
-    setSecurityMessage("");
-    try {
-      const ceremony = await stepUpOptions(session.csrfToken);
-      const credential = await authenticateDevice(ceremony.options);
-      const result = await stepUp(
-        { challengeId: ceremony.challengeId, credential, password: securityPassword },
-        session.csrfToken,
-      );
-      setSecurityReadyUntil(result.expiresAt);
-      setSecurityPassword("");
-      setSecurityMessage("Опасные операции разрешены на 5 минут.");
-    } catch (caught) {
-      setSecurityMessage(
-        caught instanceof Error ? caught.message : "Не удалось подтвердить администратора",
-      );
-    } finally {
-      setSecurityBusy(false);
-    }
-  }
-
   async function createRecovery(employee: EmployeeSummary, reason: string) {
     if (session === null) return;
     try {
@@ -207,49 +177,22 @@ export default function EmployeesPage() {
           <h1>Сотрудники</h1>
           <p>Персональные аккаунты, роли, состояния и единственное личное устройство.</p>
         </div>
-        {canAdminister ? (
-          <button
-            className="primary-button primary-button--compact"
-            disabled={securityReadyUntil === null || new Date(securityReadyUntil) <= new Date()}
-            onClick={() => setShowCreate(true)}
-          >
-            Добавить сотрудника
-          </button>
-        ) : null}
-      </section>
-
-      {canAdminister ? (
-        <section className="security-admin">
-          <div>
-            <p className="eyebrow">Защищенные операции</p>
-            <h2>Повторное подтверждение администратора</h2>
-            <p>
-              Для замены устройства, ролей и блокировки сотрудника нужны пароль и системный
-              PIN/биометрия. Разрешение действует 5 минут.
-            </p>
-          </div>
-          <div className="security-admin__actions">
-            <input
-              aria-label="Парольная фраза администратора"
-              onChange={(event) => setSecurityPassword(event.target.value)}
-              placeholder="Парольная фраза"
-              type="password"
-              value={securityPassword}
-            />
+        <div className="form-actions">
+          {canAdminister ? (
             <button
-              className="primary-button"
-              disabled={securityBusy || securityPassword.length === 0}
-              onClick={() => void confirmSensitiveOperations()}
+              className="primary-button primary-button--compact"
+              onClick={() => setShowCreate(true)}
             >
-              {securityBusy ? "Подтверждаем…" : "Подтвердить"}
+              Добавить сотрудника
             </button>
+          ) : null}
+          {session ? (
             <button className="secondary-button" onClick={() => void closeAllSessions()}>
-              Выйти из всех сессий
+              Выйти
             </button>
-            {securityMessage ? <small>{securityMessage}</small> : null}
-          </div>
-        </section>
-      ) : null}
+          ) : null}
+        </div>
+      </section>
 
       {activation ? (
         <section className="activation-result" aria-live="polite">
@@ -291,7 +234,6 @@ export default function EmployeesPage() {
           onIssueRecovery={createRecovery}
           onRefresh={() => openAccess(accessDetail.employee.id)}
           onUpdated={applyEmployeeUpdate}
-          securityReady={securityReadyUntil !== null && new Date(securityReadyUntil) > new Date()}
           session={session}
         />
       ) : null}
@@ -460,7 +402,6 @@ function EmployeeAccessPanel({
   onIssueRecovery,
   onRefresh,
   onUpdated,
-  securityReady,
   session,
 }: {
   readonly detail: EmployeeAccessDetail;
@@ -468,7 +409,6 @@ function EmployeeAccessPanel({
   readonly onIssueRecovery: (employee: EmployeeSummary, reason: string) => Promise<void>;
   readonly onRefresh: () => Promise<void>;
   readonly onUpdated: (employee: EmployeeSummary) => void;
-  readonly securityReady: boolean;
   readonly session: AuthenticatedUser;
 }) {
   const [status, setStatus] = useState<EmploymentStatus>(detail.employee.employmentStatus);
@@ -584,12 +524,6 @@ function EmployeeAccessPanel({
         <button onClick={onClose}>Закрыть</button>
       </div>
 
-      {!securityReady ? (
-        <p className="access-panel__warning">
-          Для изменений сначала выполните повторное подтверждение администратора выше.
-        </p>
-      ) : null}
-
       {error ? <p className="form-error">{error}</p> : null}
 
       <div className="access-panel__grid">
@@ -615,7 +549,7 @@ function EmployeeAccessPanel({
             required
             value={statusReason}
           />
-          <button className="primary-button" disabled={!securityReady || busy} type="submit">
+          <button className="primary-button" disabled={busy} type="submit">
             Сохранить статус
           </button>
         </form>
@@ -658,9 +592,7 @@ function EmployeeAccessPanel({
           />
           <button
             className="primary-button"
-            disabled={
-              !securityReady || busy || selectedFactoryRoles.length + scopedRoles.length === 0
-            }
+            disabled={busy || selectedFactoryRoles.length + scopedRoles.length === 0}
             type="submit"
           >
             Сохранить роли
@@ -687,7 +619,7 @@ function EmployeeAccessPanel({
                 {device.status === "ACTIVE" ? (
                   <button
                     className="secondary-button"
-                    disabled={!securityReady || busy || deviceReason.trim().length < 3}
+                    disabled={busy || deviceReason.trim().length < 3}
                     onClick={() => void revokeDevice(device.id)}
                     type="button"
                   >
@@ -707,7 +639,7 @@ function EmployeeAccessPanel({
           />
           <button
             className="primary-button"
-            disabled={!securityReady || busy || deviceReason.trim().length < 3}
+            disabled={busy || deviceReason.trim().length < 3}
             onClick={() => void recoverDevice()}
             type="button"
           >

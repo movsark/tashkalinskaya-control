@@ -1,12 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 
-import {
-  CsrfGuard,
-  SessionAuthGuard,
-  StepUpGuard,
-  TerminalSessionAuthGuard,
-} from "../identity/identity.guards";
+import { CsrfGuard, SessionAuthGuard, TerminalSessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   AttendanceControlQueryDto,
@@ -61,7 +56,7 @@ export class AttendanceController {
   }
 
   @Post("corrections/:correctionId/decision")
-  @UseGuards(SessionAuthGuard, CsrfGuard, StepUpGuard)
+  @UseGuards(SessionAuthGuard, CsrfGuard)
   decideCorrection(
     @Param("correctionId") correctionId: string,
     @Body() dto: DecideAttendanceCorrectionDto,

@@ -12,10 +12,7 @@ import {
   type FactoryTerminal,
   getSession,
   listTerminals,
-  stepUp,
-  stepUpOptions,
 } from "../../lib/api";
-import { authenticateDevice } from "../../lib/device-identity";
 
 export default function TerminalsPage() {
   const router = useRouter();
@@ -23,8 +20,6 @@ export default function TerminalsPage() {
   const [terminals, setTerminals] = useState<FactoryTerminal[]>([]);
   const [terminalCode, setTerminalCode] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
-  const [password, setPassword] = useState("");
-  const [stepUpReady, setStepUpReady] = useState(false);
   const [pairing, setPairing] = useState<{
     code: string;
     expiresAt: string;
@@ -49,20 +44,6 @@ export default function TerminalsPage() {
     }
     void load();
   }, [router]);
-
-  async function confirmAdmin() {
-    if (session === null) return;
-    setError("");
-    try {
-      const ceremony = await stepUpOptions(session.csrfToken);
-      const credential = await authenticateDevice(ceremony.options);
-      await stepUp({ challengeId: ceremony.challengeId, credential, password }, session.csrfToken);
-      setPassword("");
-      setStepUpReady(true);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось подтвердить администратора");
-    }
-  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -102,59 +83,39 @@ export default function TerminalsPage() {
         </div>
       </section>
 
-      {!stepUpReady ? (
-        <section className="security-admin">
+      <section className="create-panel">
+        <div className="create-panel__heading">
           <div>
-            <h2>Подтвердите создание терминала</h2>
-            <p>Нужны пароль администратора и системный PIN или биометрия устройства.</p>
+            <p className="eyebrow">Новый терминал</p>
+            <h2>Зарегистрировать устройство для сканирования QR</h2>
           </div>
-          <div className="security-admin__actions">
-            <input
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Парольная фраза"
-              type="password"
-              value={password}
-            />
-            <button className="primary-button" onClick={() => void confirmAdmin()}>
-              Подтвердить
-            </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="form-row">
+            <label>
+              Код устройства
+              <input
+                onChange={(event) => setTerminalCode(event.target.value)}
+                placeholder="ЦЕХ-01"
+                required
+                value={terminalCode}
+              />
+            </label>
+            <label>
+              Место установки
+              <input
+                onChange={(event) => setLocationLabel(event.target.value)}
+                placeholder="Планшет кондитерского цеха"
+                required
+                value={locationLabel}
+              />
+            </label>
           </div>
-        </section>
-      ) : (
-        <section className="create-panel">
-          <div className="create-panel__heading">
-            <div>
-              <p className="eyebrow">Новый терминал</p>
-              <h2>Зарегистрировать планшет</h2>
-            </div>
-          </div>
-          <form onSubmit={submit}>
-            <div className="form-row">
-              <label>
-                Код терминала
-                <input
-                  onChange={(event) => setTerminalCode(event.target.value)}
-                  placeholder="ЦЕХ-01"
-                  required
-                  value={terminalCode}
-                />
-              </label>
-              <label>
-                Место установки
-                <input
-                  onChange={(event) => setLocationLabel(event.target.value)}
-                  placeholder="Планшет кондитерского цеха"
-                  required
-                  value={locationLabel}
-                />
-              </label>
-            </div>
-            <button className="primary-button" type="submit">
-              Создать код привязки
-            </button>
-          </form>
-        </section>
-      )}
+          <button className="primary-button" type="submit">
+            Создать код привязки
+          </button>
+        </form>
+      </section>
 
       {pairing ? (
         <section className="activation-result">
