@@ -164,6 +164,7 @@ test.describe("B20 browser and HTTP regression", () => {
   test("an administrator assigns a department and shift from the employee card", async ({
     page,
   }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
     const employeeId = "20000000-0000-4000-8000-000000000050";
     const departmentId = "20000000-0000-4000-8000-000000000051";
     const shiftTemplateId = "20000000-0000-4000-8000-000000000052";
@@ -258,8 +259,15 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/employees");
     await page.getByRole("button", { name: "Управление" }).click();
-    await expect(page.getByRole("heading", { name: "Подразделение и смена" })).toBeVisible();
-    await page.getByRole("button", { name: "Назначить сотруднику" }).click();
+    await expect(page.getByRole("heading", { name: "Рабочее расписание" })).toBeVisible();
+    await expect(page.getByLabel("Подразделение")).toHaveValue(departmentId);
+    await expect(page.getByLabel("Рабочая смена")).toHaveValue(shiftTemplateId);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { exact: true, name: "Сохранить" }).click();
     await expect(page.getByText("QR на телефоне обновится автоматически.")).toBeVisible();
     expect(assignmentRequest).toEqual({ departmentId, shiftTemplateId });
   });
