@@ -266,7 +266,7 @@ export default function EmployeesPage() {
                   <span key={role.id}>{roleLabels[role.roleCode]}</span>
                 ))}
               </div>
-              <div>
+              <div className="employee-row__state">
                 <span
                   className={`status-badge status-badge--${employee.employmentStatus.toLocaleLowerCase()}`}
                 >
@@ -277,6 +277,7 @@ export default function EmployeesPage() {
                     className="row-action"
                     disabled={accessLoading}
                     onClick={() => void openAccess(employee.id)}
+                    type="button"
                   >
                     Управление
                   </button>
