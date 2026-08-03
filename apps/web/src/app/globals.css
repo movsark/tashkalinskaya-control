@@ -6129,3 +6129,566 @@ select:focus {
     animation: none;
   }
 }
+
+/* B03.2 · Единая простая оболочка приложения */
+
+:root {
+  --background: #f5f5f1;
+  --card: #fff;
+  --forest: #17483d;
+  --forest-soft: #edf2ef;
+  --ink: #1f2422;
+  --muted: #707873;
+  --line: #dfe2de;
+  --orange: #66736d;
+  --sand: #f0f1ed;
+  --shadow: 0 8px 28px rgb(24 43 37 / 6%);
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  background: var(--background);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.workspace-layout,
+.attendance-layout,
+.terminal-layout {
+  width: min(1120px, 100%);
+  padding-right: clamp(16px, 3vw, 40px);
+  padding-left: clamp(16px, 3vw, 40px);
+}
+
+.workspace-header {
+  min-height: 68px;
+  border-bottom-color: var(--line);
+}
+
+.workspace-user {
+  text-align: right;
+}
+
+.workspace-user > span {
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.workspace-user small {
+  display: none;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.workspace-title {
+  min-height: auto;
+  align-items: end;
+  margin: 0;
+  padding: 28px 0 20px;
+}
+
+.workspace-title h1,
+.planning-title h1,
+.logistics-title h1,
+.attendance-control-title h1,
+.loading-title h1,
+.notifications-hero h1,
+.reports-hero h1 {
+  max-width: none;
+  margin-bottom: 8px;
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+
+.workspace-title > div > p:last-child,
+.workspace-title > p,
+.notifications-hero > div > p,
+.reports-hero > div > p {
+  max-width: 680px;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.row-action,
+.primary-link {
+  min-height: 48px;
+  border-radius: 14px;
+  box-shadow: none;
+  font-weight: 750;
+}
+
+.secondary-button {
+  border-color: var(--line);
+  color: var(--forest);
+  background: #fff;
+}
+
+.create-panel,
+.access-panel,
+.access-section,
+.employee-list,
+.notifications-panel,
+.notifications-settings,
+.reports-panel,
+.status-panel {
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.access-section,
+.notifications-panel,
+.notifications-settings {
+  border-radius: 18px;
+}
+
+.role-chips span,
+.status-badge,
+.notification-card__marker {
+  border-radius: 999px;
+  color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.notification-shortcut {
+  display: none;
+}
+
+.app-tabbar {
+  position: fixed;
+  z-index: 80;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  width: min(560px, calc(100% - 20px));
+  min-height: 64px;
+  margin: 0 auto max(8px, env(safe-area-inset-bottom));
+  padding: 6px;
+  border: 1px solid rgb(23 72 61 / 13%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 8px 30px rgb(22 40 34 / 15%);
+  grid-template-columns: repeat(4, 1fr);
+  backdrop-filter: blur(18px);
+}
+
+.app-tabbar a,
+.app-tabbar button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: 3px;
+  border: 0;
+  border-radius: 14px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.app-tabbar a > span,
+.app-tabbar button > span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.app-tabbar small {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-tabbar .is-active {
+  color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.app-tabbar b {
+  position: absolute;
+  top: 1px;
+  left: calc(50% + 8px);
+  min-width: 18px;
+  padding: 2px 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: #b33c32;
+  font-size: 0.58rem;
+  line-height: 1.2;
+}
+
+.app-menu-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  padding: 20px 12px calc(82px + env(safe-area-inset-bottom));
+  background: rgb(15 25 22 / 38%);
+  backdrop-filter: blur(4px);
+}
+
+.app-menu-sheet {
+  width: min(560px, 100%);
+  max-height: min(70vh, 680px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgb(15 25 22 / 22%);
+}
+
+.app-menu-sheet > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-menu-sheet header strong,
+.app-menu-sheet header small {
+  display: block;
+}
+
+.app-menu-sheet header small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.app-menu-sheet header button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-size: 1.5rem;
+}
+
+.app-menu-list {
+  max-height: calc(min(70vh, 680px) - 74px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-menu-list a {
+  display: grid;
+  min-height: 58px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+  border-bottom: 1px solid #eceeea;
+  color: var(--ink);
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  text-decoration: none;
+}
+
+.app-menu-list a > span,
+.app-home__grid a > span,
+.app-home__primary > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-weight: 850;
+}
+
+.app-menu-list a strong {
+  font-size: 0.92rem;
+}
+
+.app-menu-list a i,
+.app-home__primary i {
+  color: #a1a7a3;
+  font-size: 1.5rem;
+  font-style: normal;
+}
+
+.app-home {
+  width: min(760px, 100%);
+  min-height: 100vh;
+  padding: 0 18px 112px;
+}
+
+.app-home--loading {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.app-home__header {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-home__header > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.app-home__welcome {
+  padding: 30px 2px 22px;
+}
+
+.app-home__welcome small {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.app-home__welcome h1 {
+  margin: 4px 0 6px;
+  font-size: clamp(2.3rem, 10vw, 4rem);
+  line-height: 1;
+}
+
+.app-home__welcome p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.app-home__primary {
+  display: grid;
+  min-height: 84px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  color: #fff;
+  background: var(--forest);
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  text-decoration: none;
+}
+
+.app-home__primary > span {
+  width: 44px;
+  height: 44px;
+  color: var(--forest);
+  background: #fff;
+}
+
+.app-home__primary small,
+.app-home__primary strong {
+  display: block;
+}
+
+.app-home__primary small {
+  margin-bottom: 3px;
+  color: rgb(255 255 255 / 70%);
+  font-size: 0.7rem;
+}
+
+.app-home__primary strong {
+  font-size: 1.05rem;
+}
+
+.app-home__section {
+  padding: 26px 0;
+}
+
+.app-home__section h2 {
+  margin-bottom: 14px;
+  font-size: 1rem;
+}
+
+.app-home__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.app-home__grid a {
+  display: grid;
+  min-height: 104px;
+  align-content: space-between;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--ink);
+  background: #fff;
+  text-decoration: none;
+}
+
+.app-home__grid a strong {
+  font-size: 0.86rem;
+  line-height: 1.2;
+}
+
+.public-home {
+  display: grid;
+  width: min(560px, 100%);
+  min-height: 100vh;
+  padding: 0 22px 48px;
+  grid-template-rows: auto 1fr;
+}
+
+.public-home > header {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.public-home > section {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  padding: 44px 0;
+}
+
+.public-home h1 {
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+  font-size: clamp(2.7rem, 13vw, 5rem);
+}
+
+.public-home p:not(.eyebrow) {
+  max-width: 420px;
+  margin-bottom: 30px;
+  color: var(--muted);
+  font-size: 1.08rem;
+  line-height: 1.5;
+}
+
+.public-home .text-link {
+  margin-top: 20px;
+}
+
+@media (min-width: 900px) {
+  .app-tabbar {
+    bottom: 12px;
+  }
+
+  .app-home__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  body {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  main,
+  .workspace-layout,
+  .attendance-layout,
+  .terminal-layout {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .workspace-header {
+    min-height: 62px;
+  }
+
+  .workspace-header .brand small,
+  .workspace-user small {
+    display: none;
+  }
+
+  .workspace-title {
+    display: block;
+    padding: 20px 0 16px;
+  }
+
+  .workspace-title .form-actions {
+    display: grid;
+    margin-top: 16px;
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-title .form-actions > * {
+    width: 100%;
+  }
+
+  .workspace-title h1,
+  .planning-title h1,
+  .logistics-title h1,
+  .attendance-control-title h1,
+  .loading-title h1,
+  .notifications-hero h1,
+  .reports-hero h1 {
+    font-size: 2.05rem;
+  }
+
+  .access-section,
+  .notifications-panel,
+  .notifications-settings {
+    padding: 15px;
+  }
+
+  .app-tabbar {
+    width: calc(100% - 16px);
+    min-height: 60px;
+    margin-bottom: max(6px, env(safe-area-inset-bottom));
+    border-radius: 18px;
+  }
+
+  .app-menu-backdrop {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .app-home {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
