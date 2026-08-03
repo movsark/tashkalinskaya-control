@@ -38,6 +38,13 @@ export default function PlanningPage() {
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
     [session],
   );
+  const isDriver = useMemo(
+    () =>
+      (session?.employee.roles.some((role) => role.roleCode === "DRIVER") ?? false) &&
+      !(session?.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode)) ??
+        false),
+    [session],
+  );
 
   useEffect(() => {
     async function load() {
@@ -111,8 +118,8 @@ export default function PlanningPage() {
 
       <section className="workspace-title planning-title">
         <div>
-          <p className="eyebrow">B09 · недельное планирование</p>
-          <h1>Нормы и календарь</h1>
+          <p className="eyebrow">Недельное планирование</p>
+          <h1>{isDriver ? "Моя норма" : "Нормы и календарь"}</h1>
           <p>
             Постоянные и разовые значения не складываются. Все изменения проходят решение
             администратора.

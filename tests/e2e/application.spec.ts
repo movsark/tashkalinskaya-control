@@ -712,8 +712,18 @@ test.describe("B20 browser and HTTP regression", () => {
       }),
     );
 
+    await page.goto("/");
+    await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
+    const driverNavigation = page.getByRole("navigation", { name: "Основная навигация" });
+    await expect(driverNavigation.getByText("Погрузка", { exact: true })).toBeVisible();
+    await driverNavigation.getByRole("button", { name: "Меню" }).click();
+    const driverMenu = page.getByRole("dialog", { name: "Разделы приложения" });
+    await expect(driverMenu.getByRole("link", { exact: true, name: "Моя норма" })).toBeVisible();
+    await expect(driverMenu.getByText("Маршрут водителя", { exact: true })).toHaveCount(0);
+
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
+    await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Подтвердить 10" })).toBeVisible();
     await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
     await page.getByText("Из чего сложилось количество", { exact: true }).click();

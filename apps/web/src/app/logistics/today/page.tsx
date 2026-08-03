@@ -98,7 +98,7 @@ export default function DriverLogisticsPage() {
 
       <section className="workspace-title logistics-title loading-title">
         <div>
-          <p className="eyebrow">Мой маршрут</p>
+          <p className="eyebrow">Получение товара</p>
           <h1>Моя погрузка</h1>
           <p>Сверьте товар и подтвердите фактически полученное количество.</p>
         </div>
@@ -128,7 +128,7 @@ export default function DriverLogisticsPage() {
         <section className="driver-return-priority">
           <div>
             <p className="eyebrow">Сначала возврат</p>
-            <h2>Приоритетный блок маршрута</h2>
+            <h2>Возврат для погрузки</h2>
           </div>
           <div>
             {loading.priorityReturns.map((item) => (
