@@ -56,6 +56,14 @@ const factoryRoles: RoleCode[] = [
   "ATTENDANCE_ONLY",
 ];
 
+const attendanceTimeOptions = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2)
+    .toString()
+    .padStart(2, "0");
+  const minutes = index % 2 === 0 ? "00" : "30";
+  return `${hours}:${minutes}`;
+});
+
 export default function EmployeesPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -700,10 +708,8 @@ function AttendanceAssignmentSection({
   const [departmentId, setDepartmentId] = useState("");
   const [shiftTemplateId, setShiftTemplateId] = useState("");
   const [newDepartmentName, setNewDepartmentName] = useState("");
-  const [newShiftName, setNewShiftName] = useState("");
   const [startLocalTime, setStartLocalTime] = useState("08:00");
   const [endLocalTime, setEndLocalTime] = useState("18:00");
-  const [crossesMidnight, setCrossesMidnight] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -773,10 +779,10 @@ function AttendanceAssignmentSection({
       if (createsShift) {
         const shift = await createAttendanceShift(
           {
-            crossesMidnight,
+            crossesMidnight: endLocalTime <= startLocalTime,
             departmentId: nextDepartmentId,
             endLocalTime,
-            name: newShiftName.trim(),
+            name: `Смена ${startLocalTime}–${endLocalTime}`,
             startLocalTime,
           },
           session.csrfToken,
@@ -794,7 +800,6 @@ function AttendanceAssignmentSection({
       setDepartmentId(nextDepartmentId);
       setShiftTemplateId(nextShiftTemplateId);
       setNewDepartmentName("");
-      setNewShiftName("");
       await onAssigned();
       setSuccess("Сохранено. QR на телефоне обновится автоматически.");
     } catch (caught) {
@@ -808,7 +813,7 @@ function AttendanceAssignmentSection({
   const formIsReady =
     !busy &&
     (createsDepartment ? newDepartmentName.trim().length >= 2 : departmentId.length > 0) &&
-    (createsShift ? newShiftName.trim().length >= 2 : shiftTemplateId.length > 0);
+    (createsShift ? startLocalTime !== endLocalTime : shiftTemplateId.length > 0);
 
   return (
     <section className="access-section access-section--attendance">
@@ -874,37 +879,34 @@ function AttendanceAssignmentSection({
           {createsShift ? (
             <>
               <label className="attendance-simple-row">
-                <span>Название смены</span>
-                <input
-                  onChange={(event) => setNewShiftName(event.target.value)}
-                  placeholder="Например: Дневная смена"
-                  value={newShiftName}
-                />
-              </label>
-              <label className="attendance-simple-row">
                 <span>Начало</span>
-                <input
+                <select
                   onChange={(event) => setStartLocalTime(event.target.value)}
-                  type="time"
                   value={startLocalTime}
-                />
+                >
+                  {attendanceTimeOptions.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="attendance-simple-row">
                 <span>Окончание</span>
-                <input
+                <select
                   onChange={(event) => setEndLocalTime(event.target.value)}
-                  type="time"
                   value={endLocalTime}
-                />
+                >
+                  {attendanceTimeOptions.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <label className="attendance-simple-checkbox">
-                <input
-                  checked={crossesMidnight}
-                  onChange={(event) => setCrossesMidnight(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Смена заканчивается на следующий день</span>
-              </label>
+              {endLocalTime <= startLocalTime ? (
+                <p className="attendance-simple-hint">Окончание будет на следующий день.</p>
+              ) : null}
             </>
           ) : null}
 

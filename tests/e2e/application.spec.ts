@@ -187,6 +187,8 @@ test.describe("B20 browser and HTTP regression", () => {
       version: 1,
     };
     let assignmentRequest: unknown = null;
+    let shiftRequest: unknown = null;
+    let shiftCreated = false;
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
         csrfToken: "csrf-admin-assignment",
@@ -221,19 +223,34 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.route("**/api/v1/attendance/setup", (route) =>
       json(route, {
         departments: [{ code: "TEST", id: departmentId, name: "Тестовый цех" }],
-        shifts: [
-          {
-            crossesMidnight: false,
-            departmentId,
-            endLocalTime: "18:00",
-            id: shiftTemplateId,
-            isDepartmentDefault: true,
-            name: "Дневная смена",
-            startLocalTime: "08:00",
-          },
-        ],
+        shifts: shiftCreated
+          ? [
+              {
+                crossesMidnight: false,
+                departmentId,
+                endLocalTime: "18:00",
+                id: shiftTemplateId,
+                isDepartmentDefault: true,
+                name: "Смена 08:00–18:00",
+                startLocalTime: "08:00",
+              },
+            ]
+          : [],
       }),
     );
+    await page.route("**/api/v1/attendance/setup/shifts", async (route) => {
+      shiftRequest = route.request().postDataJSON();
+      shiftCreated = true;
+      await json(route, {
+        crossesMidnight: false,
+        departmentId,
+        endLocalTime: "18:00",
+        id: shiftTemplateId,
+        isDepartmentDefault: true,
+        name: "Смена 08:00–18:00",
+        startLocalTime: "08:00",
+      });
+    });
     await page.route(`**/api/v1/attendance/setup/employees/${employeeId}`, async (route) => {
       if (route.request().method() === "PUT") {
         assignmentRequest = route.request().postDataJSON();
@@ -241,7 +258,7 @@ test.describe("B20 browser and HTTP regression", () => {
           departmentId,
           departmentName: "Тестовый цех",
           employeeId,
-          shiftName: "Дневная смена",
+          shiftName: "Смена 08:00–18:00",
           shiftTemplateId,
           validFrom: "2026-08-03",
         });
@@ -261,7 +278,10 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByRole("button", { name: "Управление" }).click();
     await expect(page.getByRole("heading", { name: "Рабочее расписание" })).toBeVisible();
     await expect(page.getByLabel("Подразделение")).toHaveValue(departmentId);
-    await expect(page.getByLabel("Рабочая смена")).toHaveValue(shiftTemplateId);
+    await expect(page.getByLabel("Рабочая смена")).toHaveValue("__new__");
+    await expect(page.getByLabel("Начало")).toHaveValue("08:00");
+    await expect(page.getByLabel("Окончание")).toHaveValue("18:00");
+    await expect(page.getByText("Название смены")).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -269,6 +289,13 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
     await page.getByRole("button", { exact: true, name: "Сохранить" }).click();
     await expect(page.getByText("QR на телефоне обновится автоматически.")).toBeVisible();
+    expect(shiftRequest).toEqual({
+      crossesMidnight: false,
+      departmentId,
+      endLocalTime: "18:00",
+      name: "Смена 08:00–18:00",
+      startLocalTime: "08:00",
+    });
     expect(assignmentRequest).toEqual({ departmentId, shiftTemplateId });
   });
 
