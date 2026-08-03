@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsOptional,
@@ -8,6 +9,38 @@ import {
   Matches,
   MaxLength,
 } from "class-validator";
+
+export class CreateAttendanceDepartmentDto {
+  @IsString()
+  @Length(2, 100)
+  name!: string;
+}
+
+export class CreateAttendanceShiftDto {
+  @IsUUID()
+  departmentId!: string;
+
+  @IsString()
+  @Length(2, 100)
+  name!: string;
+
+  @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/u)
+  startLocalTime!: string;
+
+  @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/u)
+  endLocalTime!: string;
+
+  @IsBoolean()
+  crossesMidnight!: boolean;
+}
+
+export class AssignEmployeeAttendanceDto {
+  @IsUUID()
+  departmentId!: string;
+
+  @IsUUID()
+  shiftTemplateId!: string;
+}
 
 export class ScanAttendanceQrDto {
   @IsUUID()

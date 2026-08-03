@@ -7,8 +7,12 @@ import type {
   AttendanceControlStatus,
   AttendanceControlView,
   AttendanceCorrectionView,
+  AttendanceDepartmentOption,
   AttendanceEventView,
   AttendanceScanResult,
+  AttendanceSetupView,
+  AttendanceShiftOption,
+  EmployeeAttendanceAssignmentView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
 } from "@tashkalinskaya/contracts";
@@ -139,6 +143,274 @@ type ScanOutcome =
 @Injectable()
 export class AttendanceRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async getSetup(): Promise<AttendanceSetupView> {
+    const [departments, shifts] = await Promise.all([
+      this.database.query<{ code: string; id: string; name: string }>(
+        `select id, code, name from identity.department where status = 'ACTIVE' order by name`,
+      ),
+      this.database.query<{
+        crosses_midnight: boolean;
+        department_id: string;
+        end_local_time: string;
+        id: string;
+        is_department_default: boolean;
+        name: string;
+        start_local_time: string;
+      }>(
+        `
+          select id, department_id, name, start_local_time::text, end_local_time::text,
+            crosses_midnight, is_department_default
+          from attendance.shift_template
+          where status = 'ACTIVE'
+            and valid_from <= (now() at time zone 'Europe/Moscow')::date
+            and (valid_until is null or valid_until >= (now() at time zone 'Europe/Moscow')::date)
+          order by department_id, start_local_time, name
+        `,
+      ),
+    ]);
+    return {
+      departments: departments.rows satisfies AttendanceDepartmentOption[],
+      shifts: shifts.rows.map(mapShiftOption),
+    };
+  }
+
+  async createDepartment(input: {
+    actor: AuthenticatedActor;
+    correlationId: string;
+    departmentId: string;
+    name: string;
+  }): Promise<AttendanceDepartmentOption> {
+    return this.database.transaction(async (client) => {
+      const duplicate = await client.query(
+        `select 1 from identity.department where lower(trim(name)) = lower($1) and status = 'ACTIVE'`,
+        [input.name],
+      );
+      if (duplicate.rowCount !== 0) {
+        throw attendanceError("DEPARTMENT_EXISTS", "Подразделение с таким названием уже есть");
+      }
+      const code = `DEPT-${input.departmentId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
+      await client.query(`insert into identity.department (id, code, name) values ($1, $2, $3)`, [
+        input.departmentId,
+        code,
+        input.name,
+      ]);
+      await this.insertSetupAudit(client, {
+        action: "ATTENDANCE_DEPARTMENT_CREATED",
+        actor: input.actor,
+        correlationId: input.correlationId,
+        metadata: { code, name: input.name },
+        objectId: input.departmentId,
+        objectType: "DEPARTMENT",
+      });
+      return { code, id: input.departmentId, name: input.name };
+    });
+  }
+
+  async createShift(input: {
+    actor: AuthenticatedActor;
+    correlationId: string;
+    crossesMidnight: boolean;
+    departmentId: string;
+    endLocalTime: string;
+    name: string;
+    shiftTemplateId: string;
+    startLocalTime: string;
+  }): Promise<AttendanceShiftOption> {
+    return this.database.transaction(async (client) => {
+      const department = await client.query(
+        `select 1 from identity.department where id = $1 and status = 'ACTIVE' for update`,
+        [input.departmentId],
+      );
+      if (department.rowCount !== 1) {
+        throw attendanceError("DEPARTMENT_NOT_FOUND", "Подразделение не найдено");
+      }
+      const defaults = await client.query(
+        `
+          select 1 from attendance.shift_template
+          where department_id = $1 and status = 'ACTIVE' and is_department_default
+            and valid_from <= (now() at time zone 'Europe/Moscow')::date
+            and (valid_until is null or valid_until >= (now() at time zone 'Europe/Moscow')::date)
+        `,
+        [input.departmentId],
+      );
+      const isDepartmentDefault = defaults.rowCount === 0;
+      const code = `SHIFT-${input.shiftTemplateId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
+      await client.query(
+        `
+          insert into attendance.shift_template (
+            id, code, name, department_id, start_local_time, end_local_time,
+            crosses_midnight, is_department_default, valid_from
+          ) values ($1, $2, $3, $4, $5::time, $6::time, $7, $8,
+            (now() at time zone 'Europe/Moscow')::date)
+        `,
+        [
+          input.shiftTemplateId,
+          code,
+          input.name,
+          input.departmentId,
+          input.startLocalTime,
+          input.endLocalTime,
+          input.crossesMidnight,
+          isDepartmentDefault,
+        ],
+      );
+      await this.insertSetupAudit(client, {
+        action: "ATTENDANCE_SHIFT_CREATED",
+        actor: input.actor,
+        correlationId: input.correlationId,
+        metadata: {
+          crossesMidnight: input.crossesMidnight,
+          departmentId: input.departmentId,
+          endLocalTime: input.endLocalTime,
+          isDepartmentDefault,
+          name: input.name,
+          startLocalTime: input.startLocalTime,
+        },
+        objectId: input.shiftTemplateId,
+        objectType: "SHIFT_TEMPLATE",
+      });
+      return {
+        crossesMidnight: input.crossesMidnight,
+        departmentId: input.departmentId,
+        endLocalTime: input.endLocalTime,
+        id: input.shiftTemplateId,
+        isDepartmentDefault,
+        name: input.name,
+        startLocalTime: input.startLocalTime,
+      };
+    });
+  }
+
+  async getEmployeeAssignment(employeeId: string): Promise<EmployeeAttendanceAssignmentView> {
+    const result = await this.database.query<{
+      department_id: string | null;
+      department_name: string | null;
+      employee_id: string;
+      shift_name: string | null;
+      shift_template_id: string | null;
+      valid_from: string | null;
+    }>(
+      `
+        select e.id as employee_id, e.department_id, d.name as department_name,
+          active.shift_template_id, active.shift_name, active.valid_from::text
+        from identity.employee e
+        left join identity.department d on d.id = e.department_id
+        left join lateral (
+          select esa.shift_template_id, st.name as shift_name, esa.valid_from
+          from attendance.employee_shift_assignment esa
+          join attendance.shift_template st on st.id = esa.shift_template_id
+          where esa.employee_id = e.id
+            and esa.valid_from <= (now() at time zone 'Europe/Moscow')::date
+            and (esa.valid_until is null or esa.valid_until >= (now() at time zone 'Europe/Moscow')::date)
+          order by esa.valid_from desc, esa.created_at desc
+          limit 1
+        ) active on true
+        where e.id = $1
+      `,
+      [employeeId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw attendanceError("EMPLOYEE_NOT_FOUND", "Сотрудник не найден");
+    return {
+      departmentId: row.department_id,
+      departmentName: row.department_name,
+      employeeId: row.employee_id,
+      shiftName: row.shift_name,
+      shiftTemplateId: row.shift_template_id,
+      validFrom: row.valid_from,
+    };
+  }
+
+  async assignEmployee(input: {
+    actor: AuthenticatedActor;
+    correlationId: string;
+    departmentId: string;
+    employeeId: string;
+    shiftTemplateId: string;
+  }): Promise<EmployeeAttendanceAssignmentView> {
+    await this.database.transaction(async (client) => {
+      const employee = await client.query<{ department_id: string | null }>(
+        `select department_id from identity.employee where id = $1 and employment_status = 'ACTIVE' for update`,
+        [input.employeeId],
+      );
+      if (employee.rowCount !== 1) {
+        throw attendanceError("EMPLOYEE_NOT_FOUND", "Активный сотрудник не найден");
+      }
+      const openShift = await client.query(
+        `select 1 from attendance.work_shift where employee_id = $1 and status = 'OPEN'`,
+        [input.employeeId],
+      );
+      if (openShift.rowCount !== 0) {
+        throw attendanceError(
+          "ATTENDANCE_SHIFT_OPEN",
+          "Нельзя менять назначение до отметки ухода сотрудника",
+        );
+      }
+      const shift = await client.query<{ name: string }>(
+        `
+          select name from attendance.shift_template
+          where id = $1 and department_id = $2 and status = 'ACTIVE'
+            and valid_from <= (now() at time zone 'Europe/Moscow')::date
+            and (valid_until is null or valid_until >= (now() at time zone 'Europe/Moscow')::date)
+          for update
+        `,
+        [input.shiftTemplateId, input.departmentId],
+      );
+      if (shift.rowCount !== 1) {
+        throw attendanceError("SHIFT_NOT_FOUND", "Смена выбранного подразделения не найдена");
+      }
+      await client.query(
+        `update identity.employee set department_id = $2, version = version + 1, updated_at = now() where id = $1`,
+        [input.employeeId, input.departmentId],
+      );
+      await client.query(
+        `
+          update attendance.employee_shift_assignment
+          set valid_until = (now() at time zone 'Europe/Moscow')::date - 1
+          where employee_id = $1
+            and valid_from < (now() at time zone 'Europe/Moscow')::date
+            and (valid_until is null or valid_until >= (now() at time zone 'Europe/Moscow')::date)
+        `,
+        [input.employeeId],
+      );
+      await client.query(
+        `
+          delete from attendance.employee_shift_assignment
+          where employee_id = $1
+            and valid_from >= (now() at time zone 'Europe/Moscow')::date
+        `,
+        [input.employeeId],
+      );
+      await client.query(
+        `
+          insert into attendance.employee_shift_assignment (
+            id, employee_id, shift_template_id, valid_from, assigned_by, reason
+          ) values ($1, $2, $3, (now() at time zone 'Europe/Moscow')::date, $4, $5)
+        `,
+        [
+          randomUUID(),
+          input.employeeId,
+          input.shiftTemplateId,
+          input.actor.employee.id,
+          "Назначение администратором через карточку сотрудника",
+        ],
+      );
+      await this.insertSetupAudit(client, {
+        action: "EMPLOYEE_ATTENDANCE_ASSIGNED",
+        actor: input.actor,
+        correlationId: input.correlationId,
+        metadata: {
+          departmentId: input.departmentId,
+          previousDepartmentId: employee.rows[0]!.department_id,
+          shiftTemplateId: input.shiftTemplateId,
+        },
+        objectId: input.employeeId,
+        objectType: "EMPLOYEE",
+      });
+    });
+    return this.getEmployeeAssignment(input.employeeId);
+  }
 
   async listManualReasons(): Promise<readonly ManualAttendanceReasonView[]> {
     const result = await this.database.query<{
@@ -1608,6 +1880,38 @@ export class AttendanceRepository {
       ],
     );
   }
+
+  private async insertSetupAudit(
+    client: PoolClient,
+    input: {
+      action: string;
+      actor: AuthenticatedActor;
+      correlationId: string;
+      metadata: Record<string, unknown>;
+      objectId: string;
+      objectType: string;
+    },
+  ): Promise<void> {
+    await client.query(
+      `
+        insert into audit.event (
+          id, occurred_at, actor_employee_id, active_role, device_id, action,
+          object_type, object_id, reason_code, correlation_id, result, metadata
+        ) values ($1, now(), $2, 'ADMIN', $3, $4, $5, $6,
+          'ADMIN_CONFIGURATION', $7, 'SUCCESS', $8)
+      `,
+      [
+        randomUUID(),
+        input.actor.employee.id,
+        input.actor.deviceId,
+        input.action,
+        input.objectType,
+        input.objectId,
+        input.correlationId,
+        JSON.stringify(input.metadata),
+      ],
+    );
+  }
 }
 
 function scheduleToSnapshot(schedule: ScheduleRow): ScheduleSnapshot {
@@ -1622,6 +1926,26 @@ function scheduleToSnapshot(schedule: ScheduleRow): ScheduleSnapshot {
     plannedStart: schedule.planned_start.toISOString(),
     templateId: schedule.id,
     templateVersion: schedule.version,
+  };
+}
+
+function mapShiftOption(row: {
+  crosses_midnight: boolean;
+  department_id: string;
+  end_local_time: string;
+  id: string;
+  is_department_default: boolean;
+  name: string;
+  start_local_time: string;
+}): AttendanceShiftOption {
+  return {
+    crossesMidnight: row.crosses_midnight,
+    departmentId: row.department_id,
+    endLocalTime: row.end_local_time.slice(0, 5),
+    id: row.id,
+    isDepartmentDefault: row.is_department_default,
+    name: row.name,
+    startLocalTime: row.start_local_time.slice(0, 5),
   };
 }
 

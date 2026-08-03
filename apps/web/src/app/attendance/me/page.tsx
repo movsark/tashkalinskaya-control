@@ -17,7 +17,7 @@ export default function MyAttendanceQrPage() {
   const [qrImage, setQrImage] = useState("");
   const [displayDeadline, setDisplayDeadline] = useState(0);
   const [remaining, setRemaining] = useState(0);
-  const [state, setState] = useState<"CONNECTING" | "OFFLINE" | "READY">("CONNECTING");
+  const [state, setState] = useState<"BLOCKED" | "CONNECTING" | "OFFLINE" | "READY">("CONNECTING");
   const [message, setMessage] = useState("Подключаемся к серверу…");
 
   useEffect(() => {
@@ -57,7 +57,9 @@ export default function MyAttendanceQrPage() {
         setToken(null);
         setQrImage("");
         setDisplayDeadline(0);
-        setState("OFFLINE");
+        setState(
+          caught instanceof ApiRequestError && caught.status === 422 ? "BLOCKED" : "OFFLINE",
+        );
         setMessage(caught instanceof Error ? caught.message : "Не удалось получить QR");
         refreshTimer = window.setTimeout(() => void refresh(current), 3_000);
       }
@@ -138,7 +140,13 @@ export default function MyAttendanceQrPage() {
             <img alt="Одноразовый QR табеля" src={qrImage} />
           ) : (
             <div className="attendance-qr-placeholder" aria-live="polite">
-              <span>{state === "OFFLINE" ? "Нет связи" : "Обновляем"}</span>
+              <span>
+                {state === "OFFLINE"
+                  ? "Нет связи"
+                  : state === "BLOCKED"
+                    ? "Не настроено"
+                    : "Обновляем"}
+              </span>
             </div>
           )}
         </div>
