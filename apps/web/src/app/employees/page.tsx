@@ -98,9 +98,15 @@ export default function EmployeesPage() {
             ? getEmployeeInvitationOptions()
             : Promise.resolve(null),
         ]);
+        const requestedEmployeeId = new URLSearchParams(window.location.search).get("employee");
+        const requestedAccess =
+          requestedEmployeeId && current.employee.roles.some((role) => role.roleCode === "ADMIN")
+            ? await getEmployeeAccess(requestedEmployeeId)
+            : null;
         setSession(current);
         setEmployees([...list.items]);
         setInvitationOptions(options);
+        setAccessDetail(requestedAccess);
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace("/login");
@@ -144,10 +150,18 @@ export default function EmployeesPage() {
     setError("");
     try {
       setAccessDetail(await getEmployeeAccess(employeeId));
+      window.history.pushState({}, "", `/employees?employee=${employeeId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось загрузить доступ");
     } finally {
       setAccessLoading(false);
+    }
+  }
+
+  function closeAccess() {
+    setAccessDetail(null);
+    if (window.location.pathname !== "/employees" || window.location.search.length > 0) {
+      window.history.pushState({}, "", "/employees");
     }
   }
 
@@ -171,8 +185,14 @@ export default function EmployeesPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Сотрудники и доступ · <Link href="/attendance/control">табель</Link> ·{" "}
-            <Link href="/terminals">планшеты</Link>
+            {accessDetail ? (
+              "Управление выбранным сотрудником"
+            ) : (
+              <>
+                Сотрудники и доступ · <Link href="/attendance/control">табель</Link> ·{" "}
+                <Link href="/terminals">планшеты</Link>
+              </>
+            )}
           </small>
         </div>
       </header>
@@ -180,11 +200,15 @@ export default function EmployeesPage() {
       <section className="workspace-title">
         <div>
           <p className="eyebrow">Администрирование · B05</p>
-          <h1>Сотрудники</h1>
-          <p>Персональные аккаунты, роли, состояния и единственное личное устройство.</p>
+          <h1>{accessDetail ? accessDetail.employee.fullName : "Сотрудники"}</h1>
+          <p>
+            {accessDetail
+              ? "Отдельное меню сотрудника. Изменения сохраняются одной кнопкой."
+              : "Персональные аккаунты, роли, состояния и единственное личное устройство."}
+          </p>
         </div>
         <div className="form-actions">
-          {canAdminister ? (
+          {!accessDetail && canAdminister ? (
             <button
               className="primary-button primary-button--compact"
               onClick={() => setShowCreate(true)}
@@ -192,7 +216,7 @@ export default function EmployeesPage() {
               Пригласить сотрудника
             </button>
           ) : null}
-          {session ? (
+          {session && !accessDetail ? (
             <button className="secondary-button" onClick={() => void closeAllSessions()}>
               Выйти
             </button>
@@ -200,11 +224,11 @@ export default function EmployeesPage() {
         </div>
       </section>
 
-      {invitation ? (
+      {!accessDetail && invitation ? (
         <InvitationResult invitation={invitation} onClose={() => setInvitation(null)} />
       ) : null}
 
-      {recovery ? (
+      {!accessDetail && recovery ? (
         <section className="activation-result" aria-live="polite">
           <div>
             <span>Код восстановления для {recovery.employeeName}</span>
@@ -218,7 +242,7 @@ export default function EmployeesPage() {
         </section>
       ) : null}
 
-      {showCreate && session && invitationOptions ? (
+      {!accessDetail && showCreate && session && invitationOptions ? (
         <CreateInvitationPanel
           onCancel={() => setShowCreate(false)}
           onCreate={submitInvitation}
@@ -230,18 +254,20 @@ export default function EmployeesPage() {
         <EmployeeAccessPanel
           detail={accessDetail}
           key={accessDetail.employee.id}
-          onClose={() => setAccessDetail(null)}
+          onClose={closeAccess}
           onIssueRecovery={createRecovery}
-          onRefresh={() => openAccess(accessDetail.employee.id)}
+          onRefresh={async () => {
+            setAccessDetail(await getEmployeeAccess(accessDetail.employee.id));
+          }}
           onUpdated={applyEmployeeUpdate}
           session={session}
         />
       ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
-      {loading ? (
+      {!accessDetail && loading ? (
         <div className="workspace-empty">Загружаем сотрудников…</div>
-      ) : (
+      ) : !accessDetail ? (
         <section className="employee-list" aria-label="Список сотрудников">
           <div className="employee-list__head">
             <span>Сотрудник</span>
@@ -289,7 +315,7 @@ export default function EmployeesPage() {
             <div className="workspace-empty">Сотрудников пока нет.</div>
           ) : null}
         </section>
-      )}
+      ) : null}
     </main>
   );
 }
@@ -450,69 +476,213 @@ function EmployeeAccessPanel({
   readonly session: AuthenticatedUser;
 }) {
   const [status, setStatus] = useState<EmploymentStatus>(detail.employee.employmentStatus);
-  const [statusReason, setStatusReason] = useState("");
   const [selectedFactoryRoles, setSelectedFactoryRoles] = useState<RoleCode[]>(
     detail.employee.roles
       .filter((role) => role.scopeType === "FACTORY")
       .map((role) => role.roleCode),
   );
-  const [rolesReason, setRolesReason] = useState("");
+  const [setup, setSetup] = useState<AttendanceSetupView | null>(null);
+  const [assignment, setAssignment] = useState<EmployeeAttendanceAssignmentView | null>(null);
+  const [departmentId, setDepartmentId] = useState("");
+  const [shiftTemplateId, setShiftTemplateId] = useState("");
+  const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [startLocalTime, setStartLocalTime] = useState("08:00");
+  const [endLocalTime, setEndLocalTime] = useState("18:00");
+  const [attendanceTouched, setAttendanceTouched] = useState(false);
+  const [changeReason, setChangeReason] = useState("");
   const [deviceReason, setDeviceReason] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
   const scopedRoles = detail.employee.roles.filter((role) => role.scopeType !== "FACTORY");
+  const initialFactoryRoles = detail.employee.roles
+    .filter((role) => role.scopeType === "FACTORY")
+    .map((role) => role.roleCode)
+    .sort();
+  const selectedRolesSorted = [...selectedFactoryRoles].sort();
+  const statusDirty = status !== detail.employee.employmentStatus;
+  const rolesDirty = initialFactoryRoles.join("|") !== selectedRolesSorted.join("|");
+  const hasChanges = statusDirty || rolesDirty || attendanceTouched;
+  const newOption = "__new__";
 
-  async function saveStatus(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getAttendanceSetup(), getEmployeeAttendanceAssignment(detail.employee.id)])
+      .then(([nextSetup, nextAssignment]) => {
+        if (!active) return;
+        setSetup(nextSetup);
+        setAssignment(nextAssignment);
+        const initialDepartmentId =
+          nextAssignment.departmentId ?? nextSetup.departments[0]?.id ?? newOption;
+        setDepartmentId(initialDepartmentId);
+        setShiftTemplateId(
+          nextAssignment.shiftTemplateId ??
+            nextSetup.shifts.find((shift) => shift.departmentId === initialDepartmentId)?.id ??
+            newOption,
+        );
+      })
+      .catch((caught: unknown) => {
+        if (active) {
+          setError(caught instanceof Error ? caught.message : "Не удалось загрузить табель");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [detail.employee.id]);
+
+  useEffect(() => {
+    if (!hasChanges) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasChanges]);
+
+  useEffect(() => {
+    const handleHistoryBack = () => {
+      if (hasChanges) {
+        window.history.pushState({}, "", `/employees?employee=${detail.employee.id}`);
+        setShowExitPrompt(true);
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("popstate", handleHistoryBack);
+    return () => window.removeEventListener("popstate", handleHistoryBack);
+  }, [detail.employee.id, hasChanges, onClose]);
+
+  const departmentShifts =
+    departmentId === newOption
+      ? []
+      : (setup?.shifts.filter((shift) => shift.departmentId === departmentId) ?? []);
+  const createsDepartment = departmentId === newOption;
+  const createsShift = createsDepartment || shiftTemplateId === newOption;
+  const attendanceReady =
+    !attendanceTouched ||
+    ((createsDepartment ? newDepartmentName.trim().length >= 2 : departmentId.length > 0) &&
+      (createsShift ? startLocalTime !== endLocalTime : shiftTemplateId.length > 0));
+
+  function markChanged() {
+    setAttendanceTouched(true);
+    setError("");
+    setSuccess("");
+  }
+
+  function changeDepartment(nextDepartmentId: string) {
+    setDepartmentId(nextDepartmentId);
+    setShiftTemplateId(
+      nextDepartmentId === newOption
+        ? newOption
+        : (setup?.shifts.find((shift) => shift.departmentId === nextDepartmentId)?.id ?? newOption),
+    );
+    markChanged();
+  }
+
+  async function saveAll(closeAfter = false): Promise<boolean> {
+    if (!hasChanges || !attendanceReady) return false;
     setBusy(true);
     setError("");
+    setSuccess("");
+    const auditReason = changeReason.trim() || "Изменение в карточке сотрудника";
     try {
-      const employee = await updateEmployeeStatus(
-        detail.employee.id,
-        { reason: statusReason, status, version: detail.employee.version },
-        session.csrfToken,
-      );
+      let employee = detail.employee;
+
+      if (statusDirty) {
+        employee = await updateEmployeeStatus(
+          detail.employee.id,
+          { reason: auditReason, status, version: employee.version },
+          session.csrfToken,
+        );
+      }
+
+      if (rolesDirty) {
+        employee = await replaceEmployeeRoles(
+          detail.employee.id,
+          {
+            reason: auditReason,
+            roles: [
+              ...scopedRoles.map(({ roleCode, scopeId, scopeType }) => ({
+                roleCode,
+                scopeId,
+                scopeType,
+              })),
+              ...selectedFactoryRoles.map((roleCode) => ({
+                roleCode,
+                scopeId: null,
+                scopeType: "FACTORY" as const,
+              })),
+            ],
+            version: employee.version,
+          },
+          session.csrfToken,
+        );
+      }
+
+      if (attendanceTouched) {
+        let nextDepartmentId = departmentId;
+        if (createsDepartment) {
+          const department = await createAttendanceDepartment(
+            { name: newDepartmentName.trim() },
+            session.csrfToken,
+          );
+          nextDepartmentId = department.id;
+        }
+
+        let nextShiftTemplateId = shiftTemplateId;
+        if (createsShift) {
+          const shift = await createAttendanceShift(
+            {
+              crossesMidnight: endLocalTime <= startLocalTime,
+              departmentId: nextDepartmentId,
+              endLocalTime,
+              name: `Смена ${startLocalTime}–${endLocalTime}`,
+              startLocalTime,
+            },
+            session.csrfToken,
+          );
+          nextShiftTemplateId = shift.id;
+        }
+
+        const nextAssignment = await assignEmployeeAttendance(
+          detail.employee.id,
+          { departmentId: nextDepartmentId, shiftTemplateId: nextShiftTemplateId },
+          session.csrfToken,
+        );
+        setAssignment(nextAssignment);
+        setDepartmentId(nextDepartmentId);
+        setShiftTemplateId(nextShiftTemplateId);
+        setNewDepartmentName("");
+        setAttendanceTouched(false);
+        setSetup(await getAttendanceSetup());
+      }
+
       onUpdated(employee);
-      setStatusReason("");
+      setChangeReason("");
+      await onRefresh();
+      if (closeAfter) {
+        onClose();
+      } else {
+        setSuccess("Все изменения сохранены.");
+      }
+      return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось изменить статус");
+      setError(caught instanceof Error ? caught.message : "Не удалось сохранить изменения");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function saveRoles(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const employee = await replaceEmployeeRoles(
-        detail.employee.id,
-        {
-          reason: rolesReason,
-          roles: [
-            ...scopedRoles.map(({ roleCode, scopeId, scopeType }) => ({
-              roleCode,
-              scopeId,
-              scopeType,
-            })),
-            ...selectedFactoryRoles.map((roleCode) => ({
-              roleCode,
-              scopeId: null,
-              scopeType: "FACTORY" as const,
-            })),
-          ],
-          version: detail.employee.version,
-        },
-        session.csrfToken,
-      );
-      onUpdated(employee);
-      setRolesReason("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось изменить роли");
-    } finally {
-      setBusy(false);
+  function requestClose() {
+    if (hasChanges) {
+      setShowExitPrompt(true);
+      return;
     }
+    onClose();
   }
 
   async function revokeDevice(deviceId: string) {
@@ -559,371 +729,288 @@ function EmployeeAccessPanel({
             {employmentStatusLabel(detail.employee.employmentStatus)}
           </small>
         </div>
-        <button onClick={onClose}>Закрыть</button>
+        <button onClick={requestClose} type="button">
+          Назад к сотрудникам
+        </button>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {success ? <p className="form-success">{success}</p> : null}
 
-      <div className="access-panel__grid">
-        <form className="access-section" onSubmit={saveStatus}>
-          <div>
-            <p className="eyebrow">01 · Состояние</p>
-            <h3>Статус сотрудника</h3>
-          </div>
-          <select
-            aria-label="Статус сотрудника"
-            onChange={(event) => setStatus(event.target.value as EmploymentStatus)}
-            value={status}
-          >
-            <option value="ACTIVE">Активен</option>
-            <option value="SUSPENDED">Временно заблокирован</option>
-            <option value="DISMISSED">Уволен</option>
-            <option value="ARCHIVED">В архиве</option>
-          </select>
-          <input
-            minLength={3}
-            onChange={(event) => setStatusReason(event.target.value)}
-            placeholder="Причина изменения"
-            required
-            value={statusReason}
-          />
-          <button className="primary-button" disabled={busy} type="submit">
-            Сохранить статус
-          </button>
-        </form>
-
-        <form className="access-section" onSubmit={saveRoles}>
-          <div>
-            <p className="eyebrow">02 · Права</p>
-            <h3>Общезаводские роли</h3>
-          </div>
-          <div className="role-options">
-            {factoryRoles.map((role) => (
-              <label key={role}>
-                <input
-                  checked={selectedFactoryRoles.includes(role)}
-                  onChange={(event) =>
-                    setSelectedFactoryRoles((current) =>
-                      event.target.checked
-                        ? [...current, role]
-                        : current.filter((item) => item !== role),
-                    )
-                  }
-                  type="checkbox"
-                />
-                <span>{roleLabels[role]}</span>
-              </label>
-            ))}
-          </div>
-          {scopedRoles.length > 0 ? (
-            <p className="access-section__note">
-              Роли областей сохранятся:{" "}
-              {scopedRoles.map((role) => roleLabels[role.roleCode]).join(", ")}.
-            </p>
-          ) : null}
-          <input
-            minLength={3}
-            onChange={(event) => setRolesReason(event.target.value)}
-            placeholder="Причина изменения ролей"
-            required
-            value={rolesReason}
-          />
-          <button
-            className="primary-button"
-            disabled={busy || selectedFactoryRoles.length + scopedRoles.length === 0}
-            type="submit"
-          >
-            Сохранить роли
-          </button>
-        </form>
-
-        <AttendanceAssignmentSection
-          employeeId={detail.employee.id}
-          onAssigned={onRefresh}
-          session={session}
-        />
-
-        <section className="access-section access-section--devices">
-          <div>
-            <p className="eyebrow">04 · Устройство</p>
-            <h3>Личный телефон</h3>
-          </div>
-          <div className="device-list">
-            {detail.devices.map((device) => (
-              <article key={device.id}>
-                <div>
-                  <strong>{device.deviceLabel}</strong>
-                  <small>
-                    {platformLabel(device.platformFamily)} · {device.status}
-                    {device.lastSeenAt
-                      ? ` · был в сети ${new Date(device.lastSeenAt).toLocaleString("ru-RU")}`
-                      : ""}
-                  </small>
-                </div>
-                {device.status === "ACTIVE" ? (
-                  <button
-                    className="secondary-button"
-                    disabled={busy || deviceReason.trim().length < 3}
-                    onClick={() => void revokeDevice(device.id)}
-                    type="button"
-                  >
-                    Отозвать
-                  </button>
-                ) : null}
-              </article>
-            ))}
-            {detail.devices.length === 0 ? <p>Личное устройство еще не привязано.</p> : null}
-          </div>
-          <input
-            minLength={3}
-            onChange={(event) => setDeviceReason(event.target.value)}
-            placeholder="Причина отзыва или замены"
-            required
-            value={deviceReason}
-          />
-          <button
-            className="primary-button"
-            disabled={busy || deviceReason.trim().length < 3}
-            onClick={() => void recoverDevice()}
-            type="button"
-          >
-            Выдать код замены
-          </button>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function AttendanceAssignmentSection({
-  employeeId,
-  onAssigned,
-  session,
-}: {
-  readonly employeeId: string;
-  readonly onAssigned: () => Promise<void>;
-  readonly session: AuthenticatedUser;
-}) {
-  const [setup, setSetup] = useState<AttendanceSetupView | null>(null);
-  const [assignment, setAssignment] = useState<EmployeeAttendanceAssignmentView | null>(null);
-  const [departmentId, setDepartmentId] = useState("");
-  const [shiftTemplateId, setShiftTemplateId] = useState("");
-  const [newDepartmentName, setNewDepartmentName] = useState("");
-  const [startLocalTime, setStartLocalTime] = useState("08:00");
-  const [endLocalTime, setEndLocalTime] = useState("18:00");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  const newOption = "__new__";
-
-  useEffect(() => {
-    let active = true;
-    void Promise.all([getAttendanceSetup(), getEmployeeAttendanceAssignment(employeeId)])
-      .then(([nextSetup, nextAssignment]) => {
-        if (!active) return;
-        setSetup(nextSetup);
-        setAssignment(nextAssignment);
-        const initialDepartmentId =
-          nextAssignment.departmentId ?? nextSetup.departments[0]?.id ?? newOption;
-        setDepartmentId(initialDepartmentId);
-        setShiftTemplateId(
-          nextAssignment.shiftTemplateId ??
-            nextSetup.shifts.find((shift) => shift.departmentId === initialDepartmentId)?.id ??
-            newOption,
-        );
-      })
-      .catch((caught: unknown) => {
-        if (active) {
-          setError(caught instanceof Error ? caught.message : "Не удалось загрузить смены");
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [employeeId]);
-
-  const departmentShifts =
-    departmentId === newOption
-      ? []
-      : (setup?.shifts.filter((shift) => shift.departmentId === departmentId) ?? []);
-  const createsDepartment = departmentId === newOption;
-  const createsShift = createsDepartment || shiftTemplateId === newOption;
-
-  function changeDepartment(nextDepartmentId: string) {
-    setDepartmentId(nextDepartmentId);
-    setShiftTemplateId(
-      nextDepartmentId === newOption
-        ? newOption
-        : (setup?.shifts.find((shift) => shift.departmentId === nextDepartmentId)?.id ?? newOption),
-    );
-    setError("");
-    setSuccess("");
-  }
-
-  async function saveAttendance(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setSuccess("");
-    try {
-      let nextDepartmentId = departmentId;
-      if (createsDepartment) {
-        const department = await createAttendanceDepartment(
-          { name: newDepartmentName.trim() },
-          session.csrfToken,
-        );
-        nextDepartmentId = department.id;
-      }
-
-      let nextShiftTemplateId = shiftTemplateId;
-      if (createsShift) {
-        const shift = await createAttendanceShift(
-          {
-            crossesMidnight: endLocalTime <= startLocalTime,
-            departmentId: nextDepartmentId,
-            endLocalTime,
-            name: `Смена ${startLocalTime}–${endLocalTime}`,
-            startLocalTime,
-          },
-          session.csrfToken,
-        );
-        nextShiftTemplateId = shift.id;
-      }
-
-      const next = await assignEmployeeAttendance(
-        employeeId,
-        { departmentId: nextDepartmentId, shiftTemplateId: nextShiftTemplateId },
-        session.csrfToken,
-      );
-      setSetup(await getAttendanceSetup());
-      setAssignment(next);
-      setDepartmentId(nextDepartmentId);
-      setShiftTemplateId(nextShiftTemplateId);
-      setNewDepartmentName("");
-      await onAssigned();
-      setSuccess("Сохранено. QR на телефоне обновится автоматически.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось сохранить настройки");
-      setSetup(await getAttendanceSetup().catch(() => setup));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const formIsReady =
-    !busy &&
-    (createsDepartment ? newDepartmentName.trim().length >= 2 : departmentId.length > 0) &&
-    (createsShift ? startLocalTime !== endLocalTime : shiftTemplateId.length > 0);
-
-  return (
-    <section className="access-section access-section--attendance">
-      <div>
-        <p className="eyebrow">03 · Табель</p>
-        <h3>Рабочее расписание</h3>
-        {assignment?.departmentName ? (
-          <small>
-            {assignment.departmentName} · {assignment.shiftName ?? "смена не назначена"}
-          </small>
-        ) : (
-          <small>Сотруднику пока не настроен табель.</small>
-        )}
-      </div>
-
-      {setup === null ? <p>Загружаем настройки табеля…</p> : null}
-
-      {setup ? (
-        <form className="attendance-simple-form" onSubmit={saveAttendance}>
-          <label className="attendance-simple-row">
-            <span>Подразделение</span>
-            <select onChange={(event) => changeDepartment(event.target.value)} value={departmentId}>
-              {setup.departments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-              <option value={newOption}>Добавить новое</option>
-            </select>
-          </label>
-
-          {createsDepartment ? (
-            <label className="attendance-simple-row">
-              <span>Название подразделения</span>
-              <input
-                onChange={(event) => setNewDepartmentName(event.target.value)}
-                placeholder="Например: Кондитерский цех"
-                value={newDepartmentName}
-              />
-            </label>
-          ) : null}
-
-          <label className="attendance-simple-row">
-            <span>Рабочая смена</span>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveAll();
+        }}
+      >
+        <div className="access-panel__grid">
+          <section className="access-section">
+            <div>
+              <p className="eyebrow">01 · Состояние</p>
+              <h3>Статус сотрудника</h3>
+            </div>
             <select
-              disabled={createsDepartment}
+              aria-label="Статус сотрудника"
               onChange={(event) => {
-                setShiftTemplateId(event.target.value);
+                setStatus(event.target.value as EmploymentStatus);
                 setError("");
                 setSuccess("");
               }}
-              value={createsDepartment ? newOption : shiftTemplateId}
+              value={status}
             >
-              {departmentShifts.map((shift) => (
-                <option key={shift.id} value={shift.id}>
-                  {shift.name} · {shift.startLocalTime}–{shift.endLocalTime}
-                </option>
-              ))}
-              <option value={newOption}>Добавить новую</option>
+              <option value="ACTIVE">Активен</option>
+              <option value="SUSPENDED">Временно заблокирован</option>
+              <option value="DISMISSED">Уволен</option>
+              <option value="ARCHIVED">В архиве</option>
             </select>
+          </section>
+
+          <section className="access-section">
+            <div>
+              <p className="eyebrow">02 · Права</p>
+              <h3>Общезаводские роли</h3>
+            </div>
+            <div className="role-options">
+              {factoryRoles.map((role) => (
+                <label key={role}>
+                  <input
+                    checked={selectedFactoryRoles.includes(role)}
+                    onChange={(event) => {
+                      setSelectedFactoryRoles((current) =>
+                        event.target.checked
+                          ? [...current, role]
+                          : current.filter((item) => item !== role),
+                      );
+                      setError("");
+                      setSuccess("");
+                    }}
+                    type="checkbox"
+                  />
+                  <span>{roleLabels[role]}</span>
+                </label>
+              ))}
+            </div>
+            {scopedRoles.length > 0 ? (
+              <p className="access-section__note">
+                Роли областей сохранятся:{" "}
+                {scopedRoles.map((role) => roleLabels[role.roleCode]).join(", ")}.
+              </p>
+            ) : null}
+          </section>
+
+          <section className="access-section access-section--attendance">
+            <div>
+              <p className="eyebrow">03 · Табель</p>
+              <h3>Рабочее расписание</h3>
+              {assignment?.departmentName ? (
+                <small>
+                  {assignment.departmentName} · {assignment.shiftName ?? "смена не назначена"}
+                </small>
+              ) : (
+                <small>Сотруднику пока не настроен табель.</small>
+              )}
+            </div>
+
+            {setup === null ? <p>Загружаем настройки табеля…</p> : null}
+
+            {setup ? (
+              <div className="attendance-simple-form">
+                <label className="attendance-simple-row">
+                  <span>Подразделение</span>
+                  <select
+                    onChange={(event) => changeDepartment(event.target.value)}
+                    value={departmentId}
+                  >
+                    {setup.departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                    <option value={newOption}>Добавить новое</option>
+                  </select>
+                </label>
+
+                {createsDepartment ? (
+                  <label className="attendance-simple-row">
+                    <span>Название подразделения</span>
+                    <input
+                      onChange={(event) => {
+                        setNewDepartmentName(event.target.value);
+                        markChanged();
+                      }}
+                      placeholder="Например: Кондитерский цех"
+                      value={newDepartmentName}
+                    />
+                  </label>
+                ) : null}
+
+                <label className="attendance-simple-row">
+                  <span>Рабочая смена</span>
+                  <select
+                    disabled={createsDepartment}
+                    onChange={(event) => {
+                      setShiftTemplateId(event.target.value);
+                      markChanged();
+                    }}
+                    value={createsDepartment ? newOption : shiftTemplateId}
+                  >
+                    {departmentShifts.map((shift) => (
+                      <option key={shift.id} value={shift.id}>
+                        {shift.name} · {shift.startLocalTime}–{shift.endLocalTime}
+                      </option>
+                    ))}
+                    <option value={newOption}>Добавить новую</option>
+                  </select>
+                </label>
+
+                {createsShift ? (
+                  <>
+                    <label className="attendance-simple-row">
+                      <span>Начало</span>
+                      <select
+                        onChange={(event) => {
+                          setStartLocalTime(event.target.value);
+                          markChanged();
+                        }}
+                        value={startLocalTime}
+                      >
+                        {attendanceTimeOptions.map((time) => (
+                          <option key={time} value={time}>
+                            {time}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="attendance-simple-row">
+                      <span>Окончание</span>
+                      <select
+                        onChange={(event) => {
+                          setEndLocalTime(event.target.value);
+                          markChanged();
+                        }}
+                        value={endLocalTime}
+                      >
+                        {attendanceTimeOptions.map((time) => (
+                          <option key={time} value={time}>
+                            {time}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {endLocalTime <= startLocalTime ? (
+                      <p className="attendance-simple-hint">Окончание будет на следующий день.</p>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="access-section access-section--devices">
+            <div>
+              <p className="eyebrow">04 · Устройство</p>
+              <h3>Личный телефон</h3>
+            </div>
+            <div className="device-list">
+              {detail.devices.map((device) => (
+                <article key={device.id}>
+                  <div>
+                    <strong>{device.deviceLabel}</strong>
+                    <small>
+                      {platformLabel(device.platformFamily)} · {device.status}
+                      {device.lastSeenAt
+                        ? ` · был в сети ${new Date(device.lastSeenAt).toLocaleString("ru-RU")}`
+                        : ""}
+                    </small>
+                  </div>
+                  {device.status === "ACTIVE" ? (
+                    <button
+                      className="secondary-button"
+                      disabled={busy || deviceReason.trim().length < 3}
+                      onClick={() => void revokeDevice(device.id)}
+                      type="button"
+                    >
+                      Отозвать
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+              {detail.devices.length === 0 ? <p>Личное устройство еще не привязано.</p> : null}
+            </div>
+            <input
+              minLength={3}
+              onChange={(event) => setDeviceReason(event.target.value)}
+              placeholder="Причина отзыва или замены"
+              value={deviceReason}
+            />
+            <button
+              className="primary-button"
+              disabled={busy || deviceReason.trim().length < 3}
+              onClick={() => void recoverDevice()}
+              type="button"
+            >
+              Выдать код замены
+            </button>
+          </section>
+        </div>
+
+        <div className="access-panel__save">
+          <label>
+            <span>Комментарий к изменениям</span>
+            <input
+              onChange={(event) => setChangeReason(event.target.value)}
+              placeholder="Необязательно"
+              value={changeReason}
+            />
           </label>
-
-          {createsShift ? (
-            <>
-              <label className="attendance-simple-row">
-                <span>Начало</span>
-                <select
-                  onChange={(event) => setStartLocalTime(event.target.value)}
-                  value={startLocalTime}
-                >
-                  {attendanceTimeOptions.map((time) => (
-                    <option key={time} value={time}>
-                      {time}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="attendance-simple-row">
-                <span>Окончание</span>
-                <select
-                  onChange={(event) => setEndLocalTime(event.target.value)}
-                  value={endLocalTime}
-                >
-                  {attendanceTimeOptions.map((time) => (
-                    <option key={time} value={time}>
-                      {time}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {endLocalTime <= startLocalTime ? (
-                <p className="attendance-simple-hint">Окончание будет на следующий день.</p>
-              ) : null}
-            </>
-          ) : null}
-
-          {error ? (
-            <p className="attendance-simple-message attendance-simple-message--error">{error}</p>
-          ) : null}
-          {success ? <p className="attendance-simple-message">{success}</p> : null}
-
           <button
-            className="primary-button attendance-simple-submit"
-            disabled={!formIsReady}
+            className="primary-button"
+            disabled={
+              busy ||
+              !hasChanges ||
+              !attendanceReady ||
+              selectedFactoryRoles.length + scopedRoles.length === 0
+            }
             type="submit"
           >
-            {busy ? "Сохраняем…" : "Сохранить"}
+            {busy ? "Сохраняем…" : hasChanges ? "Сохранить изменения" : "Изменений нет"}
           </button>
-        </form>
+        </div>
+      </form>
+
+      {showExitPrompt ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            aria-labelledby="unsaved-employee-title"
+            aria-modal="true"
+            className="dialog-card access-exit-dialog"
+            role="dialog"
+          >
+            <h2 id="unsaved-employee-title">Сохранить изменения?</h2>
+            <p>В карточке сотрудника есть несохранённые изменения.</p>
+            <button
+              className="primary-button"
+              disabled={
+                busy || !attendanceReady || selectedFactoryRoles.length + scopedRoles.length === 0
+              }
+              onClick={() => void saveAll(true)}
+              type="button"
+            >
+              Сохранить и выйти
+            </button>
+            <button className="secondary-button" disabled={busy} onClick={onClose} type="button">
+              Выйти без сохранения
+            </button>
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => setShowExitPrompt(false)}
+              type="button"
+            >
+              Продолжить редактирование
+            </button>
+          </section>
+        </div>
       ) : null}
     </section>
   );
