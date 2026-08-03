@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import type { AuthenticatedUser, EmployeeSummary } from "@tashkalinskaya/contracts";
 
@@ -10,7 +10,9 @@ import type {
   AssertionDto,
   LoginDto,
   LoginOptionsDto,
+  PreviewEmployeeRegistrationDto,
   RecoverAccountDto,
+  RegisterEmployeeDto,
   RecoveryOptionsDto,
   StepUpDto,
 } from "./identity.dto";
@@ -111,6 +113,61 @@ export class AuthService {
     return {
       body: await this.toAuthenticatedUser(account.employeeId, session, sessionToken),
       cookieExpiresAt: (session.refreshExpiresAt ?? session.accessExpiresAt).toISOString(),
+      sessionToken,
+    };
+  }
+
+  async registrationPreview(dto: PreviewEmployeeRegistrationDto) {
+    const invitation = await this.repository.findEmployeeInvitation(
+      this.crypto.hashAccessCode(dto.invitationCode),
+    );
+    if (invitation === null) throw invalidInvitationError();
+    return {
+      expiresAt: invitation.expiresAt.toISOString(),
+      roleCode: invitation.roleCode,
+      roleDisplayName: invitation.roleDisplayName,
+      scopeDisplayName: invitation.scopeDisplayName,
+    };
+  }
+
+  async registerEmployee(dto: RegisterEmployeeDto, correlationId: string): Promise<SessionResult> {
+    const invitation = await this.repository.findEmployeeInvitation(
+      this.crypto.hashAccessCode(dto.invitationCode),
+    );
+    if (invitation === null) throw invalidInvitationError();
+    const employeeId = randomUUID();
+    const accountId = randomUUID();
+    const sessionToken = this.crypto.generateSessionToken();
+    const session = this.createSession(accountId, dto.deviceId, 1, sessionToken);
+    const fullName = [dto.lastName, dto.firstName, dto.patronymic]
+      .filter((part): part is string => part !== undefined && part.trim() !== "")
+      .map((part) => part.trim())
+      .join(" ");
+    try {
+      await this.repository.registerEmployeeFromInvitation({
+        accountId,
+        correlationId,
+        deviceId: dto.deviceId,
+        employeeId,
+        fullName,
+        invitationId: invitation.id,
+        loginNormalized: this.crypto.normalizeLogin(dto.login),
+        passwordHash: await this.crypto.hashPassword(dto.password),
+        platformFamily: dto.platformFamily,
+        session,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: "REGISTRATION_DATA_ALREADY_USED",
+          message: "Такой логин уже занят. Выберите другой логин",
+        });
+      }
+      throw error;
+    }
+    return {
+      body: await this.toAuthenticatedUser(employeeId, session, sessionToken),
+      cookieExpiresAt: session.accessExpiresAt.toISOString(),
       sessionToken,
     };
   }
@@ -437,4 +494,20 @@ function genericAuthenticationError(): UnauthorizedException {
     code: "AUTHENTICATION_FAILED",
     message: "Не удалось выполнить вход. Проверьте данные или обратитесь к администратору",
   });
+}
+
+function invalidInvitationError(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: "EMPLOYEE_INVITATION_INVALID",
+    message: "Приглашение недействительно, уже использовано или закончилось",
+  });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "23505"
+  );
 }

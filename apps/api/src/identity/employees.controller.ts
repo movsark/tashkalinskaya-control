@@ -14,6 +14,7 @@ import { ApiTags } from "@nestjs/swagger";
 
 import {
   CreateEmployeeDto,
+  CreateEmployeeInvitationDto,
   IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
@@ -46,6 +47,19 @@ export class EmployeesController {
   create(@Body() dto: CreateEmployeeDto, @Req() request: AuthenticatedRequest) {
     const actor = requireActor(request);
     return this.employees.create(dto, actor.employee.id, requireCorrelationId(request));
+  }
+
+  @Get("invitations/options")
+  @RequireRoles("ADMIN")
+  invitationOptions() {
+    return this.employees.invitationOptions();
+  }
+
+  @Post("invitations")
+  @RequireRoles("ADMIN")
+  createInvitation(@Body() dto: CreateEmployeeInvitationDto, @Req() request: AuthenticatedRequest) {
+    const actor = requireActor(request);
+    return this.employees.createInvitation(dto, actor.employee.id, requireCorrelationId(request));
   }
 
   @Patch(":employeeId/status")

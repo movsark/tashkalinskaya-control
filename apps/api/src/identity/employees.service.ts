@@ -5,6 +5,7 @@ import type { EmployeeListResponse, EmployeeSummary } from "@tashkalinskaya/cont
 
 import type {
   CreateEmployeeDto,
+  CreateEmployeeInvitationDto,
   IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
@@ -69,6 +70,35 @@ export class EmployeesService {
       }
       throw error;
     }
+  }
+
+  invitationOptions() {
+    return this.repository.employeeInvitationOptions();
+  }
+
+  async createInvitation(
+    dto: CreateEmployeeInvitationDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    const role = normalizeRoles([dto.role])[0]!;
+    const invitationCode = this.crypto.generateAccessCode();
+    const invitation = await this.repository.createEmployeeInvitation({
+      actorEmployeeId,
+      correlationId,
+      id: randomUUID(),
+      roleCode: role.roleCode,
+      scopeId: role.scopeId,
+      scopeType: role.scopeType,
+      tokenHash: this.crypto.hashAccessCode(invitationCode),
+    });
+    return {
+      expiresAt: invitation.expiresAt.toISOString(),
+      invitationCode,
+      roleCode: invitation.roleCode,
+      roleDisplayName: invitation.roleDisplayName,
+      scopeDisplayName: invitation.scopeDisplayName,
+    };
   }
 
   async updateStatus(

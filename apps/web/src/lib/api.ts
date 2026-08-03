@@ -6,6 +6,9 @@ import type {
   AttendanceScanResult,
   AuthenticatedUser,
   EmployeeAccessDetail,
+  EmployeeInvitationOptions,
+  EmployeeInvitationPreview,
+  EmployeeInvitationResult,
   EmployeeListResponse,
   EmployeeSummary,
   DriverLogisticsDayView,
@@ -424,6 +427,52 @@ export async function createEmployee(
   return request("/employees", {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function getEmployeeInvitationOptions(): Promise<EmployeeInvitationOptions> {
+  return request("/employees/invitations/options");
+}
+
+export async function createEmployeeInvitation(
+  input: {
+    role: {
+      roleCode: RoleCode;
+      scopeId?: string;
+      scopeType: RoleAssignmentView["scopeType"];
+    };
+  },
+  csrfToken: string,
+): Promise<EmployeeInvitationResult> {
+  return request("/employees/invitations", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function previewEmployeeRegistration(
+  invitationCode: string,
+): Promise<EmployeeInvitationPreview> {
+  return request("/auth/register/preview", {
+    body: JSON.stringify({ invitationCode }),
+    method: "POST",
+  });
+}
+
+export async function registerEmployee(input: {
+  deviceId: string;
+  firstName: string;
+  invitationCode: string;
+  lastName: string;
+  login: string;
+  password: string;
+  patronymic?: string;
+  platformFamily: PlatformFamily;
+}): Promise<AuthenticatedUser> {
+  return request("/auth/register", {
+    body: JSON.stringify(input),
     method: "POST",
   });
 }

@@ -3,19 +3,23 @@
 import type {
   AuthenticatedUser,
   EmployeeAccessDetail,
+  EmployeeInvitationOptions,
+  EmployeeInvitationResult,
   EmployeeSummary,
   EmploymentStatus,
   RoleCode,
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
   ApiRequestError,
-  createEmployee,
+  createEmployeeInvitation,
   getEmployeeAccess,
+  getEmployeeInvitationOptions,
   getSession,
   issueRecovery,
   listEmployees,
@@ -52,11 +56,10 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [activation, setActivation] = useState<{
-    code: string;
-    employeeName: string;
-    expiresAt: string;
-  } | null>(null);
+  const [invitation, setInvitation] = useState<EmployeeInvitationResult | null>(null);
+  const [invitationOptions, setInvitationOptions] = useState<EmployeeInvitationOptions | null>(
+    null,
+  );
   const [recovery, setRecovery] = useState<{
     code: string;
     employeeName: string;
@@ -74,9 +77,15 @@ export default function EmployeesPage() {
     async function load() {
       try {
         const current = await getSession();
-        const list = await listEmployees();
+        const [list, options] = await Promise.all([
+          listEmployees(),
+          current.employee.roles.some((role) => role.roleCode === "ADMIN")
+            ? getEmployeeInvitationOptions()
+            : Promise.resolve(null),
+        ]);
         setSession(current);
         setEmployees([...list.items]);
+        setInvitationOptions(options);
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace("/login");
@@ -90,32 +99,14 @@ export default function EmployeesPage() {
     void load();
   }, [router]);
 
-  async function submitEmployee(input: {
-    fullName: string;
-    login: string;
-    personnelNumber: string;
+  async function submitInvitation(input: {
     roleCode: RoleCode;
+    scopeId?: string;
+    scopeType: EmployeeInvitationOptions["roles"][number]["scopeType"];
   }) {
     if (session === null) return;
-    const result = await createEmployee(
-      {
-        fullName: input.fullName,
-        login: input.login,
-        personnelNumber: input.personnelNumber,
-        roles: [{ roleCode: input.roleCode, scopeType: "FACTORY" }],
-      },
-      session.csrfToken,
-    );
-    setEmployees((current) =>
-      [...current, result.employee].sort((left, right) =>
-        left.fullName.localeCompare(right.fullName, "ru"),
-      ),
-    );
-    setActivation({
-      code: result.activationCode,
-      employeeName: result.employee.fullName,
-      expiresAt: result.expiresAt,
-    });
+    const result = await createEmployeeInvitation({ role: input }, session.csrfToken);
+    setInvitation(result);
     setShowCreate(false);
   }
 
@@ -183,7 +174,7 @@ export default function EmployeesPage() {
               className="primary-button primary-button--compact"
               onClick={() => setShowCreate(true)}
             >
-              Добавить сотрудника
+              Пригласить сотрудника
             </button>
           ) : null}
           {session ? (
@@ -194,18 +185,8 @@ export default function EmployeesPage() {
         </div>
       </section>
 
-      {activation ? (
-        <section className="activation-result" aria-live="polite">
-          <div>
-            <span>Одноразовый код для {activation.employeeName}</span>
-            <strong>{activation.code}</strong>
-          </div>
-          <p>
-            Покажите код сотруднику лично. После закрытия он больше не будет отображаться. Действует
-            до {new Date(activation.expiresAt).toLocaleString("ru-RU")}.
-          </p>
-          <button onClick={() => setActivation(null)}>Я передал код</button>
-        </section>
+      {invitation ? (
+        <InvitationResult invitation={invitation} onClose={() => setInvitation(null)} />
       ) : null}
 
       {recovery ? (
@@ -222,8 +203,12 @@ export default function EmployeesPage() {
         </section>
       ) : null}
 
-      {showCreate && session ? (
-        <CreateEmployeePanel onCancel={() => setShowCreate(false)} onCreate={submitEmployee} />
+      {showCreate && session && invitationOptions ? (
+        <CreateInvitationPanel
+          onCancel={() => setShowCreate(false)}
+          onCreate={submitInvitation}
+          options={invitationOptions}
+        />
       ) : null}
 
       {accessDetail && session ? (
@@ -293,33 +278,45 @@ export default function EmployeesPage() {
   );
 }
 
-function CreateEmployeePanel({
+function CreateInvitationPanel({
   onCancel,
   onCreate,
+  options,
 }: {
   readonly onCancel: () => void;
   readonly onCreate: (input: {
-    fullName: string;
-    login: string;
-    personnelNumber: string;
     roleCode: RoleCode;
+    scopeId?: string;
+    scopeType: EmployeeInvitationOptions["roles"][number]["scopeType"];
   }) => Promise<void>;
+  readonly options: EmployeeInvitationOptions;
 }) {
-  const [fullName, setFullName] = useState("");
-  const [personnelNumber, setPersonnelNumber] = useState("");
-  const [loginValue, setLoginValue] = useState("");
-  const [roleCode, setRoleCode] = useState<RoleCode>("ATTENDANCE_ONLY");
+  const initialRole =
+    options.roles.find((role) => role.roleCode === "ATTENDANCE_ONLY") ?? options.roles[0]!;
+  const [roleCode, setRoleCode] = useState<RoleCode>(initialRole.roleCode);
+  const selectedRole = options.roles.find((role) => role.roleCode === roleCode) ?? initialRole;
+  const [scopeId, setScopeId] = useState(selectedRole.scopes[0]?.id ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  function changeRole(nextRoleCode: RoleCode) {
+    const nextRole = options.roles.find((role) => role.roleCode === nextRoleCode)!;
+    setRoleCode(nextRoleCode);
+    setScopeId(nextRole.scopes[0]?.id ?? "");
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      await onCreate({ fullName, login: loginValue, personnelNumber, roleCode });
+      await onCreate({
+        roleCode,
+        ...(selectedRole.scopeType === "FACTORY" ? {} : { scopeId }),
+        scopeType: selectedRole.scopeType,
+      });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось создать сотрудника");
+      setError(caught instanceof Error ? caught.message : "Не удалось создать приглашение");
     } finally {
       setSubmitting(false);
     }
@@ -329,55 +326,39 @@ function CreateEmployeePanel({
     <section className="create-panel">
       <div className="create-panel__heading">
         <div>
-          <p className="eyebrow">Новая учетная запись</p>
-          <h2>Добавить сотрудника</h2>
+          <p className="eyebrow">Быстрая регистрация</p>
+          <h2>Пригласить сотрудника</h2>
         </div>
         <button onClick={onCancel}>Закрыть</button>
       </div>
       <form onSubmit={submit}>
-        <div className="form-row form-row--three">
-          <label>
-            ФИО
-            <input
-              onChange={(event) => setFullName(event.target.value)}
-              required
-              value={fullName}
-            />
-          </label>
-          <label>
-            Табельный номер
-            <input
-              onChange={(event) => setPersonnelNumber(event.target.value)}
-              required
-              value={personnelNumber}
-            />
-          </label>
-          <label>
-            Логин
-            <input
-              autoCapitalize="none"
-              onChange={(event) => setLoginValue(event.target.value)}
-              required
-              value={loginValue}
-            />
-          </label>
-        </div>
         <label>
-          Первая роль
-          <select
-            onChange={(event) => setRoleCode(event.target.value as RoleCode)}
-            value={roleCode}
-          >
-            {factoryRoles.map((role) => (
-              <option key={role} value={role}>
-                {roleLabels[role]}
+          Должность
+          <select onChange={(event) => changeRole(event.target.value as RoleCode)} value={roleCode}>
+            {options.roles.map((role) => (
+              <option key={role.roleCode} value={role.roleCode}>
+                {role.displayName}
               </option>
             ))}
           </select>
-          <small>
-            Роли конкретного цеха, территории и магазина добавляются после выбора области.
-          </small>
+          <small>Сотрудник увидит эту должность сразу после сканирования QR.</small>
         </label>
+        {selectedRole.scopeType !== "FACTORY" ? (
+          <label>
+            {selectedRole.scopeType === "WORKSHOP"
+              ? "Цех"
+              : selectedRole.scopeType === "TERRITORY"
+                ? "Территория"
+                : "Магазин"}
+            <select onChange={(event) => setScopeId(event.target.value)} required value={scopeId}>
+              {selectedRole.scopes.map((scope) => (
+                <option key={scope.id} value={scope.id}>
+                  {scope.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {error ? <p className="form-error">{error}</p> : null}
         <div className="form-actions">
           <button className="secondary-button" onClick={onCancel} type="button">
@@ -385,13 +366,54 @@ function CreateEmployeePanel({
           </button>
           <button
             className="primary-button primary-button--compact"
-            disabled={submitting}
+            disabled={submitting || (selectedRole.scopeType !== "FACTORY" && scopeId.length === 0)}
             type="submit"
           >
-            {submitting ? "Создаем…" : "Создать и выдать код"}
+            {submitting ? "Создаем QR…" : "Показать QR для регистрации"}
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function InvitationResult({
+  invitation,
+  onClose,
+}: {
+  readonly invitation: EmployeeInvitationResult;
+  readonly onClose: () => void;
+}) {
+  const [qrImage, setQrImage] = useState("");
+
+  useEffect(() => {
+    const registrationUrl = `${window.location.origin}/register#code=${encodeURIComponent(invitation.invitationCode)}`;
+    void QRCode.toDataURL(registrationUrl, {
+      color: { dark: "#173c34", light: "#fffdf8" },
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+    }).then(setQrImage);
+  }, [invitation.invitationCode]);
+
+  return (
+    <section className="invitation-result" aria-live="polite">
+      <div className="invitation-result__copy">
+        <p className="eyebrow">Одноразовое приглашение</p>
+        <h2>{invitation.roleDisplayName}</h2>
+        {invitation.scopeDisplayName ? <strong>{invitation.scopeDisplayName}</strong> : null}
+        <p>
+          Сотрудник сканирует QR своим телефоном, вводит ФИО, логин и пароль — и сразу входит в
+          приложение. QR действует до {new Date(invitation.expiresAt).toLocaleString("ru-RU")}.
+        </p>
+        <small>Не отправляйте QR в общие чаты: использовать его можно только один раз.</small>
+      </div>
+      <div className="invitation-result__qr">
+        {qrImage ? <img alt="QR для регистрации сотрудника" src={qrImage} /> : <span>QR…</span>}
+      </div>
+      <button className="secondary-button" onClick={onClose}>
+        Закрыть
+      </button>
     </section>
   );
 }

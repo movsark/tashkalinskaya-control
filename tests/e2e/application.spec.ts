@@ -161,6 +161,73 @@ test.describe("B20 browser and HTTP regression", () => {
     });
   });
 
+  test("an employee scans an invitation and completes the short registration form", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    let registrationRequest: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/auth/register/preview", (route) =>
+      json(route, {
+        expiresAt: "2026-08-04T10:00:00.000Z",
+        roleCode: "ATTENDANCE_ONLY",
+        roleDisplayName: "Только табель",
+        scopeDisplayName: null,
+      }),
+    );
+    await page.route("**/api/v1/auth/register", async (route) => {
+      registrationRequest = route.request().postDataJSON() as Record<string, unknown>;
+      await json(route, {
+        csrfToken: "csrf-registration",
+        deviceId: registrationRequest.deviceId,
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Иванова Марина Сергеевна",
+          id: "20000000-0000-4000-8000-000000000030",
+          login: "marina.ivanova",
+          personnelNumber: "QR-200000000000",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000031",
+              roleCode: "ATTENDANCE_ONLY",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      });
+    });
+
+    await page.goto("/register#code=one-time-invitation-code");
+    await expect(page.getByText("Только табель", { exact: true })).toBeVisible();
+    const registrationDimensions = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(registrationDimensions.scrollWidth).toBe(registrationDimensions.clientWidth);
+    await page.getByLabel("Фамилия").fill("Иванова");
+    await page.getByLabel("Имя").fill("Марина");
+    await page.getByLabel(/Отчество/u).fill("Сергеевна");
+    await page.getByLabel("Придумайте логин").fill("marina.ivanova");
+    await page.getByLabel("Придумайте пароль").fill("торт-2026");
+    await page.getByLabel("Повторите пароль").fill("торт-2026");
+    await page.getByRole("button", { name: "Зарегистрироваться и войти" }).click();
+
+    await expect(page).toHaveURL(/\/attendance\/me$/);
+    expect(registrationRequest).toMatchObject({
+      firstName: "Марина",
+      invitationCode: "one-time-invitation-code",
+      lastName: "Иванова",
+      login: "marina.ivanova",
+      patronymic: "Сергеевна",
+      platformFamily: "OTHER",
+    });
+    expect(registrationRequest?.deviceId).toMatch(/^[0-9a-f-]{36}$/u);
+  });
+
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, { code: "AUTHENTICATION_REQUIRED", message: "Требуется вход" }, 401),

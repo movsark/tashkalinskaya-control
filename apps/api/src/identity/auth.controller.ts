@@ -20,7 +20,9 @@ import {
   AssertionDto,
   LoginDto,
   LoginOptionsDto,
+  PreviewEmployeeRegistrationDto,
   RecoverAccountDto,
+  RegisterEmployeeDto,
   RecoveryOptionsDto,
   StepUpDto,
 } from "./identity.dto";
@@ -50,6 +52,24 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.activate(dto, requireCorrelationId(request));
+    this.setSessionCookie(response, result.sessionToken, result.cookieExpiresAt);
+    return result.body;
+  }
+
+  @HttpCode(200)
+  @Post("register/preview")
+  registrationPreview(@Body() dto: PreviewEmployeeRegistrationDto) {
+    return this.authService.registrationPreview(dto);
+  }
+
+  @HttpCode(201)
+  @Post("register")
+  async registerEmployee(
+    @Body() dto: RegisterEmployeeDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.registerEmployee(dto, requireCorrelationId(request));
     this.setSessionCookie(response, result.sessionToken, result.cookieExpiresAt);
     return result.body;
   }

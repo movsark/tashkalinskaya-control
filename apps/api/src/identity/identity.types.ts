@@ -76,3 +76,13 @@ export interface CreateEmployeeCommand {
   readonly tokenHash: string;
   readonly tokenId: string;
 }
+
+export interface EmployeeInvitationRecord {
+  readonly expiresAt: Date;
+  readonly id: string;
+  readonly roleCode: RoleCode;
+  readonly roleDisplayName: string;
+  readonly scopeDisplayName: string | null;
+  readonly scopeId: string | null;
+  readonly scopeType: RoleAssignmentView["scopeType"];
+}
