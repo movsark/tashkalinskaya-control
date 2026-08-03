@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import { activate, activationOptions, ApiRequestError } from "../../lib/api";
@@ -17,6 +17,12 @@ export default function ActivatePage() {
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    setLoginValue(parameters.get("login") ?? "");
+    setActivationCode(parameters.get("code") ?? "");
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

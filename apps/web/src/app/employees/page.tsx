@@ -23,6 +23,7 @@ import {
   createAttendanceDepartment,
   createAttendanceShift,
   createEmployeeInvitation,
+  deleteInvitedEmployee,
   getAttendanceSetup,
   getEmployeeAttendanceAssignment,
   getEmployeeAccess,
@@ -32,8 +33,10 @@ import {
   listEmployees,
   logoutAll,
   replaceEmployeeRoles,
+  reissueEmployeeActivation,
   revokePersonalDevice,
   updateEmployeeStatus,
+  updateEmployeeProfile,
 } from "../../lib/api";
 
 const roleLabels: Record<RoleCode, string> = {
@@ -75,18 +78,25 @@ export default function EmployeesPage() {
   const [invitationOptions, setInvitationOptions] = useState<EmployeeInvitationOptions | null>(
     null,
   );
-  const [recovery, setRecovery] = useState<{
-    code: string;
-    employeeName: string;
-    expiresAt: string;
-  } | null>(null);
   const [accessDetail, setAccessDetail] = useState<EmployeeAccessDetail | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const canAdminister = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
     [session],
   );
+  const visibleEmployees = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("ru-RU");
+    if (query.length === 0) return employees;
+    return employees.filter((employee) =>
+      [employee.fullName, employee.login, employee.personnelNumber]
+        .join(" ")
+        .toLocaleLowerCase("ru-RU")
+        .includes(query),
+    );
+  }, [employees, search]);
 
   useEffect(() => {
     async function load() {
@@ -131,20 +141,6 @@ export default function EmployeesPage() {
     setShowCreate(false);
   }
 
-  async function createRecovery(employee: EmployeeSummary, reason: string) {
-    if (session === null) return;
-    try {
-      const result = await issueRecovery(employee.id, reason, session.csrfToken);
-      setRecovery({
-        code: result.recoveryCode,
-        employeeName: employee.fullName,
-        expiresAt: result.expiresAt,
-      });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось выдать код восстановления");
-    }
-  }
-
   async function openAccess(employeeId: string) {
     setAccessLoading(true);
     setError("");
@@ -170,6 +166,12 @@ export default function EmployeesPage() {
     setAccessDetail((current) =>
       current?.employee.id === employee.id ? { ...current, employee } : current,
     );
+  }
+
+  function removeEmployee(employeeId: string) {
+    setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
+    setExpandedEmployeeId(null);
+    closeAccess();
   }
 
   async function closeAllSessions() {
@@ -228,20 +230,6 @@ export default function EmployeesPage() {
         <InvitationResult invitation={invitation} onClose={() => setInvitation(null)} />
       ) : null}
 
-      {!accessDetail && recovery ? (
-        <section className="activation-result" aria-live="polite">
-          <div>
-            <span>Код восстановления для {recovery.employeeName}</span>
-            <strong>{recovery.code}</strong>
-          </div>
-          <p>
-            Прежнее устройство и все сессии уже отозваны. Код действует до{" "}
-            {new Date(recovery.expiresAt).toLocaleString("ru-RU")}.
-          </p>
-          <button onClick={() => setRecovery(null)}>Я передал код</button>
-        </section>
-      ) : null}
-
       {!accessDetail && showCreate && session && invitationOptions ? (
         <CreateInvitationPanel
           onCancel={() => setShowCreate(false)}
@@ -255,7 +243,7 @@ export default function EmployeesPage() {
           detail={accessDetail}
           key={accessDetail.employee.id}
           onClose={closeAccess}
-          onIssueRecovery={createRecovery}
+          onDeleted={removeEmployee}
           onRefresh={async () => {
             setAccessDetail(await getEmployeeAccess(accessDetail.employee.id));
           }}
@@ -268,53 +256,77 @@ export default function EmployeesPage() {
       {!accessDetail && loading ? (
         <div className="workspace-empty">Загружаем сотрудников…</div>
       ) : !accessDetail ? (
-        <section className="employee-list" aria-label="Список сотрудников">
-          <div className="employee-list__head">
-            <span>Сотрудник</span>
-            <span>Доступ</span>
-            <span>Состояние</span>
-          </div>
-          {employees.map((employee) => (
-            <article className="employee-row" key={employee.id}>
-              <div className="employee-person">
-                <span className="employee-avatar" aria-hidden="true">
-                  {initials(employee.fullName)}
-                </span>
-                <span>
-                  <strong>{employee.fullName}</strong>
-                  <small>
-                    № {employee.personnelNumber} · {employee.login}
-                  </small>
-                </span>
-              </div>
-              <div className="role-chips">
-                {employee.roles.map((role) => (
-                  <span key={role.id}>{roleLabels[role.roleCode]}</span>
-                ))}
-              </div>
-              <div className="employee-row__state">
-                <span
-                  className={`status-badge status-badge--${employee.employmentStatus.toLocaleLowerCase()}`}
+        <>
+          <label className="employee-search">
+            <span>Поиск сотрудника</span>
+            <input
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="ФИО, логин или табельный номер"
+              type="search"
+              value={search}
+            />
+            <small>Найдено: {visibleEmployees.length}</small>
+          </label>
+          <section className="employee-list" aria-label="Список сотрудников">
+            {visibleEmployees.map((employee) => {
+              const expanded = expandedEmployeeId === employee.id;
+              return (
+                <article
+                  className={`employee-row${expanded ? " is-expanded" : ""}`}
+                  key={employee.id}
                 >
-                  {statusLabel(employee)}
-                </span>
-                {canAdminister ? (
                   <button
-                    className="row-action"
-                    disabled={accessLoading}
-                    onClick={() => void openAccess(employee.id)}
+                    aria-expanded={expanded}
+                    className="employee-row__summary"
+                    onClick={() => setExpandedEmployeeId(expanded ? null : employee.id)}
                     type="button"
                   >
-                    Управление
+                    <span className="employee-avatar" aria-hidden="true">
+                      {initials(employee.fullName)}
+                    </span>
+                    <span className="employee-row__name">
+                      <strong>{employee.fullName}</strong>
+                      <small>№ {employee.personnelNumber}</small>
+                    </span>
+                    <span className="employee-row__chevron" aria-hidden="true">
+                      {expanded ? "−" : "+"}
+                    </span>
                   </button>
-                ) : null}
+                  {expanded ? (
+                    <div className="employee-row__details">
+                      <small className="employee-row__login">Логин: {employee.login}</small>
+                      <div className="role-chips">
+                        {employee.roles.map((role) => (
+                          <span key={role.id}>{roleLabels[role.roleCode]}</span>
+                        ))}
+                      </div>
+                      <span
+                        className={`status-badge status-badge--${employee.employmentStatus.toLocaleLowerCase()}`}
+                      >
+                        {statusLabel(employee)}
+                      </span>
+                      {canAdminister ? (
+                        <button
+                          className="row-action"
+                          disabled={accessLoading}
+                          onClick={() => void openAccess(employee.id)}
+                          type="button"
+                        >
+                          Управление
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+            {visibleEmployees.length === 0 ? (
+              <div className="workspace-empty">
+                {employees.length === 0 ? "Сотрудников пока нет." : "Никого не нашли."}
               </div>
-            </article>
-          ))}
-          {employees.length === 0 ? (
-            <div className="workspace-empty">Сотрудников пока нет.</div>
-          ) : null}
-        </section>
+            ) : null}
+          </section>
+        </>
       ) : null}
     </main>
   );
@@ -463,18 +475,21 @@ function InvitationResult({
 function EmployeeAccessPanel({
   detail,
   onClose,
-  onIssueRecovery,
+  onDeleted,
   onRefresh,
   onUpdated,
   session,
 }: {
   readonly detail: EmployeeAccessDetail;
   readonly onClose: () => void;
-  readonly onIssueRecovery: (employee: EmployeeSummary, reason: string) => Promise<void>;
+  readonly onDeleted: (employeeId: string) => void;
   readonly onRefresh: () => Promise<void>;
   readonly onUpdated: (employee: EmployeeSummary) => void;
   readonly session: AuthenticatedUser;
 }) {
+  const [fullName, setFullName] = useState(detail.employee.fullName);
+  const [personnelNumber, setPersonnelNumber] = useState(detail.employee.personnelNumber);
+  const [login, setLogin] = useState(detail.employee.login);
   const [status, setStatus] = useState<EmploymentStatus>(detail.employee.employmentStatus);
   const [selectedFactoryRoles, setSelectedFactoryRoles] = useState<RoleCode[]>(
     detail.employee.roles
@@ -495,15 +510,26 @@ function EmployeeAccessPanel({
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  const [showDeletePrompt, setShowDeletePrompt] = useState(false);
+  const [accessCode, setAccessCode] = useState<{
+    code: string;
+    expiresAt: string;
+    login: string;
+    purpose: "ACTIVATION" | "RECOVERY";
+  } | null>(null);
   const scopedRoles = detail.employee.roles.filter((role) => role.scopeType !== "FACTORY");
   const initialFactoryRoles = detail.employee.roles
     .filter((role) => role.scopeType === "FACTORY")
     .map((role) => role.roleCode)
     .sort();
   const selectedRolesSorted = [...selectedFactoryRoles].sort();
+  const profileDirty =
+    fullName.trim() !== detail.employee.fullName ||
+    personnelNumber.trim() !== detail.employee.personnelNumber ||
+    login.trim().toLocaleLowerCase() !== detail.employee.login.toLocaleLowerCase();
   const statusDirty = status !== detail.employee.employmentStatus;
   const rolesDirty = initialFactoryRoles.join("|") !== selectedRolesSorted.join("|");
-  const hasChanges = statusDirty || rolesDirty || attendanceTouched;
+  const hasChanges = profileDirty || statusDirty || rolesDirty || attendanceTouched;
   const newOption = "__new__";
 
   useEffect(() => {
@@ -590,6 +616,20 @@ function EmployeeAccessPanel({
     const auditReason = changeReason.trim() || "Изменение в карточке сотрудника";
     try {
       let employee = detail.employee;
+
+      if (profileDirty) {
+        employee = await updateEmployeeProfile(
+          detail.employee.id,
+          {
+            fullName: fullName.trim(),
+            login: login.trim(),
+            personnelNumber: personnelNumber.trim(),
+            reason: auditReason,
+            version: employee.version,
+          },
+          session.csrfToken,
+        );
+      }
 
       if (statusDirty) {
         employee = await updateEmployeeStatus(
@@ -699,13 +739,57 @@ function EmployeeAccessPanel({
     }
   }
 
-  async function recoverDevice() {
+  async function issueAccessCode() {
+    if (profileDirty) {
+      setError("Сначала сохраните ФИО и логин, затем выдайте QR.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await onIssueRecovery(detail.employee, deviceReason);
+      if (detail.employee.accountStatus === "INVITED") {
+        const result = await reissueEmployeeActivation(
+          detail.employee.id,
+          deviceReason,
+          session.csrfToken,
+        );
+        setAccessCode({
+          code: result.activationCode,
+          expiresAt: result.expiresAt,
+          login: detail.employee.login,
+          purpose: "ACTIVATION",
+        });
+      } else {
+        const result = await issueRecovery(detail.employee.id, deviceReason, session.csrfToken);
+        setAccessCode({
+          code: result.recoveryCode,
+          expiresAt: result.expiresAt,
+          login: detail.employee.login,
+          purpose: "RECOVERY",
+        });
+      }
       setDeviceReason("");
       await onRefresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось выдать QR доступа");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteRecord() {
+    setBusy(true);
+    setError("");
+    try {
+      await deleteInvitedEmployee(
+        detail.employee.id,
+        { reason: "Ошибочно созданная запись", version: detail.employee.version },
+        session.csrfToken,
+      );
+      onDeleted(detail.employee.id);
+    } catch (caught) {
+      setShowDeletePrompt(false);
+      setError(caught instanceof Error ? caught.message : "Не удалось удалить запись");
     } finally {
       setBusy(false);
     }
@@ -736,6 +820,9 @@ function EmployeeAccessPanel({
 
       {error ? <p className="form-error">{error}</p> : null}
       {success ? <p className="form-success">{success}</p> : null}
+      {accessCode ? (
+        <EmployeeAccessQr accessCode={accessCode} onClose={() => setAccessCode(null)} />
+      ) : null}
 
       <form
         onSubmit={(event) => {
@@ -746,7 +833,61 @@ function EmployeeAccessPanel({
         <div className="access-panel__grid">
           <section className="access-section">
             <div>
-              <p className="eyebrow">01 · Состояние</p>
+              <p className="eyebrow">01 · Личные данные</p>
+              <h3>ФИО и логин</h3>
+            </div>
+            <div className="attendance-simple-form">
+              <label className="attendance-simple-row">
+                <span>Фамилия, имя и отчество</span>
+                <input
+                  minLength={2}
+                  onChange={(event) => {
+                    setFullName(event.target.value);
+                    setError("");
+                    setSuccess("");
+                  }}
+                  required
+                  value={fullName}
+                />
+              </label>
+              <label className="attendance-simple-row">
+                <span>Табельный номер</span>
+                <input
+                  maxLength={40}
+                  onChange={(event) => {
+                    setPersonnelNumber(event.target.value);
+                    setError("");
+                    setSuccess("");
+                  }}
+                  required
+                  value={personnelNumber}
+                />
+              </label>
+              <label className="attendance-simple-row">
+                <span>Логин</span>
+                <input
+                  autoCapitalize="none"
+                  maxLength={100}
+                  onChange={(event) => {
+                    setLogin(event.target.value);
+                    setError("");
+                    setSuccess("");
+                  }}
+                  required
+                  value={login}
+                />
+              </label>
+            </div>
+            {profileDirty ? (
+              <small className="attendance-simple-message">
+                Сохраните изменения перед выдачей нового QR.
+              </small>
+            ) : null}
+          </section>
+
+          <section className="access-section">
+            <div>
+              <p className="eyebrow">02 · Состояние</p>
               <h3>Статус сотрудника</h3>
             </div>
             <select
@@ -767,7 +908,7 @@ function EmployeeAccessPanel({
 
           <section className="access-section">
             <div>
-              <p className="eyebrow">02 · Права</p>
+              <p className="eyebrow">03 · Права</p>
               <h3>Общезаводские роли</h3>
             </div>
             <div className="role-options">
@@ -800,7 +941,7 @@ function EmployeeAccessPanel({
 
           <section className="access-section access-section--attendance">
             <div>
-              <p className="eyebrow">03 · Табель</p>
+              <p className="eyebrow">04 · Табель</p>
               <h3>Рабочее расписание</h3>
               {assignment?.departmentName ? (
                 <small>
@@ -908,7 +1049,7 @@ function EmployeeAccessPanel({
 
           <section className="access-section access-section--devices">
             <div>
-              <p className="eyebrow">04 · Устройство</p>
+              <p className="eyebrow">05 · Доступ</p>
               <h3>Личный телефон</h3>
             </div>
             <div className="device-list">
@@ -940,18 +1081,46 @@ function EmployeeAccessPanel({
             <input
               minLength={3}
               onChange={(event) => setDeviceReason(event.target.value)}
-              placeholder="Причина отзыва или замены"
+              placeholder="Причина выдачи QR или замены"
               value={deviceReason}
             />
             <button
               className="primary-button"
-              disabled={busy || deviceReason.trim().length < 3}
-              onClick={() => void recoverDevice()}
+              disabled={busy || deviceReason.trim().length < 3 || profileDirty}
+              onClick={() => void issueAccessCode()}
               type="button"
             >
-              Выдать код замены
+              {detail.employee.accountStatus === "INVITED"
+                ? "Выдать QR активации заново"
+                : "Выдать QR для нового телефона"}
             </button>
+            {detail.employee.accountStatus !== "INVITED" ? (
+              <small className="access-section__note">
+                Выдача QR замены сразу отзовет прежний телефон и сессии.
+              </small>
+            ) : null}
           </section>
+
+          {detail.employee.accountStatus === "INVITED" ? (
+            <section className="access-section access-section--danger">
+              <div>
+                <p className="eyebrow">06 · Ошибочная запись</p>
+                <h3>Удаление</h3>
+              </div>
+              <p>
+                Этот сотрудник ещё не активировал доступ, поэтому ошибочную запись можно удалить
+                полностью.
+              </p>
+              <button
+                className="danger-button"
+                disabled={busy}
+                onClick={() => setShowDeletePrompt(true)}
+                type="button"
+              >
+                Удалить ошибочную запись
+              </button>
+            </section>
+          ) : null}
         </div>
 
         <div className="access-panel__save">
@@ -1012,6 +1181,88 @@ function EmployeeAccessPanel({
           </section>
         </div>
       ) : null}
+
+      {showDeletePrompt ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            aria-labelledby="delete-employee-title"
+            aria-modal="true"
+            className="dialog-card access-exit-dialog"
+            role="dialog"
+          >
+            <h2 id="delete-employee-title">Удалить {detail.employee.fullName}?</h2>
+            <p>
+              Запись ожидает активации и будет удалена безвозвратно. Активных сотрудников система
+              так удалять не позволяет.
+            </p>
+            <button
+              className="danger-button"
+              disabled={busy}
+              onClick={() => void deleteRecord()}
+              type="button"
+            >
+              {busy ? "Удаляем…" : "Да, удалить"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => setShowDeletePrompt(false)}
+              type="button"
+            >
+              Отмена
+            </button>
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function EmployeeAccessQr({
+  accessCode,
+  onClose,
+}: {
+  readonly accessCode: {
+    code: string;
+    expiresAt: string;
+    login: string;
+    purpose: "ACTIVATION" | "RECOVERY";
+  };
+  readonly onClose: () => void;
+}) {
+  const [qrImage, setQrImage] = useState("");
+
+  useEffect(() => {
+    const path = accessCode.purpose === "ACTIVATION" ? "/activate" : "/recover";
+    const parameters = new URLSearchParams({ code: accessCode.code, login: accessCode.login });
+    const accessUrl = `${window.location.origin}${path}#${parameters.toString()}`;
+    void QRCode.toDataURL(accessUrl, {
+      color: { dark: "#173c34", light: "#fffdf8" },
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+    }).then(setQrImage);
+  }, [accessCode]);
+
+  return (
+    <section className="invitation-result employee-access-qr" aria-live="polite">
+      <div className="invitation-result__copy">
+        <p className="eyebrow">
+          {accessCode.purpose === "ACTIVATION" ? "QR первого входа" : "QR замены телефона"}
+        </p>
+        <h2>{accessCode.login}</h2>
+        <p>
+          Сотрудник сканирует QR камерой телефона. Логин и одноразовый код заполнятся автоматически.
+        </p>
+        <strong className="employee-access-qr__code">{accessCode.code}</strong>
+        <small>Действует до {new Date(accessCode.expiresAt).toLocaleString("ru-RU")}.</small>
+      </div>
+      <div className="invitation-result__qr">
+        {qrImage ? <img alt="QR доступа сотрудника" src={qrImage} /> : <span>QR…</span>}
+      </div>
+      <button className="secondary-button" onClick={onClose} type="button">
+        Закрыть QR
+      </button>
     </section>
   );
 }

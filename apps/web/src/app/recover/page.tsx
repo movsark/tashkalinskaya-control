@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import { ApiRequestError, recover, recoveryOptions } from "../../lib/api";
@@ -17,6 +17,12 @@ export default function RecoverPage() {
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    setLoginValue(parameters.get("login") ?? "");
+    setRecoveryCode(parameters.get("code") ?? "");
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

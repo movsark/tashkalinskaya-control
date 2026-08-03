@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -15,10 +16,12 @@ import { ApiTags } from "@nestjs/swagger";
 import {
   CreateEmployeeDto,
   CreateEmployeeInvitationDto,
+  DeleteInvitedEmployeeDto,
   IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
   UpdateEmployeeStatusDto,
+  UpdateEmployeeProfileDto,
 } from "./identity.dto";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "./identity.guards";
 import type { AuthenticatedRequest } from "./identity.types";
@@ -71,6 +74,55 @@ export class EmployeesController {
   ) {
     const actor = requireActor(request);
     return this.employees.updateStatus(
+      employeeId,
+      dto,
+      actor.employee.id,
+      requireCorrelationId(request),
+    );
+  }
+
+  @Patch(":employeeId/profile")
+  @RequireRoles("ADMIN")
+  updateProfile(
+    @Param("employeeId") employeeId: string,
+    @Body() dto: UpdateEmployeeProfileDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const actor = requireActor(request);
+    return this.employees.updateProfile(
+      employeeId,
+      dto,
+      actor.employee.id,
+      requireCorrelationId(request),
+    );
+  }
+
+  @HttpCode(204)
+  @Delete(":employeeId")
+  @RequireRoles("ADMIN")
+  async deleteInvitedEmployee(
+    @Param("employeeId") employeeId: string,
+    @Body() dto: DeleteInvitedEmployeeDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    const actor = requireActor(request);
+    await this.employees.deleteInvitedEmployee(
+      employeeId,
+      dto,
+      actor.employee.id,
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post(":employeeId/activation")
+  @RequireRoles("ADMIN")
+  reissueActivation(
+    @Param("employeeId") employeeId: string,
+    @Body() dto: IssueRecoveryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const actor = requireActor(request);
+    return this.employees.reissueActivation(
       employeeId,
       dto,
       actor.employee.id,
