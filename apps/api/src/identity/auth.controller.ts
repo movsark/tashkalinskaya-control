@@ -126,14 +126,19 @@ export class AuthController {
 
   @Get("session")
   @UseGuards(SessionAuthGuard)
-  session(@Req() request: AuthenticatedRequest) {
+  async session(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const actor = requireActor(request);
-    return this.authService.currentUser(
+    const result = await this.authService.currentUser(
       actor.deviceId,
       actor.employee.id,
-      actor.sessionExpiresAt,
+      actor.sessionId,
       actor.sessionToken,
     );
+    this.setSessionCookie(response, actor.sessionToken, result.sessionExpiresAt);
+    return result;
   }
 
   @HttpCode(204)

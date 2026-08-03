@@ -20,7 +20,7 @@ import { IdentityRepository, type NewSession } from "./identity.repository";
 import type { AuthenticatedActor } from "./identity.types";
 import { WebAuthnService } from "./webauthn.service";
 
-const privilegedRoles = new Set(["ADMIN", "MANAGER", "ACCOUNTANT"]);
+const persistentSessionMilliseconds = 365 * 24 * 60 * 60 * 1000;
 
 interface SessionResult {
   readonly body: AuthenticatedUser;
@@ -88,12 +88,10 @@ export class AuthService {
     const passwordHash = await this.crypto.hashPassword(dto.password);
     const deviceId = randomUUID();
     const sessionToken = this.crypto.generateSessionToken();
-    const employee = await this.repository.getEmployee(account.employeeId);
     const session = this.createSession(
       account.accountId,
       deviceId,
       account.authorizationVersion,
-      employee,
       sessionToken,
     );
 
@@ -151,8 +149,7 @@ export class AuthService {
       account?.passwordHash ?? null,
       dto.password,
     );
-    const response = dto.credential as unknown as AuthenticationResponseJSON;
-    const device = await this.repository.findActiveDeviceByCredentialId(response.id);
+    const device = await this.repository.findActiveDevice(dto.deviceId);
     const accessAllowed =
       account !== null &&
       account.accountStatus === "ACTIVE" &&
@@ -160,8 +157,7 @@ export class AuthService {
       (account.lockedUntil === null || account.lockedUntil <= new Date()) &&
       passwordValid &&
       device !== null &&
-      device.employeeId === account.employeeId &&
-      device.webauthnCredentialId !== null;
+      device.employeeId === account.employeeId;
 
     if (!accessAllowed || account === null || device === null) {
       await this.repository.recordLoginBucketFailure(rateLimitBucket);
@@ -169,26 +165,12 @@ export class AuthService {
       throw genericAuthenticationError();
     }
 
-    const newCounter = await this.webauthn
-      .verifyAuthentication({
-        accountId: account.accountId,
-        challengeId: dto.challengeId,
-        device,
-        purpose: "LOGIN",
-        response,
-      })
-      .catch(async (error) => {
-        await this.repository.recordLoginBucketFailure(rateLimitBucket);
-        await this.repository.recordLoginFailure(account.accountId, correlationId);
-        throw error;
-      });
     const sessionToken = this.crypto.generateSessionToken();
     const employee = await this.repository.getEmployee(account.employeeId);
     const session = this.createSession(
       account.accountId,
       device.id,
       account.authorizationVersion,
-      employee,
       sessionToken,
     );
     await this.repository.createLoginSession({
@@ -198,7 +180,6 @@ export class AuthService {
       employeeId: account.employeeId,
       session,
     });
-    await this.repository.updateDeviceCounter(device.id, newCounter);
     await this.repository.clearLoginBucket(rateLimitBucket);
 
     return {
@@ -363,13 +344,11 @@ export class AuthService {
     });
     const passwordHash = await this.crypto.hashPassword(dto.password);
     const sessionToken = this.crypto.generateSessionToken();
-    const employee = await this.repository.getEmployee(account.employeeId);
     const deviceId = randomUUID();
     const session = this.createSession(
       account.accountId,
       deviceId,
       account.authorizationVersion,
-      employee,
       sessionToken,
     );
     await this.deviceSecurity.recoverAccount({
@@ -394,10 +373,11 @@ export class AuthService {
   async currentUser(
     deviceId: string,
     employeeId: string,
-    sessionExpiresAt: Date,
+    sessionId: string,
     sessionToken: string,
   ): Promise<AuthenticatedUser> {
     const employee = await this.repository.getEmployee(employeeId);
+    const sessionExpiresAt = await this.repository.extendSession(sessionId);
     return {
       csrfToken: this.crypto.createCsrfToken(sessionToken),
       deviceId,
@@ -410,21 +390,18 @@ export class AuthService {
     accountId: string,
     deviceId: string,
     authorizationVersion: number,
-    employee: EmployeeSummary,
     sessionToken: string,
   ): NewSession {
     const now = Date.now();
-    const privileged = employee.roles.some((role) => privilegedRoles.has(role.roleCode));
+    const expiresAt = new Date(now + persistentSessionMilliseconds);
     return {
-      absoluteExpiresAt: new Date(
-        now + (privileged ? 12 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000),
-      ),
-      accessExpiresAt: new Date(now + (privileged ? 30 : 15) * 60 * 1000),
+      absoluteExpiresAt: expiresAt,
+      accessExpiresAt: expiresAt,
       accountId,
       authorizationVersion,
       deviceId,
       id: randomUUID(),
-      refreshExpiresAt: privileged ? null : new Date(now + 7 * 24 * 60 * 60 * 1000),
+      refreshExpiresAt: null,
       tokenHash: this.crypto.hashSessionToken(sessionToken),
     };
   }

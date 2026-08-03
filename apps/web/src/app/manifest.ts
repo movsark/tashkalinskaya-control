@@ -19,7 +19,7 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "any",
     scope: "/",
     short_name: "Ташкалинская",
-    start_url: "/",
+    start_url: "/start",
     theme_color: "#173c34",
   };
 }

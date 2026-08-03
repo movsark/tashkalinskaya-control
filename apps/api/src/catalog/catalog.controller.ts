@@ -16,13 +16,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiConsumes, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 
-import {
-  CsrfGuard,
-  RequireRoles,
-  RolesGuard,
-  SessionAuthGuard,
-  StepUpGuard,
-} from "../identity/identity.guards";
+import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import { ApplyCatalogImportDto, PreviewCatalogImportDto } from "./catalog.dto";
 import { CatalogService } from "./catalog.service";
@@ -93,7 +87,6 @@ export class CatalogController {
 
   @Post("imports/:batchId/apply")
   @RequireRoles("ADMIN")
-  @UseGuards(StepUpGuard)
   apply(
     @Param("batchId", ParseUUIDPipe) batchId: string,
     @Body() dto: ApplyCatalogImportDto,

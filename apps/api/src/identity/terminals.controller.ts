@@ -28,7 +28,6 @@ import {
   RequireRoles,
   RolesGuard,
   SessionAuthGuard,
-  StepUpGuard,
   TERMINAL_SESSION_COOKIE_NAME,
   TerminalSessionAuthGuard,
 } from "./identity.guards";
@@ -52,7 +51,7 @@ export class TerminalsController {
 
   @Post()
   @RequireRoles("ADMIN")
-  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard, StepUpGuard)
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
   create(@Body() dto: CreateTerminalDto, @Req() request: AuthenticatedRequest) {
     const actor = requireActor(request);
     return this.terminals.create(dto, actor.employee.id, requireCorrelationId(request));
@@ -95,7 +94,7 @@ export class TerminalsController {
   @HttpCode(204)
   @Post(":terminalId/revoke")
   @RequireRoles("ADMIN")
-  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard, StepUpGuard)
+  @UseGuards(SessionAuthGuard, CsrfGuard, RolesGuard)
   async revoke(
     @Param("terminalId") terminalId: string,
     @Body() dto: RevokeDeviceDto,

@@ -23,10 +23,7 @@ import {
   listAttendanceCorrections,
   listManualAttendanceReasons,
   recordManualAttendance,
-  stepUp,
-  stepUpOptions,
 } from "../../../lib/api";
-import { authenticateDevice } from "../../../lib/device-identity";
 
 const statusLabels: Record<AttendanceControlStatus, string> = {
   ABSENT: "Не пришел",
@@ -60,9 +57,6 @@ export default function AttendanceControlPage() {
     null,
   );
   const [decisionComment, setDecisionComment] = useState("");
-  const [securityPassword, setSecurityPassword] = useState("");
-  const [securityReadyUntil, setSecurityReadyUntil] = useState<string | null>(null);
-  const [securityBusy, setSecurityBusy] = useState(false);
   const [lastManual, setLastManual] = useState<ManualAttendanceResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -213,27 +207,6 @@ export default function AttendanceControlPage() {
     }
   }
 
-  async function confirmSensitiveOperations() {
-    const current = sessionRef.current;
-    if (current === null) return;
-    setSecurityBusy(true);
-    setError("");
-    try {
-      const ceremony = await stepUpOptions(current.csrfToken);
-      const credential = await authenticateDevice(ceremony.options);
-      const result = await stepUp(
-        { challengeId: ceremony.challengeId, credential, password: securityPassword },
-        current.csrfToken,
-      );
-      setSecurityReadyUntil(result.expiresAt);
-      setSecurityPassword("");
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setSecurityBusy(false);
-    }
-  }
-
   async function decideCorrection(decision: "APPROVED" | "REJECTED") {
     const current = sessionRef.current;
     if (current === null || decisionCorrection === null || decisionComment.trim().length < 3)
@@ -259,8 +232,6 @@ export default function AttendanceControlPage() {
 
   const selectedReason = reasons.find((reason) => reason.id === manualReasonId);
   const selectedCorrectionReason = reasons.find((reason) => reason.id === correctionReasonId);
-  const securityReady = securityReadyUntil !== null && new Date(securityReadyUntil) > new Date();
-
   return (
     <main className="workspace-layout attendance-control-layout">
       <header className="workspace-header">
@@ -326,32 +297,6 @@ export default function AttendanceControlPage() {
               </article>
             ),
           )}
-        </section>
-      ) : null}
-
-      {isAdmin && corrections.some((item) => item.status === "SUBMITTED") ? (
-        <section className="attendance-correction-security">
-          <div>
-            <strong>Подтверждение корректировок</strong>
-            <span>
-              Решение администратора требует пароль и системный PIN/биометрию. Допуск действует 5
-              минут.
-            </span>
-          </div>
-          <input
-            aria-label="Парольная фраза администратора"
-            onChange={(event) => setSecurityPassword(event.target.value)}
-            placeholder="Парольная фраза"
-            type="password"
-            value={securityPassword}
-          />
-          <button
-            className="secondary-button"
-            disabled={securityBusy || securityPassword.length === 0}
-            onClick={() => void confirmSensitiveOperations()}
-          >
-            {securityReady ? "Подтверждено" : securityBusy ? "Проверяем…" : "Подтвердить себя"}
-          </button>
         </section>
       ) : null}
 
@@ -478,7 +423,6 @@ export default function AttendanceControlPage() {
                 {isAdmin && correction.status === "SUBMITTED" ? (
                   <button
                     className="secondary-button"
-                    disabled={!securityReady}
                     onClick={() => setDecisionCorrection(correction)}
                   >
                     Принять решение

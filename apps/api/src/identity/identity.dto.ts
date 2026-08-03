@@ -102,10 +102,7 @@ export class LoginDto extends LoginOptionsDto {
   password!: string;
 
   @IsUUID()
-  challengeId!: string;
-
-  @IsObject()
-  credential!: Record<string, unknown>;
+  deviceId!: string;
 }
 
 export class AssertionDto {
