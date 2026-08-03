@@ -1197,6 +1197,48 @@ select:focus {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.form-success {
+  margin: 16px 0 0;
+  padding: 13px 15px;
+  border-radius: 12px;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.access-panel__save {
+  position: sticky;
+  z-index: 4;
+  bottom: 12px;
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgb(255 253 248 / 96%);
+  box-shadow: 0 14px 34px rgb(23 60 52 / 16%);
+  backdrop-filter: blur(12px);
+}
+
+.access-panel__save label {
+  display: grid;
+  gap: 6px;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.access-exit-dialog {
+  display: grid;
+  gap: 12px;
+}
+
+.access-exit-dialog .text-button {
+  justify-self: center;
+}
+
 .access-section {
   display: grid;
   min-width: 0;

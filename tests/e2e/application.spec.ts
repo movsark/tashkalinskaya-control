@@ -282,19 +282,33 @@ test.describe("B20 browser and HTTP regression", () => {
       await managementButton.evaluate((button) => getComputedStyle(button).backgroundColor),
     ).not.toBe("rgba(0, 0, 0, 0)");
     await managementButton.click();
+    await expect(page).toHaveURL(new RegExp(`/employees\\?employee=${employeeId}$`, "u"));
+    await expect(page.getByRole("region", { name: "Список сотрудников" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Рабочее расписание" })).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`/employees\\?employee=${employeeId}$`, "u"));
     await expect(page.getByRole("heading", { name: "Рабочее расписание" })).toBeVisible();
     await expect(page.getByLabel("Подразделение")).toHaveValue(departmentId);
     await expect(page.getByLabel("Рабочая смена")).toHaveValue("__new__");
     await expect(page.getByLabel("Начало")).toHaveValue("08:00");
     await expect(page.getByLabel("Окончание")).toHaveValue("18:00");
     await expect(page.getByText("Название смены")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Сохранить статус" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Сохранить роли" })).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
-    await page.getByRole("button", { exact: true, name: "Сохранить" }).click();
-    await expect(page.getByText("QR на телефоне обновится автоматически.")).toBeVisible();
+    await page.getByLabel("Окончание").selectOption("17:30");
+    await page.getByRole("button", { name: "Назад к сотрудникам" }).click();
+    await expect(page.getByRole("dialog", { name: "Сохранить изменения?" })).toBeVisible();
+    await page.getByRole("button", { name: "Продолжить редактирование" }).click();
+    await page.getByLabel("Окончание").selectOption("18:00");
+    const saveButton = page.getByRole("button", { exact: true, name: "Сохранить изменения" });
+    await expect(saveButton).toHaveCount(1);
+    await saveButton.click();
+    await expect(page.getByText("Все изменения сохранены.")).toBeVisible();
     expect(shiftRequest).toEqual({
       crossesMidnight: false,
       departmentId,
@@ -303,6 +317,9 @@ test.describe("B20 browser and HTTP regression", () => {
       startLocalTime: "08:00",
     });
     expect(assignmentRequest).toEqual({ departmentId, shiftTemplateId });
+    await page.getByRole("button", { name: "Назад к сотрудникам" }).click();
+    await expect(page).toHaveURL(/\/employees$/u);
+    await expect(page.getByRole("region", { name: "Список сотрудников" })).toBeVisible();
   });
 
   test("an employee scans an invitation and completes the short registration form", async ({
