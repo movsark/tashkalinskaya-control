@@ -1193,80 +1193,68 @@ select:focus {
   grid-column: 1 / -1;
 }
 
-.attendance-assignment-form,
-.attendance-setup-inline,
-.attendance-shift-creator {
+.attendance-simple-form {
   display: grid;
-  gap: 12px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
 }
 
-.attendance-assignment-form {
-  align-items: end;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-}
-
-.attendance-assignment-form label,
-.attendance-shift-creator label {
+.attendance-simple-row {
   display: grid;
-  gap: 7px;
+  min-width: 0;
+  gap: 6px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
   color: var(--forest);
   font-size: 12px;
   font-weight: 800;
 }
 
-.attendance-shift-creator {
-  padding: 14px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 14px;
-  background: #fff;
+.attendance-simple-form :is(input, select, button) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
-.attendance-shift-creator summary {
-  cursor: pointer;
-  color: var(--forest);
-  font-weight: 850;
+.attendance-simple-form input[type="time"] {
+  display: block;
+  font-size: 16px;
 }
 
-.attendance-time-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.attendance-checkbox {
-  display: flex !important;
+.attendance-simple-checkbox {
+  display: flex;
   align-items: center;
+  min-width: 0;
   gap: 10px;
+  padding: 14px 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.attendance-checkbox input {
-  width: 18px;
-  min-height: 18px;
+.attendance-simple-checkbox input {
+  flex: 0 0 20px;
+  width: 20px;
+  min-height: 20px;
   margin: 0;
   accent-color: var(--forest);
 }
 
-.attendance-setup-inline {
-  align-items: center;
-  grid-template-columns: minmax(160px, auto) minmax(220px, 1fr) auto;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--forest-soft);
-}
-
-.attendance-setup-inline--secondary {
-  margin-top: 4px;
-  background: #eeece5;
-}
-
-.attendance-setup-success {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
+.attendance-simple-message {
+  margin: 12px 0 0;
   color: var(--forest);
-  background: var(--forest-soft);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.attendance-simple-message--error {
+  color: var(--danger);
+}
+
+.attendance-simple-submit {
+  margin-top: 16px;
 }
 
 .access-section__note,
@@ -2144,12 +2132,6 @@ select:focus {
 
   .access-section--attendance {
     grid-column: auto;
-  }
-
-  .attendance-assignment-form,
-  .attendance-setup-inline {
-    align-items: stretch;
-    grid-template-columns: 1fr;
   }
 
   .terminal-scanner {

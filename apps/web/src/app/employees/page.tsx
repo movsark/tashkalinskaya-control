@@ -708,6 +708,8 @@ function AttendanceAssignmentSection({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const newOption = "__new__";
+
   useEffect(() => {
     let active = true;
     void Promise.all([getAttendanceSetup(), getEmployeeAttendanceAssignment(employeeId)])
@@ -716,12 +718,12 @@ function AttendanceAssignmentSection({
         setSetup(nextSetup);
         setAssignment(nextAssignment);
         const initialDepartmentId =
-          nextAssignment.departmentId ?? nextSetup.departments[0]?.id ?? "";
+          nextAssignment.departmentId ?? nextSetup.departments[0]?.id ?? newOption;
         setDepartmentId(initialDepartmentId);
         setShiftTemplateId(
           nextAssignment.shiftTemplateId ??
             nextSetup.shifts.find((shift) => shift.departmentId === initialDepartmentId)?.id ??
-            "",
+            newOption,
         );
       })
       .catch((caught: unknown) => {
@@ -735,96 +737,87 @@ function AttendanceAssignmentSection({
   }, [employeeId]);
 
   const departmentShifts =
-    setup?.shifts.filter((shift) => shift.departmentId === departmentId) ?? [];
+    departmentId === newOption
+      ? []
+      : (setup?.shifts.filter((shift) => shift.departmentId === departmentId) ?? []);
+  const createsDepartment = departmentId === newOption;
+  const createsShift = createsDepartment || shiftTemplateId === newOption;
 
   function changeDepartment(nextDepartmentId: string) {
     setDepartmentId(nextDepartmentId);
     setShiftTemplateId(
-      setup?.shifts.find((shift) => shift.departmentId === nextDepartmentId)?.id ?? "",
+      nextDepartmentId === newOption
+        ? newOption
+        : (setup?.shifts.find((shift) => shift.departmentId === nextDepartmentId)?.id ?? newOption),
     );
-    setSuccess("");
-  }
-
-  async function addDepartment() {
-    if (newDepartmentName.trim().length < 2) return;
-    setBusy(true);
     setError("");
     setSuccess("");
-    try {
-      const created = await createAttendanceDepartment(
-        { name: newDepartmentName.trim() },
-        session.csrfToken,
-      );
-      const nextSetup = await getAttendanceSetup();
-      setSetup(nextSetup);
-      setDepartmentId(created.id);
-      setShiftTemplateId("");
-      setNewDepartmentName("");
-      setSuccess("Подразделение создано. Теперь добавьте для него смену.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось создать подразделение");
-    } finally {
-      setBusy(false);
-    }
   }
 
-  async function addShift() {
-    if (departmentId.length === 0 || newShiftName.trim().length < 2) return;
-    setBusy(true);
-    setError("");
-    setSuccess("");
-    try {
-      const created = await createAttendanceShift(
-        {
-          crossesMidnight,
-          departmentId,
-          endLocalTime,
-          name: newShiftName.trim(),
-          startLocalTime,
-        },
-        session.csrfToken,
-      );
-      setSetup(await getAttendanceSetup());
-      setShiftTemplateId(created.id);
-      setNewShiftName("");
-      setSuccess("Смена создана. Нажмите «Назначить сотруднику».");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось создать смену");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveAssignment(event: FormEvent<HTMLFormElement>) {
+  async function saveAttendance(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
     setSuccess("");
     try {
+      let nextDepartmentId = departmentId;
+      if (createsDepartment) {
+        const department = await createAttendanceDepartment(
+          { name: newDepartmentName.trim() },
+          session.csrfToken,
+        );
+        nextDepartmentId = department.id;
+      }
+
+      let nextShiftTemplateId = shiftTemplateId;
+      if (createsShift) {
+        const shift = await createAttendanceShift(
+          {
+            crossesMidnight,
+            departmentId: nextDepartmentId,
+            endLocalTime,
+            name: newShiftName.trim(),
+            startLocalTime,
+          },
+          session.csrfToken,
+        );
+        nextShiftTemplateId = shift.id;
+      }
+
       const next = await assignEmployeeAttendance(
         employeeId,
-        { departmentId, shiftTemplateId },
+        { departmentId: nextDepartmentId, shiftTemplateId: nextShiftTemplateId },
         session.csrfToken,
       );
+      setSetup(await getAttendanceSetup());
       setAssignment(next);
+      setDepartmentId(nextDepartmentId);
+      setShiftTemplateId(nextShiftTemplateId);
+      setNewDepartmentName("");
+      setNewShiftName("");
       await onAssigned();
-      setSuccess("Подразделение и смена назначены. QR на телефоне обновится автоматически.");
+      setSuccess("Сохранено. QR на телефоне обновится автоматически.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось назначить смену");
+      setError(caught instanceof Error ? caught.message : "Не удалось сохранить настройки");
+      setSetup(await getAttendanceSetup().catch(() => setup));
     } finally {
       setBusy(false);
     }
   }
 
+  const formIsReady =
+    !busy &&
+    (createsDepartment ? newDepartmentName.trim().length >= 2 : departmentId.length > 0) &&
+    (createsShift ? newShiftName.trim().length >= 2 : shiftTemplateId.length > 0);
+
   return (
     <section className="access-section access-section--attendance">
       <div>
         <p className="eyebrow">03 · Табель</p>
-        <h3>Подразделение и смена</h3>
+        <h3>Рабочее расписание</h3>
         {assignment?.departmentName ? (
           <small>
-            Сейчас: {assignment.departmentName}
-            {assignment.shiftName ? ` · ${assignment.shiftName}` : " · смена не назначена"}
+            {assignment.departmentName} · {assignment.shiftName ?? "смена не назначена"}
           </small>
         ) : (
           <small>Сотруднику пока не настроен табель.</small>
@@ -833,136 +826,102 @@ function AttendanceAssignmentSection({
 
       {setup === null ? <p>Загружаем настройки табеля…</p> : null}
 
-      {setup && setup.departments.length === 0 ? (
-        <div className="attendance-setup-inline">
-          <strong>Сначала создайте подразделение</strong>
-          <input
-            aria-label="Название нового подразделения"
-            onChange={(event) => setNewDepartmentName(event.target.value)}
-            placeholder="Например: Кондитерский цех"
-            value={newDepartmentName}
-          />
-          <button
-            className="secondary-button"
-            disabled={busy || newDepartmentName.trim().length < 2}
-            onClick={() => void addDepartment()}
-            type="button"
-          >
-            Добавить подразделение
-          </button>
-        </div>
-      ) : null}
+      {setup ? (
+        <form className="attendance-simple-form" onSubmit={saveAttendance}>
+          <label className="attendance-simple-row">
+            <span>Подразделение</span>
+            <select onChange={(event) => changeDepartment(event.target.value)} value={departmentId}>
+              {setup.departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+              <option value={newOption}>Добавить новое</option>
+            </select>
+          </label>
 
-      {setup && setup.departments.length > 0 ? (
-        <>
-          <form className="attendance-assignment-form" onSubmit={saveAssignment}>
-            <label>
-              Подразделение
-              <select
-                onChange={(event) => changeDepartment(event.target.value)}
-                value={departmentId}
-              >
-                {setup.departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Рабочая смена
-              <select
-                disabled={departmentShifts.length === 0}
-                onChange={(event) => setShiftTemplateId(event.target.value)}
-                value={shiftTemplateId}
-              >
-                {departmentShifts.length === 0 ? (
-                  <option value="">Сначала добавьте смену</option>
-                ) : null}
-                {departmentShifts.map((shift) => (
-                  <option key={shift.id} value={shift.id}>
-                    {shift.name} · {shift.startLocalTime}–{shift.endLocalTime}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="primary-button"
-              disabled={busy || departmentId.length === 0 || shiftTemplateId.length === 0}
-              type="submit"
-            >
-              Назначить сотруднику
-            </button>
-          </form>
-
-          <details className="attendance-shift-creator" open={departmentShifts.length === 0}>
-            <summary>Добавить новую смену</summary>
-            <label>
-              Название смены
+          {createsDepartment ? (
+            <label className="attendance-simple-row">
+              <span>Название подразделения</span>
               <input
-                onChange={(event) => setNewShiftName(event.target.value)}
-                placeholder="Например: Дневная смена"
-                value={newShiftName}
+                onChange={(event) => setNewDepartmentName(event.target.value)}
+                placeholder="Например: Кондитерский цех"
+                value={newDepartmentName}
               />
             </label>
-            <div className="attendance-time-grid">
-              <label>
-                Начало
+          ) : null}
+
+          <label className="attendance-simple-row">
+            <span>Рабочая смена</span>
+            <select
+              disabled={createsDepartment}
+              onChange={(event) => {
+                setShiftTemplateId(event.target.value);
+                setError("");
+                setSuccess("");
+              }}
+              value={createsDepartment ? newOption : shiftTemplateId}
+            >
+              {departmentShifts.map((shift) => (
+                <option key={shift.id} value={shift.id}>
+                  {shift.name} · {shift.startLocalTime}–{shift.endLocalTime}
+                </option>
+              ))}
+              <option value={newOption}>Добавить новую</option>
+            </select>
+          </label>
+
+          {createsShift ? (
+            <>
+              <label className="attendance-simple-row">
+                <span>Название смены</span>
+                <input
+                  onChange={(event) => setNewShiftName(event.target.value)}
+                  placeholder="Например: Дневная смена"
+                  value={newShiftName}
+                />
+              </label>
+              <label className="attendance-simple-row">
+                <span>Начало</span>
                 <input
                   onChange={(event) => setStartLocalTime(event.target.value)}
                   type="time"
                   value={startLocalTime}
                 />
               </label>
-              <label>
-                Окончание
+              <label className="attendance-simple-row">
+                <span>Окончание</span>
                 <input
                   onChange={(event) => setEndLocalTime(event.target.value)}
                   type="time"
                   value={endLocalTime}
                 />
               </label>
-            </div>
-            <label className="attendance-checkbox">
-              <input
-                checked={crossesMidnight}
-                onChange={(event) => setCrossesMidnight(event.target.checked)}
-                type="checkbox"
-              />
-              Ночная смена заканчивается на следующий день
-            </label>
-            <button
-              className="secondary-button"
-              disabled={busy || newShiftName.trim().length < 2}
-              onClick={() => void addShift()}
-              type="button"
-            >
-              Создать смену
-            </button>
-          </details>
+              <label className="attendance-simple-checkbox">
+                <input
+                  checked={crossesMidnight}
+                  onChange={(event) => setCrossesMidnight(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Смена заканчивается на следующий день</span>
+              </label>
+            </>
+          ) : null}
 
-          <div className="attendance-setup-inline attendance-setup-inline--secondary">
-            <strong>Нет нужного подразделения?</strong>
-            <input
-              aria-label="Название дополнительного подразделения"
-              onChange={(event) => setNewDepartmentName(event.target.value)}
-              placeholder="Название подразделения"
-              value={newDepartmentName}
-            />
-            <button
-              className="secondary-button"
-              disabled={busy || newDepartmentName.trim().length < 2}
-              onClick={() => void addDepartment()}
-              type="button"
-            >
-              Добавить
-            </button>
-          </div>
-        </>
+          {error ? (
+            <p className="attendance-simple-message attendance-simple-message--error">{error}</p>
+          ) : null}
+          {success ? <p className="attendance-simple-message">{success}</p> : null}
+
+          <button
+            className="primary-button attendance-simple-submit"
+            disabled={!formIsReady}
+            type="submit"
+          >
+            {busy ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </form>
       ) : null}
-
-      {error ? <p className="form-error">{error}</p> : null}
-      {success ? <p className="attendance-setup-success">{success}</p> : null}
     </section>
   );
 }
