@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { getSession } from "../lib/api";
-import { destinationsFor, primaryDestinationFor } from "../lib/navigation";
+import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
 
 export function AppHome() {
@@ -73,7 +73,7 @@ export function AppHome() {
         <span aria-hidden="true">{primary.symbol}</span>
         <div>
           <small>Основная работа</small>
-          <strong>{primary.label}</strong>
+          <strong>{destinationLabelFor(primary, roles)}</strong>
         </div>
         <i aria-hidden="true">›</i>
       </Link>
@@ -86,7 +86,7 @@ export function AppHome() {
             .map((destination) => (
               <Link href={destination.href} key={destination.href}>
                 <span aria-hidden="true">{destination.symbol}</span>
-                <strong>{destination.label}</strong>
+                <strong>{destinationLabelFor(destination, roles)}</strong>
               </Link>
             ))}
           <Link href="/notifications">

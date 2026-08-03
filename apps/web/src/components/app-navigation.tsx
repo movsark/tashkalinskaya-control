@@ -6,7 +6,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { getNotificationsWorkspace, getSession } from "../lib/api";
-import { destinationsFor, primaryDestinationFor } from "../lib/navigation";
+import {
+  destinationLabelFor,
+  destinationShortLabelFor,
+  destinationsFor,
+  primaryDestinationFor,
+} from "../lib/navigation";
 
 const hiddenPaths = new Set([
   "/activate",
@@ -82,7 +87,7 @@ export function AppNavigation() {
         </Link>
         <Link className={pathname === primary.href ? "is-active" : ""} href={primary.href}>
           <span aria-hidden="true">{primary.symbol}</span>
-          <small>{primary.shortLabel}</small>
+          <small>{destinationShortLabelFor(primary, roles)}</small>
         </Link>
         <Link className={pathname === "/notifications" ? "is-active" : ""} href="/notifications">
           <span aria-hidden="true">!</span>
@@ -123,7 +128,7 @@ export function AppNavigation() {
               {destinations.map((destination) => (
                 <Link href={destination.href} key={destination.href}>
                   <span aria-hidden="true">{destination.symbol}</span>
-                  <strong>{destination.label}</strong>
+                  <strong>{destinationLabelFor(destination, roles)}</strong>
                   <i aria-hidden="true">›</i>
                 </Link>
               ))}

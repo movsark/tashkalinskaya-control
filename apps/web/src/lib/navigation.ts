@@ -3,6 +3,8 @@ import type { RoleCode } from "@tashkalinskaya/contracts";
 export interface AppDestination {
   readonly href: string;
   readonly label: string;
+  readonly driverLabel?: string;
+  readonly driverShortLabel?: string;
   readonly shortLabel: string;
   readonly symbol: string;
   readonly roles: readonly RoleCode[];
@@ -58,9 +60,9 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/logistics/today",
-    label: "Маршрут водителя",
+    label: "Моя погрузка",
     roles: ["ADMIN", "DRIVER", "MANAGER"],
-    shortLabel: "Маршрут",
+    shortLabel: "Погрузка",
     symbol: "М",
   },
   {
@@ -79,6 +81,8 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/planning",
+    driverLabel: "Моя норма",
+    driverShortLabel: "Норма",
     label: "Нормы и календарь",
     roles: ["ADMIN", "DRIVER", "MANAGER"],
     shortLabel: "Нормы",
@@ -139,6 +143,28 @@ export function destinationsFor(roles: readonly RoleCode[]): readonly AppDestina
   return appDestinations.filter((destination) =>
     destination.roles.some((role) => roles.includes(role)),
   );
+}
+
+export function destinationLabelFor(
+  destination: AppDestination,
+  roles: readonly RoleCode[],
+): string {
+  return isRegularDriver(roles) && destination.driverLabel
+    ? destination.driverLabel
+    : destination.label;
+}
+
+export function destinationShortLabelFor(
+  destination: AppDestination,
+  roles: readonly RoleCode[],
+): string {
+  return isRegularDriver(roles) && destination.driverShortLabel
+    ? destination.driverShortLabel
+    : destination.shortLabel;
+}
+
+function isRegularDriver(roles: readonly RoleCode[]): boolean {
+  return roles.includes("DRIVER") && !roles.some((role) => ["ADMIN", "MANAGER"].includes(role));
 }
 
 export function primaryDestinationFor(roles: readonly RoleCode[]): AppDestination {
