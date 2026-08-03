@@ -6,11 +6,13 @@ import type { EmployeeListResponse, EmployeeSummary } from "@tashkalinskaya/cont
 import type {
   CreateEmployeeDto,
   CreateEmployeeInvitationDto,
+  DeleteInvitedEmployeeDto,
   IssueRecoveryDto,
   ReplaceRolesDto,
   RevokeDeviceDto,
   RoleInputDto,
   UpdateEmployeeStatusDto,
+  UpdateEmployeeProfileDto,
 } from "./identity.dto";
 import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
@@ -115,6 +117,67 @@ export class EmployeesService {
       status: dto.status,
       version: dto.version,
     });
+  }
+
+  async updateProfile(
+    employeeId: string,
+    dto: UpdateEmployeeProfileDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ): Promise<EmployeeSummary> {
+    try {
+      return await this.repository.updateEmployeeProfile({
+        actorEmployeeId,
+        correlationId,
+        employeeId,
+        fullName: dto.fullName.trim(),
+        loginNormalized: this.crypto.normalizeLogin(dto.login),
+        personnelNumber: dto.personnelNumber.trim(),
+        personnelNumberNormalized: this.crypto.normalizePersonnelNumber(dto.personnelNumber),
+        reason: dto.reason.trim(),
+        version: dto.version,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: "EMPLOYEE_ALREADY_EXISTS",
+          message: "Логин или табельный номер уже используется",
+        });
+      }
+      throw error;
+    }
+  }
+
+  async deleteInvitedEmployee(
+    employeeId: string,
+    dto: DeleteInvitedEmployeeDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ): Promise<void> {
+    await this.repository.deleteInvitedEmployee({
+      actorEmployeeId,
+      correlationId,
+      employeeId,
+      reason: dto.reason.trim(),
+      version: dto.version,
+    });
+  }
+
+  async reissueActivation(
+    employeeId: string,
+    dto: IssueRecoveryDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ): Promise<{ activationCode: string; expiresAt: string }> {
+    const activationCode = this.crypto.generateAccessCode();
+    const result = await this.repository.reissueActivation({
+      actorEmployeeId,
+      correlationId,
+      employeeId,
+      reason: dto.reason.trim(),
+      tokenHash: this.crypto.hashAccessCode(activationCode),
+    });
+    return { activationCode, expiresAt: result.expiresAt.toISOString() };
   }
 
   async replaceRoles(

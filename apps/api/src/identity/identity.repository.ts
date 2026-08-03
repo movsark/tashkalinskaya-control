@@ -1158,6 +1158,174 @@ export class IdentityRepository {
     return this.getEmployee(input.employeeId);
   }
 
+  async updateEmployeeProfile(input: {
+    actorEmployeeId: string;
+    correlationId: string;
+    employeeId: string;
+    fullName: string;
+    loginNormalized: string;
+    personnelNumber: string;
+    personnelNumberNormalized: string;
+    reason: string;
+    version: number;
+  }): Promise<EmployeeSummary> {
+    await this.database.transaction(async (client) => {
+      const result = await client.query(
+        `
+          update identity.employee
+          set
+            full_name = $2,
+            personnel_number = $3,
+            personnel_number_normalized = $4,
+            updated_at = now(),
+            version = version + 1
+          where id = $1 and version = $5
+          returning id
+        `,
+        [
+          input.employeeId,
+          input.fullName,
+          input.personnelNumber,
+          input.personnelNumberNormalized,
+          input.version,
+        ],
+      );
+      if (result.rowCount !== 1)
+        throw new ConflictException("Карточка уже изменена другим пользователем");
+      await client.query(
+        `
+          update identity.user_account
+          set login_normalized = $2, updated_at = now(), version = version + 1
+          where employee_id = $1
+        `,
+        [input.employeeId, input.loginNormalized],
+      );
+      await this.insertAudit(client, {
+        action: "EMPLOYEE_PROFILE_CHANGED",
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: {
+          fullName: input.fullName,
+          login: input.loginNormalized,
+          personnelNumber: input.personnelNumber,
+          reason: input.reason,
+        },
+        objectId: input.employeeId,
+        objectType: "EMPLOYEE",
+      });
+    });
+    return this.getEmployee(input.employeeId);
+  }
+
+  async reissueActivation(input: {
+    actorEmployeeId: string;
+    correlationId: string;
+    employeeId: string;
+    reason: string;
+    tokenHash: string;
+  }): Promise<{ expiresAt: Date }> {
+    return this.database.transaction(async (client) => {
+      const account = await client.query<{ account_id: string; account_status: AccountStatus }>(
+        `
+          select ua.id as account_id, ua.status as account_status
+          from identity.user_account ua
+          where ua.employee_id = $1
+          for update
+        `,
+        [input.employeeId],
+      );
+      const selected = account.rows[0];
+      if (selected === undefined) throw new NotFoundException("Сотрудник не найден");
+      if (selected.account_status !== "INVITED") {
+        throw new ConflictException("Повторная активация доступна только до первого входа");
+      }
+      await client.query(
+        `
+          update identity.access_token
+          set consumed_at = now()
+          where account_id = $1 and purpose = 'ACTIVATION' and consumed_at is null
+        `,
+        [selected.account_id],
+      );
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await client.query(
+        `
+          insert into identity.access_token (
+            id, account_id, purpose, token_hash, expires_at, created_by
+          ) values ($1, $2, 'ACTIVATION', $3, $4, $5)
+        `,
+        [randomUUID(), selected.account_id, input.tokenHash, expiresAt, input.actorEmployeeId],
+      );
+      await this.insertAudit(client, {
+        action: "EMPLOYEE_ACTIVATION_REISSUED",
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: { expiresAt: expiresAt.toISOString(), reason: input.reason },
+        objectId: input.employeeId,
+        objectType: "EMPLOYEE",
+      });
+      return { expiresAt };
+    });
+  }
+
+  async deleteInvitedEmployee(input: {
+    actorEmployeeId: string;
+    correlationId: string;
+    employeeId: string;
+    reason: string;
+    version: number;
+  }): Promise<void> {
+    if (input.employeeId === input.actorEmployeeId) {
+      throw new ConflictException("Нельзя удалить собственную учетную запись");
+    }
+    await this.database.transaction(async (client) => {
+      const account = await client.query<{
+        account_id: string;
+        account_status: AccountStatus;
+        employee_version: number;
+      }>(
+        `
+          select ua.id as account_id, ua.status as account_status, e.version as employee_version
+          from identity.employee e
+          join identity.user_account ua on ua.employee_id = e.id
+          where e.id = $1
+          for update
+        `,
+        [input.employeeId],
+      );
+      const selected = account.rows[0];
+      if (selected === undefined) throw new NotFoundException("Сотрудник не найден");
+      if (selected.employee_version !== input.version) {
+        throw new ConflictException("Карточка уже изменена другим пользователем");
+      }
+      if (selected.account_status !== "INVITED") {
+        throw new ConflictException(
+          "Активного сотрудника нельзя удалить: используйте статус «В архиве»",
+        );
+      }
+      await client.query(
+        "delete from attendance.employee_shift_assignment where employee_id = $1",
+        [input.employeeId],
+      );
+      await client.query("delete from identity.access_token where account_id = $1", [
+        selected.account_id,
+      ]);
+      await client.query("delete from identity.role_assignment where employee_id = $1", [
+        input.employeeId,
+      ]);
+      await client.query("delete from identity.user_account where id = $1", [selected.account_id]);
+      await client.query("delete from identity.employee where id = $1", [input.employeeId]);
+      await this.insertAudit(client, {
+        action: "INVITED_EMPLOYEE_DELETED",
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: { reason: input.reason },
+        objectId: input.employeeId,
+        objectType: "EMPLOYEE",
+      });
+    });
+  }
+
   async replaceRoles(input: {
     actorEmployeeId: string;
     correlationId: string;

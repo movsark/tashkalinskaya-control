@@ -275,6 +275,10 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.goto("/employees");
+    await expect(page.getByRole("button", { name: "Управление" })).toHaveCount(0);
+    await page.getByLabel("Поиск сотрудника").fill("assignment-user");
+    await expect(page.getByText("Найдено: 1")).toBeVisible();
+    await page.getByRole("button", { name: /Сотрудник для назначения/u }).click();
     const managementButton = page.getByRole("button", { name: "Управление" });
     await expect(managementButton).toBeVisible();
     expect((await managementButton.boundingBox())?.height).toBeGreaterThanOrEqual(48);
@@ -320,6 +324,154 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByRole("button", { name: "Назад к сотрудникам" }).click();
     await expect(page).toHaveURL(/\/employees$/u);
     await expect(page.getByRole("region", { name: "Список сотрудников" })).toBeVisible();
+  });
+
+  test("an administrator corrects an invited employee, reissues QR and removes an erroneous record", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    const employeeId = "20000000-0000-4000-8000-000000000060";
+    const departmentId = "20000000-0000-4000-8000-000000000061";
+    const shiftTemplateId = "20000000-0000-4000-8000-000000000062";
+    let employee = {
+      accountStatus: "INVITED",
+      departmentId,
+      employmentStatus: "ACTIVE",
+      fullName: "Ошибочная Запись",
+      id: employeeId,
+      login: "wrong-login",
+      personnelNumber: "WRONG-1",
+      roles: [
+        {
+          id: "20000000-0000-4000-8000-000000000063",
+          roleCode: "ATTENDANCE_ONLY",
+          scopeId: null,
+          scopeType: "FACTORY",
+        },
+      ],
+      version: 1,
+    };
+    let profileRequest: unknown = null;
+    let activationRequest: unknown = null;
+    let deleteRequest: unknown = null;
+
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-admin-edit",
+        deviceId: "20000000-0000-4000-8000-000000000064",
+        employee: {
+          ...employee,
+          accountStatus: "ACTIVE",
+          fullName: "Администратор кадров",
+          id: "20000000-0000-4000-8000-000000000065",
+          login: "edit-admin",
+          personnelNumber: "ADMIN-EDIT",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000066",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/employees/invitations/options", (route) =>
+      json(route, { roles: [] }),
+    );
+    await page.route("**/api/v1/employees", (route) =>
+      json(route, { items: [employee], total: 1 }),
+    );
+    await page.route(`**/api/v1/employees/${employeeId}/access`, (route) =>
+      json(route, { devices: [], employee }),
+    );
+    await page.route(`**/api/v1/employees/${employeeId}/profile`, async (route) => {
+      profileRequest = route.request().postDataJSON();
+      const payload = profileRequest as {
+        fullName: string;
+        login: string;
+        personnelNumber: string;
+      };
+      employee = {
+        ...employee,
+        fullName: payload.fullName,
+        login: payload.login,
+        personnelNumber: payload.personnelNumber,
+        version: 2,
+      };
+      await json(route, employee);
+    });
+    await page.route(`**/api/v1/employees/${employeeId}/activation`, async (route) => {
+      activationRequest = route.request().postDataJSON();
+      await json(route, {
+        activationCode: "new-one-time-activation-code",
+        expiresAt: "2026-08-04T10:00:00.000Z",
+      });
+    });
+    await page.route(`**/api/v1/employees/${employeeId}`, async (route) => {
+      deleteRequest = route.request().postDataJSON();
+      await route.fulfill({ status: 204 });
+    });
+    await page.route("**/api/v1/attendance/setup", (route) =>
+      json(route, {
+        departments: [{ code: "TEST", id: departmentId, name: "Тестовый цех" }],
+        shifts: [
+          {
+            crossesMidnight: false,
+            departmentId,
+            endLocalTime: "18:00",
+            id: shiftTemplateId,
+            isDepartmentDefault: true,
+            name: "Смена 08:00–18:00",
+            startLocalTime: "08:00",
+          },
+        ],
+      }),
+    );
+    await page.route(`**/api/v1/attendance/setup/employees/${employeeId}`, (route) =>
+      json(route, {
+        departmentId,
+        departmentName: "Тестовый цех",
+        employeeId,
+        shiftName: "Смена 08:00–18:00",
+        shiftTemplateId,
+        validFrom: "2026-08-03",
+      }),
+    );
+
+    await page.goto("/employees");
+    await page.getByLabel("Поиск сотрудника").fill("wrong-login");
+    await page.getByRole("button", { name: /Ошибочная Запись/u }).click();
+    await page.getByRole("button", { name: "Управление" }).click();
+
+    await page.getByLabel("Фамилия, имя и отчество").fill("Мусаева Зарема Алнановна");
+    await page.getByLabel("Табельный номер").fill("E-101");
+    await page.getByLabel("Логин").fill("zarema.m");
+    await page.getByRole("button", { exact: true, name: "Сохранить изменения" }).click();
+    await expect(page.getByText("Все изменения сохранены.")).toBeVisible();
+    expect(profileRequest).toEqual({
+      fullName: "Мусаева Зарема Алнановна",
+      login: "zarema.m",
+      personnelNumber: "E-101",
+      reason: "Изменение в карточке сотрудника",
+      version: 1,
+    });
+
+    await page.getByPlaceholder("Причина выдачи QR или замены").fill("Повторная активация");
+    await page.getByRole("button", { name: "Выдать QR активации заново" }).click();
+    await expect(page.getByAltText("QR доступа сотрудника")).toBeVisible();
+    await expect(page.getByText("new-one-time-activation-code")).toBeVisible();
+    expect(activationRequest).toEqual({ reason: "Повторная активация" });
+    await page.getByRole("button", { name: "Закрыть QR" }).click();
+
+    await page.getByRole("button", { name: "Удалить ошибочную запись" }).click();
+    await expect(page.getByRole("dialog", { name: /Удалить Мусаева/u })).toBeVisible();
+    await page.getByRole("button", { name: "Да, удалить" }).click();
+    await expect(page).toHaveURL(/\/employees$/u);
+    await expect(page.getByText("Сотрудников пока нет.")).toBeVisible();
+    expect(deleteRequest).toEqual({ reason: "Ошибочно созданная запись", version: 2 });
   });
 
   test("an employee scans an invitation and completes the short registration form", async ({

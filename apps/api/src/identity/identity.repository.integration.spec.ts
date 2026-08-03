@@ -21,6 +21,8 @@ const invitedAccountId = randomUUID();
 const invitedDeviceId = randomUUID();
 const invitationId = randomUUID();
 const invitationTokenHash = `invitation-${randomUUID()}`;
+const editableEmployeeId = randomUUID();
+const editableTokenId = randomUUID();
 
 describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   beforeAll(async () => {
@@ -43,6 +45,17 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   });
 
   afterAll(async () => {
+    await database.query(
+      "delete from identity.access_token where account_id in (select id from identity.user_account where employee_id = $1)",
+      [editableEmployeeId],
+    );
+    await database.query("delete from identity.role_assignment where employee_id = $1", [
+      editableEmployeeId,
+    ]);
+    await database.query("delete from identity.user_account where employee_id = $1", [
+      editableEmployeeId,
+    ]);
+    await database.query("delete from identity.employee where id = $1", [editableEmployeeId]);
     await database.query("delete from identity.session where account_id = $1", [invitedAccountId]);
     await database.query("delete from identity.employee_invitation where id = $1", [invitationId]);
     await database.query("delete from identity.role_assignment where employee_id = $1", [
@@ -124,6 +137,64 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
       ],
       employee: { id: employeeId, login },
     });
+  });
+
+  it("edits, reissues activation and safely deletes an unactivated employee", async () => {
+    const created = await repository.createEmployee({
+      actorEmployeeId: employeeId,
+      correlationId: randomUUID(),
+      employeeId: editableEmployeeId,
+      fullName: "Ошибочная запись",
+      loginNormalized: `editable-${editableEmployeeId}`,
+      personnelNumber: `E-${editableEmployeeId}`,
+      personnelNumberNormalized: `E-${editableEmployeeId}`,
+      roleAssignments: [
+        {
+          id: randomUUID(),
+          roleCode: "ATTENDANCE_ONLY",
+          scopeId: null,
+          scopeType: "FACTORY",
+        },
+      ],
+      tokenHash: `activation-${randomUUID()}`,
+      tokenId: editableTokenId,
+    });
+    expect(created).toMatchObject({ accountStatus: "INVITED", version: 1 });
+
+    const updated = await repository.updateEmployeeProfile({
+      actorEmployeeId: employeeId,
+      correlationId: randomUUID(),
+      employeeId: editableEmployeeId,
+      fullName: "Иванова Марина",
+      loginNormalized: `corrected-${editableEmployeeId}`,
+      personnelNumber: `C-${editableEmployeeId}`,
+      personnelNumberNormalized: `C-${editableEmployeeId}`,
+      reason: "Исправление данных",
+      version: created.version,
+    });
+    expect(updated).toMatchObject({
+      fullName: "Иванова Марина",
+      login: `corrected-${editableEmployeeId}`,
+      version: 2,
+    });
+
+    const activation = await repository.reissueActivation({
+      actorEmployeeId: employeeId,
+      correlationId: randomUUID(),
+      employeeId: editableEmployeeId,
+      reason: "Повторная выдача QR",
+      tokenHash: `replacement-${randomUUID()}`,
+    });
+    expect(activation.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    await repository.deleteInvitedEmployee({
+      actorEmployeeId: employeeId,
+      correlationId: randomUUID(),
+      employeeId: editableEmployeeId,
+      reason: "Ошибочная запись",
+      version: updated.version,
+    });
+    await expect(repository.getEmployee(editableEmployeeId)).rejects.toMatchObject({ status: 404 });
   });
 
   it("consumes a QR invitation atomically and creates one active personal device", async () => {

@@ -8,14 +8,25 @@ import { IdentityRepository } from "./identity.repository";
 
 function createService() {
   const repository = {
+    deleteInvitedEmployee: vi.fn().mockResolvedValue(undefined),
+    reissueActivation: vi.fn().mockResolvedValue({
+      expiresAt: new Date("2026-08-04T10:00:00.000Z"),
+    }),
     replaceRoles: vi.fn().mockResolvedValue({ id: "employee-1" }),
+    updateEmployeeProfile: vi.fn().mockResolvedValue({ id: "employee-1", version: 2 }),
+  };
+  const crypto = {
+    generateAccessCode: vi.fn().mockReturnValue("new-activation-code"),
+    hashAccessCode: vi.fn().mockReturnValue("new-activation-hash"),
+    normalizeLogin: vi.fn((value: string) => value.trim().toLocaleLowerCase()),
+    normalizePersonnelNumber: vi.fn((value: string) => value.trim().toLocaleUpperCase()),
   };
   const service = new EmployeesService(
-    {} as IdentityCryptoService,
+    crypto as unknown as IdentityCryptoService,
     {} as DeviceSecurityRepository,
     repository as unknown as IdentityRepository,
   );
-  return { repository, service };
+  return { crypto, repository, service };
 }
 
 function createInvitationService() {
@@ -82,6 +93,77 @@ describe("EmployeesService role boundaries", () => {
     );
 
     expect(repository.replaceRoles).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes editable identity fields before saving the employee profile", async () => {
+    const { repository, service } = createService();
+
+    await service.updateProfile(
+      "employee-1",
+      {
+        fullName: "  Иванова Марина  ",
+        login: "  MARINA.IVANOVA ",
+        personnelNumber: "  e-101 ",
+        reason: "  Исправление ошибки  ",
+        version: 1,
+      },
+      "admin-1",
+      "correlation-profile",
+    );
+
+    expect(repository.updateEmployeeProfile).toHaveBeenCalledWith({
+      actorEmployeeId: "admin-1",
+      correlationId: "correlation-profile",
+      employeeId: "employee-1",
+      fullName: "Иванова Марина",
+      loginNormalized: "marina.ivanova",
+      personnelNumber: "e-101",
+      personnelNumberNormalized: "E-101",
+      reason: "Исправление ошибки",
+      version: 1,
+    });
+  });
+
+  it("reissues a single-use activation code for an invited employee", async () => {
+    const { repository, service } = createService();
+
+    await expect(
+      service.reissueActivation(
+        "employee-1",
+        { reason: "  Повторный QR  " },
+        "admin-1",
+        "correlation-activation",
+      ),
+    ).resolves.toEqual({
+      activationCode: "new-activation-code",
+      expiresAt: "2026-08-04T10:00:00.000Z",
+    });
+    expect(repository.reissueActivation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        employeeId: "employee-1",
+        reason: "Повторный QR",
+        tokenHash: "new-activation-hash",
+      }),
+    );
+  });
+
+  it("deletes only through the invited-employee repository boundary", async () => {
+    const { repository, service } = createService();
+
+    await service.deleteInvitedEmployee(
+      "employee-1",
+      { reason: "  Ошибочная запись  ", version: 3 },
+      "admin-1",
+      "correlation-delete",
+    );
+
+    expect(repository.deleteInvitedEmployee).toHaveBeenCalledWith({
+      actorEmployeeId: "admin-1",
+      correlationId: "correlation-delete",
+      employeeId: "employee-1",
+      reason: "Ошибочная запись",
+      version: 3,
+    });
   });
 
   it("issues a one-time invitation for the administrator-selected scoped role", async () => {

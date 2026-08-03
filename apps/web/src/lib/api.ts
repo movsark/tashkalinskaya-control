@@ -438,6 +438,48 @@ export async function updateEmployeeStatus(
   });
 }
 
+export async function updateEmployeeProfile(
+  employeeId: string,
+  input: {
+    fullName: string;
+    login: string;
+    personnelNumber: string;
+    reason: string;
+    version: number;
+  },
+  csrfToken: string,
+): Promise<EmployeeSummary> {
+  return request(`/employees/${employeeId}/profile`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PATCH",
+  });
+}
+
+export async function deleteInvitedEmployee(
+  employeeId: string,
+  input: { reason: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/employees/${employeeId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "DELETE",
+  });
+}
+
+export async function reissueEmployeeActivation(
+  employeeId: string,
+  reason: string,
+  csrfToken: string,
+): Promise<{ activationCode: string; expiresAt: string }> {
+  return request(`/employees/${employeeId}/activation`, {
+    body: JSON.stringify({ reason }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function replaceEmployeeRoles(
   employeeId: string,
   input: {

@@ -259,6 +259,39 @@ export class UpdateEmployeeStatusDto {
   version!: number;
 }
 
+export class UpdateEmployeeProfileDto {
+  @IsString()
+  @Length(2, 200)
+  fullName!: string;
+
+  @IsString()
+  @Length(1, 40)
+  personnelNumber!: string;
+
+  @IsString()
+  @Length(1, 100)
+  @Matches(/\S/u)
+  login!: string;
+
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}
+
+export class DeleteInvitedEmployeeDto {
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}
+
 export class ReplaceRolesDto {
   @IsArray()
   @ArrayMinSize(1)
