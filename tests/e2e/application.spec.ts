@@ -275,7 +275,13 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.goto("/employees");
-    await page.getByRole("button", { name: "Управление" }).click();
+    const managementButton = page.getByRole("button", { name: "Управление" });
+    await expect(managementButton).toBeVisible();
+    expect((await managementButton.boundingBox())?.height).toBeGreaterThanOrEqual(48);
+    expect(
+      await managementButton.evaluate((button) => getComputedStyle(button).backgroundColor),
+    ).not.toBe("rgba(0, 0, 0, 0)");
+    await managementButton.click();
     await expect(page.getByRole("heading", { name: "Рабочее расписание" })).toBeVisible();
     await expect(page.getByLabel("Подразделение")).toHaveValue(departmentId);
     await expect(page.getByLabel("Рабочая смена")).toHaveValue("__new__");
