@@ -105,7 +105,7 @@ export default function ReportsPage() {
 
   if (!workspace || !session || !control)
     return (
-      <main className="workspace-layout reports-page">
+      <main className="workspace-layout reports-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -114,7 +114,7 @@ export default function ReportsPage() {
     );
 
   return (
-    <main className="workspace-layout reports-page">
+    <main className="workspace-layout reports-page simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -127,8 +127,8 @@ export default function ReportsPage() {
 
       <section className="reports-hero">
         <div>
-          <p className="eyebrow">B18 · единый контроль</p>
-          <h1>Центр контроля</h1>
+          <p className="eyebrow">Руководитель</p>
+          <h1>Контроль и отчёты</h1>
           <p>
             Показатели собраны из подтверждённых операций. Выберите дату для оперативного среза.
           </p>
@@ -244,16 +244,14 @@ export default function ReportsPage() {
         </aside>
       </section>
 
-      <section className="report-registry">
-        <div className="reports-heading">
-          <div>
-            <p className="eyebrow">Архив</p>
-            <h2>Сформированные файлы</h2>
-          </div>
-          <button className="text-button" onClick={() => void load(false)}>
-            Обновить
-          </button>
-        </div>
+      <details className="report-registry workspace-more">
+        <summary>
+          <span>Готовые файлы</span>
+          <small>{workspace.jobs.length} отчётов</small>
+        </summary>
+        <button className="text-button report-registry-refresh" onClick={() => void load(false)}>
+          Обновить список
+        </button>
         <div className="report-job-list">
           {workspace.jobs.map((job) => (
             <JobCard
@@ -268,7 +266,7 @@ export default function ReportsPage() {
             <p className="logistics-empty">Отчёты ещё не формировались.</p>
           ) : null}
         </div>
-      </section>
+      </details>
     </main>
   );
 }

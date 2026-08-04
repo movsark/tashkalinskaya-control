@@ -953,6 +953,7 @@ test.describe("B20 browser and HTTP regression", () => {
   test("manager can open the control center and queue a report with CSRF", async ({ page }) => {
     let createRequest: { body: unknown; csrf: string | undefined } | null = null;
     let jobs: Record<string, unknown>[] = [];
+    await page.setViewportSize({ height: 844, width: 390 });
     await mockReportsApi(
       page,
       () => jobs,
@@ -981,15 +982,147 @@ test.describe("B20 browser and HTTP regression", () => {
     );
 
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "Центр контроля" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Контроль и отчёты" })).toBeVisible();
     await expect(page.getByText("Свободный склад")).toBeVisible();
+    await expect(page.locator(".report-registry")).not.toHaveAttribute("open");
     await page.getByRole("button", { name: "Сформировать в фоне" }).click();
     await expect(page.getByText("Отчёт поставлен в очередь")).toBeVisible();
+    await page.locator(".report-registry > summary").click();
+    await expect(page.locator(".report-job-list")).toBeVisible();
     expect(createRequest).not.toBeNull();
     expect(createRequest?.csrf).toBe("csrf-e2e-token");
     expect(createRequest?.body).toMatchObject({ format: "XLSX", reportCode: "MOVEMENTS" });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("support workspaces keep rare actions collapsed on a phone", async ({ page }) => {
+    const employeeId = "20000000-0000-4000-8000-000000000110";
+    const productId = "20000000-0000-4000-8000-000000000111";
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-support-ui",
+          deviceId: "20000000-0000-4000-8000-000000000112",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Администратор склада",
+            id: employeeId,
+            login: "support-admin",
+            personnelNumber: "SUPPORT-01",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000113",
+                roleCode: "ADMIN",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/store/workspace")) {
+        return json(route, {
+          cutoffAt: "2026-08-05T10:00:00+03:00",
+          deliveryDate: "2026-08-05",
+          draftLines: [],
+          draftVersion: 1,
+          orderId: null,
+          orderStatus: "DRAFT",
+          products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
+          serverTime: "2026-08-04T08:00:00+03:00",
+          store: {
+            code: "FACTORY",
+            id: "20000000-0000-4000-8000-000000000114",
+            name: "Фирменный магазин",
+            status: "ACTIVE",
+            version: 1,
+          },
+          versions: [],
+        });
+      }
+      if (path.endsWith("/store/late-requests")) return json(route, []);
+      if (path.endsWith("/returns/workspace")) {
+        return json(route, {
+          allocations: [],
+          dispatchDate: "2026-08-05",
+          drivers: [],
+          planPublished: false,
+          pool: [],
+          products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
+          receipts: [],
+          serverTime: "2026-08-04T08:00:00+03:00",
+          territories: [],
+        });
+      }
+      if (path.endsWith("/spoilage/workspace")) {
+        return json(route, {
+          blockedQuantity: 0,
+          drivers: [],
+          products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
+          reasons: [],
+          requests: [],
+          returnPool: [],
+          serverTime: "2026-08-04T08:00:00+03:00",
+          writtenOffQuantity: 0,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) {
+        return json(route, notificationWorkspace());
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/store");
+    await expect(page.getByRole("heading", { name: "Заказ на завтра" })).toBeVisible();
+    await expect(page.locator(".store-history-card")).not.toHaveAttribute("open");
+
+    await page.goto("/returns");
+    await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
+    await expect(page.locator(".returns-allocation-form")).not.toHaveAttribute("open");
+    await expect(page.locator(".returns-receipts")).not.toBeVisible();
+
+    await page.goto("/spoilage");
+    await expect(page.getByRole("heading", { name: "Порча и запросы на списание" })).toBeVisible();
+    await expect(page.locator(".spoilage-panel.workspace-more")).not.toHaveAttribute("open");
+
+    await page.goto("/notifications");
+    await expect(page.getByRole("heading", { name: "Уведомления" })).toBeVisible();
+    await expect(page.locator(".notifications-settings")).not.toHaveAttribute("open");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
   });
 });
+
+function notificationWorkspace() {
+  return {
+    control: null,
+    items: [],
+    preference: {
+      normalPushEnabled: true,
+      pushEnabled: true,
+      quietHoursEnd: "07:00",
+      quietHoursStart: "22:00",
+      timezone: "Europe/Moscow",
+      version: 1,
+    },
+    push: { available: false, publicKey: null, subscription: null },
+    serverTime: "2026-08-04T08:00:00+03:00",
+    summary: { criticalUnread: 0, highUnread: 0, totalUnread: 0 },
+  };
+}
 
 async function mockReportsApi(
   page: Page,
@@ -1065,19 +1198,7 @@ async function mockReportsApi(
       return json(route, { id: "20000000-0000-4000-8000-000000000001", status: "QUEUED" }, 201);
     }
     if (path.endsWith("/notifications/workspace")) {
-      return json(route, {
-        items: [],
-        preference: {
-          normalPushEnabled: true,
-          pushEnabled: true,
-          quietHoursEnd: "07:00",
-          quietHoursStart: "22:00",
-          version: 1,
-        },
-        serverTime: "2026-08-01T10:00:00.000Z",
-        summary: { criticalUnread: 0, highUnread: 0, totalUnread: 0 },
-        vapidPublicKey: null,
-      });
+      return json(route, notificationWorkspace());
     }
     return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
   });

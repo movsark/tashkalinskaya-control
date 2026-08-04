@@ -7170,6 +7170,95 @@ a {
   margin-top: 8px;
 }
 
+/* Простой мобильный вид служебных рабочих экранов */
+
+.store-history-card.workspace-more,
+.returns-panel.workspace-more,
+.spoilage-panel.workspace-more,
+.notifications-settings.workspace-more,
+.report-registry.workspace-more {
+  display: block;
+  padding: 0;
+  box-shadow: none;
+}
+
+.store-history-card.workspace-more > summary,
+.returns-panel.workspace-more > summary,
+.spoilage-panel.workspace-more > summary,
+.notifications-settings.workspace-more > summary,
+.report-registry.workspace-more > summary {
+  padding: 15px 18px;
+}
+
+.workspace-more > summary span {
+  min-width: 0;
+}
+
+.workspace-more > summary small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-align: right;
+}
+
+.store-history-card.workspace-more > .store-version-list,
+.returns-panel.workspace-more > .returns-allocations,
+.returns-panel.workspace-more > .returns-receipts,
+.spoilage-panel.workspace-more > .spoilage-list,
+.notifications-settings.workspace-more > :not(summary),
+.report-registry.workspace-more > :not(summary) {
+  margin-right: 18px;
+  margin-left: 18px;
+}
+
+.store-history-card.workspace-more > .store-version-list,
+.returns-panel.workspace-more > .returns-allocations,
+.returns-panel.workspace-more > .returns-receipts,
+.spoilage-panel.workspace-more > .spoilage-list,
+.report-registry.workspace-more > .report-job-list {
+  margin-bottom: 18px;
+}
+
+.returns-allocation-form .returns-inline-form {
+  display: grid;
+  gap: 15px;
+  margin: 0;
+  padding: 0 18px 18px;
+}
+
+.notifications-settings.workspace-more {
+  position: static;
+}
+
+.notifications-settings.workspace-more > form {
+  margin-bottom: 18px;
+}
+
+.report-registry-refresh {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 650px) {
+  .store-content-grid,
+  .returns-forms,
+  .notifications-grid,
+  .reports-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-more > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .workspace-more > summary small {
+    display: none;
+  }
+
+  .workspace-more > summary::after {
+    grid-column: 2;
+  }
+}
+
 .simple-workspace .driver-day-strip {
   margin: 0;
   padding: 12px 14px;

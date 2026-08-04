@@ -111,7 +111,7 @@ export default function NotificationsPage() {
 
   if (!data || !session || !preference)
     return (
-      <main className="workspace-layout notifications-page">
+      <main className="workspace-layout notifications-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -120,7 +120,7 @@ export default function NotificationsPage() {
     );
 
   return (
-    <main className="workspace-layout notifications-page">
+    <main className="workspace-layout notifications-page simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -133,9 +133,11 @@ export default function NotificationsPage() {
 
       <section className="notifications-hero">
         <div>
-          <p className="eyebrow">B17 · лента и Web Push</p>
-          <h1>Центр уведомлений</h1>
-          <p>Операции хранятся независимо от push. Здесь всегда остаётся подтверждённая лента.</p>
+          <p className="eyebrow">Важные события</p>
+          <h1>Уведомления</h1>
+          <p>
+            Сначала показаны непрочитанные сообщения. Нажмите на сообщение, чтобы перейти к делу.
+          </p>
         </div>
         <div className="notifications-summary">
           <Metric label="Непрочитано" value={data.summary.totalUnread} />
@@ -223,11 +225,11 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <aside className="notifications-settings">
-          <div>
-            <p className="eyebrow">Личное устройство</p>
-            <h2>Web Push</h2>
-          </div>
+        <details className="notifications-settings workspace-more">
+          <summary>
+            <span>Настройки уведомлений</span>
+            <small>{data.push.subscription ? "Push включён" : "Push не подключён"}</small>
+          </summary>
           {!data.push.available ? (
             <p className="notifications-hint">
               VAPID-ключ будет подключён в секретах Timeweb перед пилотом.
@@ -335,7 +337,7 @@ export default function NotificationsPage() {
               Сохранить настройки
             </button>
           </form>
-        </aside>
+        </details>
       </section>
     </main>
   );

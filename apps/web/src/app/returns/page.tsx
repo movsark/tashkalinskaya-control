@@ -88,7 +88,7 @@ export default function GoodReturnsPage() {
 
   if (!data || !session)
     return (
-      <main className="workspace-layout returns-page">
+      <main className="workspace-layout returns-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -102,7 +102,7 @@ export default function GoodReturnsPage() {
     .reduce((sum, item) => sum + item.allocatedQuantity - item.consumedQuantity, 0);
 
   return (
-    <main className="workspace-layout returns-page">
+    <main className="workspace-layout returns-page simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -116,7 +116,7 @@ export default function GoodReturnsPage() {
 
       <section className="returns-hero">
         <div>
-          <p className="eyebrow">B15 · общий пул</p>
+          <p className="eyebrow">Склад</p>
           <h1>Годный возврат</h1>
           <p>Примите товар от водителя, затем отдельно назначьте его территории и дате вывоза.</p>
         </div>
@@ -224,97 +224,104 @@ export default function GoodReturnsPage() {
               Принять в пул
             </button>
           </form>
-
-          <form
-            className="returns-panel"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void command(
-                "allocate",
-                async () => {
-                  await allocateGoodReturn(
-                    {
-                      dispatchDate: date,
-                      idempotencyKey: crypto.randomUUID(),
-                      productId: allocation.productId,
-                      quantity: positive(allocation.quantity),
-                      ...(allocation.reason ? { reason: allocation.reason } : {}),
-                      territoryId: allocation.territoryId,
-                    },
-                    csrf(),
-                  );
-                  setAllocation({ productId: "", quantity: "", reason: "", territoryId: "" });
-                },
-                "Возврат назначен территории.",
-              );
-            }}
-          >
-            <div>
-              <p className="eyebrow">Шаг 2</p>
-              <h2>Распределить пул</h2>
-            </div>
-            <label>
-              Товар
-              <select
-                required
-                value={allocation.productId}
-                onChange={(event) =>
-                  setAllocation({ ...allocation, productId: event.target.value })
-                }
-              >
-                <option value="">Выберите из пула</option>
-                {data.pool
-                  .filter((line) => line.availableQuantity > 0)
-                  .map((line) => (
-                    <option key={line.productId} value={line.productId}>
-                      {line.productCode} · {line.productName} · доступно {line.availableQuantity}
+          <details className="returns-panel workspace-more returns-allocation-form">
+            <summary>
+              <span>Распределить возврат</span>
+              <small>По территории и дате вывоза</small>
+            </summary>
+            <form
+              className="returns-inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void command(
+                  "allocate",
+                  async () => {
+                    await allocateGoodReturn(
+                      {
+                        dispatchDate: date,
+                        idempotencyKey: crypto.randomUUID(),
+                        productId: allocation.productId,
+                        quantity: positive(allocation.quantity),
+                        ...(allocation.reason ? { reason: allocation.reason } : {}),
+                        territoryId: allocation.territoryId,
+                      },
+                      csrf(),
+                    );
+                    setAllocation({ productId: "", quantity: "", reason: "", territoryId: "" });
+                  },
+                  "Возврат назначен территории.",
+                );
+              }}
+            >
+              <div>
+                <p className="eyebrow">Распределение</p>
+                <h2>Распределить пул</h2>
+              </div>
+              <label>
+                Товар
+                <select
+                  required
+                  value={allocation.productId}
+                  onChange={(event) =>
+                    setAllocation({ ...allocation, productId: event.target.value })
+                  }
+                >
+                  <option value="">Выберите из пула</option>
+                  {data.pool
+                    .filter((line) => line.availableQuantity > 0)
+                    .map((line) => (
+                      <option key={line.productId} value={line.productId}>
+                        {line.productCode} · {line.productName} · доступно {line.availableQuantity}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Территория
+                <select
+                  required
+                  value={allocation.territoryId}
+                  onChange={(event) =>
+                    setAllocation({ ...allocation, territoryId: event.target.value })
+                  }
+                >
+                  <option value="">Выберите территорию</option>
+                  {data.territories.map((territory) => (
+                    <option key={territory.id} value={territory.id}>
+                      № {territory.number} · {territory.name}
                     </option>
                   ))}
-              </select>
-            </label>
-            <label>
-              Территория
-              <select
-                required
-                value={allocation.territoryId}
-                onChange={(event) =>
-                  setAllocation({ ...allocation, territoryId: event.target.value })
-                }
+                </select>
+              </label>
+              <label>
+                Количество
+                <input
+                  min="1"
+                  required
+                  type="number"
+                  value={allocation.quantity}
+                  onChange={(event) =>
+                    setAllocation({ ...allocation, quantity: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Причина после публикации
+                <input
+                  required={data.planPublished}
+                  placeholder={data.planPublished ? "Обязательно" : "Необязательно"}
+                  value={allocation.reason}
+                  onChange={(event) => setAllocation({ ...allocation, reason: event.target.value })}
+                />
+              </label>
+              <button
+                className="primary-button"
+                disabled={busy === "allocate" || (data.planPublished && !isAdmin)}
               >
-                <option value="">Выберите территорию</option>
-                {data.territories.map((territory) => (
-                  <option key={territory.id} value={territory.id}>
-                    № {territory.number} · {territory.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Количество
-              <input
-                min="1"
-                required
-                type="number"
-                value={allocation.quantity}
-                onChange={(event) => setAllocation({ ...allocation, quantity: event.target.value })}
-              />
-            </label>
-            <label>
-              Причина после публикации
-              <input
-                required={data.planPublished}
-                placeholder={data.planPublished ? "Обязательно" : "Необязательно"}
-                value={allocation.reason}
-                onChange={(event) => setAllocation({ ...allocation, reason: event.target.value })}
-              />
-            </label>
-            <button
-              className="primary-button"
-              disabled={busy === "allocate" || (data.planPublished && !isAdmin)}
-            >
-              Назначить территории
-            </button>
-          </form>
+                Назначить территории
+              </button>
+            </form>
+          </details>
         </section>
       ) : null}
 
@@ -356,14 +363,13 @@ export default function GoodReturnsPage() {
         </div>
       </section>
 
-      <section className="returns-panel">
-        <div className="returns-heading">
-          <div>
-            <p className="eyebrow">Дата вывоза {formatDate(date)}</p>
-            <h2>Назначения территориям</h2>
-          </div>
-          <b>{data.allocations.length}</b>
-        </div>
+      <details className="returns-panel workspace-more">
+        <summary>
+          <span>Назначения территориям</span>
+          <small>
+            {formatDate(date)} · {data.allocations.length}
+          </small>
+        </summary>
         <div className="returns-allocations">
           {data.allocations.length ? (
             data.allocations.map((item) => {
@@ -474,15 +480,13 @@ export default function GoodReturnsPage() {
             <p className="logistics-empty">На выбранную дату возврат территориям не назначен.</p>
           )}
         </div>
-      </section>
+      </details>
 
-      <section className="returns-panel">
-        <div className="returns-heading">
-          <div>
-            <p className="eyebrow">Неизменяемый журнал</p>
-            <h2>Последние приёмки</h2>
-          </div>
-        </div>
+      <details className="returns-panel workspace-more">
+        <summary>
+          <span>Последние приёмки</span>
+          <small>{data.receipts.length} записей</small>
+        </summary>
         <div className="returns-receipts">
           {data.receipts.map((item) => (
             <article key={item.id}>
@@ -504,7 +508,7 @@ export default function GoodReturnsPage() {
             </article>
           ))}
         </div>
-      </section>
+      </details>
     </main>
   );
 }
