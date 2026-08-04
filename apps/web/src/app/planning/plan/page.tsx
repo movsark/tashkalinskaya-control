@@ -26,6 +26,10 @@ export default function ProductionPlanPage() {
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
     [session],
   );
+  const totalQuantity = useMemo(
+    () => plan?.productionLines.reduce((sum, line) => sum + line.quantity, 0) ?? 0,
+    [plan],
+  );
 
   useEffect(() => {
     getSession()
@@ -61,7 +65,7 @@ export default function ProductionPlanPage() {
   }
 
   return (
-    <main className="workspace-layout planning-layout">
+    <main className="workspace-layout planning-layout simple-workspace planning-simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -74,9 +78,9 @@ export default function ProductionPlanPage() {
 
       <section className="workspace-title planning-title">
         <div>
-          <p className="eyebrow">B09.2 · автоматический расчет</p>
+          <p className="eyebrow">Производство на выбранную дату</p>
           <h1>План производства</h1>
-          <p>Утвержденный снимок спроса по территориям и итоговые задания цехам.</p>
+          <p>Сначала показано, сколько нужно произвести. Источники расчёта открываются отдельно.</p>
         </div>
         <label>
           Дата производства
@@ -93,8 +97,8 @@ export default function ProductionPlanPage() {
 
       {!plan ? (
         <section className="planning-plan-empty">
-          <h2>План еще не опубликован</h2>
-          <p>Автоматический запуск выполняется после 10:00 по московскому времени.</p>
+          <h2>План ещё не сформирован</h2>
+          <p>Система сформирует его автоматически после 10:00 по московскому времени.</p>
           {isAdmin && session ? (
             <button
               className="button button-primary"
@@ -107,41 +111,46 @@ export default function ProductionPlanPage() {
               }
               type="button"
             >
-              {busy ? "Проверяем…" : "Запустить проверку и расчет"}
+              {busy ? "Формируем…" : "Сформировать сейчас"}
             </button>
           ) : null}
         </section>
       ) : (
         <>
-          <section className="planning-plan-meta">
+          {plan.warnings.length ? (
+            <section className="planning-plan-warning" role="alert">
+              <strong>Нужно обратить внимание</strong>
+              <p>{plan.warnings.map(warningLabel).join(" · ")}</p>
+            </section>
+          ) : null}
+
+          <section className="planning-plan-meta" aria-label="Сводка плана">
             <div>
-              <small>Версия</small>
-              <strong>№ {plan.version}</strong>
+              <small>Товаров</small>
+              <strong>{plan.productionLines.length}</strong>
             </div>
             <div>
-              <small>Попыток</small>
-              <strong>{plan.attempts}</strong>
+              <small>Всего произвести</small>
+              <strong>{totalQuantity} шт.</strong>
             </div>
             <div>
               <small>Опубликован</small>
               <strong>{dateTime(plan.publishedAt)}</strong>
             </div>
             <div>
-              <small>Контроль входов</small>
-              <code>{plan.inputHash.slice(0, 12)}</code>
+              <small>Состояние</small>
+              <strong>{plan.warnings.length ? "Есть предупреждение" : "Готов к работе"}</strong>
             </div>
           </section>
 
-          {plan.warnings.length ? (
-            <section className="planning-plan-warning">
-              <strong>План опубликован с предупреждениями</strong>
-              <p>{plan.warnings.map(warningLabel).join(" · ")}</p>
-            </section>
-          ) : null}
-
           <section className="planning-requests planning-plan-section">
-            <p className="eyebrow">Итог для цехов</p>
-            <h2>Произвести</h2>
+            <div className="planning-section-heading">
+              <div>
+                <p className="eyebrow">Главное действие</p>
+                <h2>Произвести</h2>
+              </div>
+              <span>Версия № {plan.version}</span>
+            </div>
             <div className="planning-plan-table">
               {plan.productionLines.map((line) => (
                 <PlanLine
@@ -166,40 +175,59 @@ export default function ProductionPlanPage() {
             </div>
           </section>
 
-          <section className="planning-requests planning-plan-section">
-            <p className="eyebrow">Объяснение расчета</p>
-            <h2>Спрос по направлениям</h2>
-            <div className="planning-plan-table">
-              {plan.demandLines.map((line) => (
-                <article
-                  className="planning-plan-line"
-                  key={`${line.dispatchDate}:${line.territoryId}:${line.productId}`}
-                >
-                  <div>
-                    <strong>{line.productName}</strong>
-                    <small>
-                      {line.directionKind === "STORE"
-                        ? "Фирменный магазин"
-                        : `Территория ${line.territoryNumber}`}{" "}
-                      · вывоз {shortDate(line.dispatchDate)}
-                    </small>
-                  </div>
-                  <span>
-                    Спрос <strong>{line.effectiveDemand}</strong>
-                  </span>
-                  <span>
-                    Склад <strong>{line.allocatedFreeStock}</strong>
-                  </span>
-                  <span>
-                    Возврат <strong>{line.allocatedGoodReturn}</strong>
-                  </span>
-                  <span>
-                    Новый выпуск <strong>{line.newProduction}</strong>
-                  </span>
-                </article>
-              ))}
+          <details className="workspace-more planning-calculation">
+            <summary>
+              Как рассчитан план <b>{plan.demandLines.length}</b>
+            </summary>
+            <div className="workspace-more__content">
+              <h2>Спрос по направлениям</h2>
+              <div className="planning-plan-table">
+                {plan.demandLines.map((line) => (
+                  <article
+                    className="planning-plan-line planning-demand-line"
+                    key={`${line.dispatchDate}:${line.territoryId}:${line.productId}`}
+                  >
+                    <div>
+                      <strong>{line.productName}</strong>
+                      <small>
+                        {line.directionKind === "STORE"
+                          ? "Фирменный магазин"
+                          : `Территория ${line.territoryNumber}`}{" "}
+                        · вывоз {shortDate(line.dispatchDate)}
+                      </small>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Спрос</dt>
+                        <dd>{line.effectiveDemand}</dd>
+                      </div>
+                      <div>
+                        <dt>Со склада</dt>
+                        <dd>{line.allocatedFreeStock}</dd>
+                      </div>
+                      <div>
+                        <dt>Из возврата</dt>
+                        <dd>{line.allocatedGoodReturn}</dd>
+                      </div>
+                      <div>
+                        <dt>Произвести</dt>
+                        <dd>{line.newProduction}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
             </div>
-          </section>
+          </details>
+
+          <details className="workspace-more planning-technical">
+            <summary>Технические сведения</summary>
+            <div className="workspace-more__content planning-technical-grid">
+              <span>Версия: № {plan.version}</span>
+              <span>Попыток формирования: {plan.attempts}</span>
+              <span>Контроль входов: {plan.inputHash.slice(0, 12)}</span>
+            </div>
+          </details>
         </>
       )}
     </main>
@@ -229,29 +257,38 @@ function PlanLine({
       </div>
       <strong>{line.quantity} шт.</strong>
       {isAdmin ? (
-        <div className="planning-plan-override">
-          <input
-            aria-label={`Новое количество ${line.productName}`}
-            min="0"
-            onChange={(event) => setQuantity(Number(event.target.value))}
-            type="number"
-            value={quantity}
-          />
-          <input
-            aria-label={`Причина изменения ${line.productName}`}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="Причина изменения"
-            value={reason}
-          />
-          <button
-            className="button button-secondary"
-            disabled={busy || reason.trim().length < 3}
-            onClick={() => onOverride(quantity, reason.trim())}
-            type="button"
-          >
-            Изменить
-          </button>
-        </div>
+        <details className="planning-plan-edit">
+          <summary>Изменить план</summary>
+          <div className="planning-plan-override">
+            <label>
+              Новое количество
+              <input
+                aria-label={`Новое количество ${line.productName}`}
+                min="0"
+                onChange={(event) => setQuantity(Number(event.target.value))}
+                type="number"
+                value={quantity}
+              />
+            </label>
+            <label>
+              Причина
+              <input
+                aria-label={`Причина изменения ${line.productName}`}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Обязательно укажите причину"
+                value={reason}
+              />
+            </label>
+            <button
+              className="button button-secondary"
+              disabled={busy || reason.trim().length < 3}
+              onClick={() => onOverride(quantity, reason.trim())}
+              type="button"
+            >
+              Сохранить новую версию
+            </button>
+          </div>
+        </details>
       ) : null}
     </article>
   );

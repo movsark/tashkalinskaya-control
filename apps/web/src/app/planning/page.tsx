@@ -47,6 +47,24 @@ export default function PlanningPage() {
       ),
     [session],
   );
+  const availableTerritories = useMemo(() => {
+    if (!setup || !session) return [];
+    const roles = session.employee.roles;
+    const canViewAll = roles.some((role) =>
+      ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role.roleCode),
+    );
+    const allowed = roles
+      .filter((role) => role.roleCode === "DRIVER" && role.scopeType === "TERRITORY")
+      .map((role) => role.scopeId);
+    return setup.territories.filter(
+      (territory) =>
+        territory.status === "ACTIVE" && (canViewAll || allowed.includes(territory.id)),
+    );
+  }, [session, setup]);
+  const selectedTerritory = availableTerritories.find((item) => item.id === territoryId);
+  const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
+  const decidedRequests = requests.filter((request) => request.status !== "SUBMITTED");
+  const weekTotal = week?.norms.reduce((sum, norm) => sum + norm.quantity, 0) ?? 0;
 
   useEffect(() => {
     async function load() {
@@ -106,14 +124,14 @@ export default function PlanningPage() {
   }
 
   return (
-    <main className="workspace-layout planning-layout">
+    <main className="workspace-layout planning-layout simple-workspace planning-simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Нормы · <Link href="/planning/plan">план производства</Link> ·{" "}
-            <Link href="/logistics">логистика</Link> · <Link href="/catalog">товары</Link>
+            {isDriver ? "Неделя и запросы на изменение" : "Нормы, решения и календарь"} ·{" "}
+            <Link href="/planning/plan">план производства</Link>
           </small>
         </div>
       </header>
@@ -123,23 +141,29 @@ export default function PlanningPage() {
           <p className="eyebrow">Недельное планирование</p>
           <h1>{isDriver ? "Моя норма" : "Нормы и календарь"}</h1>
           <p>
-            Постоянные и разовые значения не складываются. Все изменения проходят решение
-            администратора.
+            {isDriver
+              ? "Посмотрите неделю и при необходимости предложите одно изменение администратору."
+              : "Проверьте неделю, обработайте запросы водителей и настройте исключения календаря."}
           </p>
         </div>
         <div className="planning-filters">
-          <label>
-            Территория
-            <select value={territoryId} onChange={(event) => setTerritoryId(event.target.value)}>
-              {setup?.territories
-                .filter((item) => item.status === "ACTIVE")
-                .map((item) => (
+          {availableTerritories.length > 1 ? (
+            <label>
+              Территория
+              <select value={territoryId} onChange={(event) => setTerritoryId(event.target.value)}>
+                {availableTerritories.map((item) => (
                   <option key={item.id} value={item.id}>
                     Территория {item.number}
                   </option>
                 ))}
-            </select>
-          </label>
+              </select>
+            </label>
+          ) : (
+            <div className="planning-fixed-filter">
+              <small>Территория</small>
+              <strong>{selectedTerritory ? `Территория ${selectedTerritory.number}` : "—"}</strong>
+            </div>
+          )}
           <label>
             Неделя
             <input
@@ -154,90 +178,33 @@ export default function PlanningPage() {
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="logistics-success">{message}</p> : null}
 
-      <section className="planning-week-grid">
-        {weekDays(weekStart).map((day) => {
-          const norms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
-          const links = week?.calendar.filter((link) => link.dispatchDate === day.date) ?? [];
-          return (
-            <article
-              className={`planning-day ${day.weekday === 5 ? "is-closed" : ""}`}
-              key={day.date}
-            >
-              <header>
-                <strong>{day.label}</strong>
-                <span>{shortDate(day.date)}</span>
-              </header>
-              {links.length ? (
-                links.map((link) => (
-                  <small key={link.id}>
-                    Производство {shortDate(link.productionDate)} · до {timeLabel(link.cutoffAt)}
-                  </small>
-                ))
-              ) : (
-                <small>
-                  {day.weekday === 5
-                    ? "Вывоз закрыт без исключения"
-                    : "Связь календаря не опубликована"}
-                </small>
-              )}
-              <div className="planning-norm-list">
-                {norms.length ? (
-                  norms.map((norm) => (
-                    <div key={norm.id}>
-                      <span>{norm.productName}</span>
-                      <strong>{norm.quantity} шт.</strong>
-                    </div>
-                  ))
-                ) : (
-                  <p>Норма не задана</p>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="planning-workspace-grid">
-        {session && setup && !isAdmin ? (
-          <DriverRequestForm
-            busy={busy}
-            onSubmit={(input) =>
-              action(async () => {
-                const created = await createNormChangeRequest(input, session.csrfToken);
-                await reload(
-                  created.status === "MISSED_CUTOFF"
-                    ? "Отсечка уже наступила; запрос сохранен как просроченный."
-                    : "Запрос отправлен администратору.",
-                );
-              })
-            }
-            products={setup.products}
-            territoryId={territoryId}
-          />
-        ) : null}
-
-        {session && setup && isAdmin ? (
-          <CalendarForm
-            busy={busy}
-            onSubmit={(input) =>
-              action(async () => {
-                await createPlanningCalendarLink(input, session.csrfToken);
-                await reload("Календарная связь опубликована.");
-              })
-            }
-            territories={setup.territories}
-          />
-        ) : null}
+      <section className="planning-summary" aria-label="Сводка нормы">
+        <article>
+          <span>Неделя</span>
+          <strong>{shortDate(weekStart)}</strong>
+        </article>
+        <article>
+          <span>Всего по норме</span>
+          <strong>{weekTotal} шт.</strong>
+        </article>
+        <article>
+          <span>{isAdmin ? "Ждут решения" : "Запросы недели"}</span>
+          <strong>
+            {isAdmin
+              ? submittedRequests.length
+              : (week?.requests.filter((request) => request.status === "SUBMITTED").length ?? 0)}
+          </strong>
+        </article>
       </section>
 
       {isAdmin && session ? (
-        <section className="planning-requests">
+        <section className="planning-requests planning-requests-priority">
           <div>
-            <p className="eyebrow">Очередь администратора</p>
+            <p className="eyebrow">Требуют решения</p>
             <h2>Запросы водителей</h2>
           </div>
-          {requests.length ? (
-            requests.map((request) => (
+          {submittedRequests.length ? (
+            submittedRequests.map((request) => (
               <RequestCard
                 busy={busy}
                 key={request.id}
@@ -255,9 +222,129 @@ export default function PlanningPage() {
               />
             ))
           ) : (
-            <p className="logistics-empty">Запросов пока нет.</p>
+            <p className="planning-empty-note">Новых запросов нет.</p>
           )}
         </section>
+      ) : null}
+
+      <section className="planning-week-list" aria-label="Норма на неделю">
+        <div className="planning-section-heading">
+          <div>
+            <p className="eyebrow">Текущая неделя</p>
+            <h2>Норма по дням</h2>
+          </div>
+          <span>Нажмите день, чтобы увидеть товары</span>
+        </div>
+        {weekDays(weekStart).map((day) => {
+          const norms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
+          const links = week?.calendar.filter((link) => link.dispatchDate === day.date) ?? [];
+          const total = norms.reduce((sum, norm) => sum + norm.quantity, 0);
+          return (
+            <details
+              className={`planning-day ${day.weekday === 5 ? "is-closed" : ""}`}
+              key={day.date}
+            >
+              <summary>
+                <div>
+                  <strong>{day.label}</strong>
+                  <small>{shortDate(day.date)}</small>
+                </div>
+                <span>
+                  {day.weekday === 5 ? "Вывоз закрыт" : `${norms.length} тов. · ${total} шт.`}
+                </span>
+              </summary>
+              <div className="planning-day-content">
+                {links.length ? (
+                  links.map((link) => (
+                    <p className="planning-calendar-note" key={link.id}>
+                      Производство {shortDate(link.productionDate)} · изменить до{" "}
+                      {timeLabel(link.cutoffAt)}
+                    </p>
+                  ))
+                ) : (
+                  <p className="planning-calendar-note">
+                    {day.weekday === 5
+                      ? "Вывоз закрыт. Исключение может добавить администратор."
+                      : "Календарная связь пока не опубликована."}
+                  </p>
+                )}
+                <div className="planning-norm-list">
+                  {norms.length ? (
+                    norms.map((norm) => (
+                      <div key={norm.id}>
+                        <span>{norm.productName}</span>
+                        <strong>{norm.quantity} шт.</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <p>Норма не задана.</p>
+                  )}
+                </div>
+              </div>
+            </details>
+          );
+        })}
+      </section>
+
+      <section className="planning-actions">
+        {session && setup && isDriver ? (
+          <details className="workspace-more">
+            <summary>Предложить изменение нормы</summary>
+            <div className="workspace-more__content">
+              <DriverRequestForm
+                busy={busy}
+                onSubmit={(input) =>
+                  action(async () => {
+                    const created = await createNormChangeRequest(input, session.csrfToken);
+                    await reload(
+                      created.status === "MISSED_CUTOFF"
+                        ? "Изменять уже поздно: запрос сохранён как просроченный."
+                        : "Запрос отправлен администратору.",
+                    );
+                  })
+                }
+                products={setup.products}
+                territoryId={territoryId}
+              />
+            </div>
+          </details>
+        ) : null}
+
+        {session && setup && isAdmin ? (
+          <details className="workspace-more">
+            <summary>Добавить праздник или внеплановый вывоз</summary>
+            <div className="workspace-more__content">
+              <CalendarForm
+                busy={busy}
+                onSubmit={(input) =>
+                  action(async () => {
+                    await createPlanningCalendarLink(input, session.csrfToken);
+                    await reload("Календарное исключение опубликовано.");
+                  })
+                }
+                territories={setup.territories}
+              />
+            </div>
+          </details>
+        ) : null}
+      </section>
+
+      {isAdmin && decidedRequests.length ? (
+        <details className="workspace-more planning-history">
+          <summary>
+            История решений <b>{decidedRequests.length}</b>
+          </summary>
+          <div className="workspace-more__content">
+            {decidedRequests.map((request) => (
+              <RequestCard
+                busy={busy}
+                key={request.id}
+                request={request}
+                onDecision={async () => undefined}
+              />
+            ))}
+          </div>
+        </details>
       ) : null}
     </main>
   );

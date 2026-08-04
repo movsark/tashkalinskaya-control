@@ -742,6 +742,206 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
+  test("a driver sees a compact weekly norm and opens change form only when needed", async ({
+    page,
+  }) => {
+    const territoryId = "20000000-0000-4000-8000-000000000090";
+    const productId = "20000000-0000-4000-8000-000000000091";
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-driver-norm-ui",
+        deviceId: "20000000-0000-4000-8000-000000000092",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Водитель нормы",
+          id: "20000000-0000-4000-8000-000000000093",
+          login: "driver-norm-ui",
+          personnelNumber: "DRIVER-NORM",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000094",
+              roleCode: "DRIVER",
+              scopeId: territoryId,
+              scopeType: "TERRITORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/planning/setup", (route) =>
+      json(route, {
+        products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
+        territories: [
+          {
+            description: null,
+            id: territoryId,
+            name: "Территория 3",
+            number: 3,
+            sortOrder: 3,
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/planning/weeks/*", (route) =>
+      json(route, {
+        calendar: [
+          {
+            calendarVersion: 1,
+            comment: null,
+            cutoffAt: "2026-08-02T10:00:00+03:00",
+            dispatchDate: "2026-08-03",
+            exceptionType: "STANDARD",
+            id: "20000000-0000-4000-8000-000000000095",
+            productionDate: "2026-08-02",
+            reasonCode: "STANDARD",
+            territoryId,
+            territoryNumber: 3,
+          },
+        ],
+        norms: [
+          {
+            id: "20000000-0000-4000-8000-000000000096",
+            productCode: "T-001",
+            productId,
+            productName: "Торт тестовый",
+            quantity: 10,
+            source: "IMPORT",
+            territoryId,
+            validFrom: "2026-08-03",
+            validUntil: null,
+            weekday: 1,
+          },
+        ],
+        requests: [],
+        territoryId,
+        weekStart: "2026-08-03",
+      }),
+    );
+
+    await page.goto("/planning");
+    await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
+    const productInDay = page.locator(".planning-day-content").getByText("Торт тестовый", {
+      exact: true,
+    });
+    await expect(productInDay).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: "Предложить изменение" })).not.toBeVisible();
+
+    await page.locator(".planning-day > summary").filter({ hasText: "Понедельник" }).click();
+    await expect(productInDay).toBeVisible();
+    await page.getByText("Предложить изменение нормы", { exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Предложить изменение" })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("an administrator sees production quantities before calculation details", async ({
+    page,
+  }) => {
+    const productId = "20000000-0000-4000-8000-000000000100";
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-admin-plan-ui",
+        deviceId: "20000000-0000-4000-8000-000000000101",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Администратор плана",
+          id: "20000000-0000-4000-8000-000000000102",
+          login: "admin-plan-ui",
+          personnelNumber: "ADMIN-PLAN",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000103",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/planning/plans/*", (route) =>
+      json(route, {
+        attempts: 1,
+        demandLines: [
+          {
+            allocatedFreeStock: 2,
+            allocatedGoodReturn: 1,
+            directionKind: "TERRITORY",
+            dispatchDate: "2026-08-05",
+            effectiveDemand: 15,
+            excessReturn: 0,
+            newProduction: 12,
+            oneOffQuantity: null,
+            productCode: "T-001",
+            productId,
+            productName: "Торт тестовый",
+            storeOrderQuantity: 0,
+            storeOrderVersionId: null,
+            territoryId: "20000000-0000-4000-8000-000000000104",
+            territoryNumber: 3,
+            weeklyNormQuantity: 15,
+            workshopId: "20000000-0000-4000-8000-000000000105",
+            workshopName: "Основной цех",
+          },
+        ],
+        inputHash: "abcdef1234567890",
+        planId: "20000000-0000-4000-8000-000000000106",
+        productionDate: "2026-08-05",
+        productionLines: [
+          {
+            productCode: "T-001",
+            productId,
+            productName: "Торт тестовый",
+            quantity: 12,
+            workshopId: "20000000-0000-4000-8000-000000000105",
+            workshopName: "Основной цех",
+          },
+        ],
+        publishedAt: "2026-08-04T10:01:00.000Z",
+        resultHash: "1234567890abcdef",
+        status: "PUBLISHED",
+        version: 2,
+        warnings: ["INVENTORY_NOT_CONFIRMED"],
+      }),
+    );
+
+    await page.goto("/planning/plan");
+    await expect(page.getByRole("heading", { level: 1, name: "План производства" })).toBeVisible();
+    await expect(
+      page.locator(".planning-plan-section .planning-plan-line").getByText("12 шт.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("физический пересчет склада не подтвержден")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Спрос по направлениям" })).not.toBeVisible();
+    await expect(page.getByLabel("Новое количество Торт тестовый")).not.toBeVisible();
+
+    await page.getByText("Как рассчитан план", { exact: false }).click();
+    await expect(page.getByRole("heading", { name: "Спрос по направлениям" })).toBeVisible();
+    await page.getByText("Изменить план", { exact: true }).click();
+    await expect(page.getByLabel("Новое количество Торт тестовый")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, { code: "AUTHENTICATION_REQUIRED", message: "Требуется вход" }, 401),
