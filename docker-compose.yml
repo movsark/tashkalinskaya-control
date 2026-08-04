@@ -31,10 +31,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-    # App Platform/Caddy reaches this port through the compose network. A fixed
-    # host binding prevents replacement because old and new web containers
-    # overlap while Timeweb switches the deployment.
-    expose:
+    # Publish the container port to a Docker-assigned free host port. Timeweb
+    # discovers that binding for Caddy, while overlapping deployments do not
+    # compete for a fixed host port.
+    ports:
       - "3000"
     restart: unless-stopped
 
