@@ -134,6 +134,27 @@ describe("staging load authentication", () => {
     expect(repository.findStagingLoadActor).toHaveBeenCalledWith("b20-admin");
   });
 
+  it("coalesces concurrent staging actor lookups and caches the actor briefly", async () => {
+    const actor = actorWithRole("FACTORY", null);
+    const repository = {
+      findStagingLoadActor: vi.fn().mockResolvedValue(actor),
+    };
+    const guard = new SessionAuthGuard(
+      configWithStagingLoad(digest),
+      {} as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+
+    await Promise.all(
+      Array.from({ length: 70 }, () =>
+        guard.canActivate(contextFor(requestWithHeader("GET", rawToken))),
+      ),
+    );
+    await guard.canActivate(contextFor(requestWithHeader("GET", rawToken)));
+
+    expect(repository.findStagingLoadActor).toHaveBeenCalledOnce();
+  });
+
   it("rejects a mutating request before resolving an actor", async () => {
     const repository = { findStagingLoadActor: vi.fn() };
     const guard = new SessionAuthGuard(
