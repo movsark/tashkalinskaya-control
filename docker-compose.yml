@@ -31,11 +31,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-    # Timeweb App Platform discovers the public service only from a fixed
-    # published port. Stop the current staging app before a manual deploy so
-    # the replacement container can bind this port without overlap.
+    # Timeweb discovers the public service only from a fixed published port.
+    # Alternate WEB_HOST_PORT between 3000 and 3001 before each manual deploy
+    # so the replacement can start while the previous version is still live.
     ports:
-      - "3000:3000"
+      - "${WEB_HOST_PORT:-3001}:3000"
     restart: unless-stopped
 
   migrate:
