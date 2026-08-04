@@ -30,10 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout the deployed revision
+      - name: Checkout the protected test harness
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.expected_version }}
 
       - name: Use Node.js
         uses: actions/setup-node@v6

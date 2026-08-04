@@ -128,7 +128,9 @@ Pepper и CSRF-ключи генерируются независимо. Зна�
 `PATCH` и `DELETE` с этим ключом запрещены до выполнения бизнес-логики.
 
 Workflow `Staging gates` запускается вручную. `expected_version` — точный SHA,
-который развернут как `APP_VERSION`. Public smoke проверяет:
+который развернут как `APP_VERSION`. Сам workflow использует проверочный набор
+из защищённой ветки запуска, поэтому новые тесты можно применять к уже
+развёрнутой версии без фиктивного деплоя. Public smoke проверяет:
 
 - web, manifest и service worker;
 - live/ready API и доступность PostgreSQL;
