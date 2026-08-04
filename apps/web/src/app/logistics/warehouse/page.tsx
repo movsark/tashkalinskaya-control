@@ -204,7 +204,7 @@ export default function WarehouseLogisticsPage() {
       <section className="workspace-title logistics-title loading-title">
         <div>
           <p className="eyebrow">B13 · рабочее место склада</p>
-          <h1>Погрузка</h1>
+          <h1>Управление погрузкой</h1>
           <p>Допуск водителей, строки по территориям и итоговое подтверждение склада.</p>
         </div>
         <label>

@@ -86,6 +86,12 @@ export default function DriverLogisticsPage() {
     return session.csrfToken;
   }
 
+  const pageTitle =
+    session?.employee.roles.some((role) => role.roleCode === "DRIVER") &&
+    !session.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode))
+      ? "Моя погрузка"
+      : "Подтверждение водителем";
+
   return (
     <main className="workspace-layout logistics-role-layout driver-loading-workspace simple-workspace">
       <header className="workspace-header">
@@ -99,7 +105,7 @@ export default function DriverLogisticsPage() {
       <section className="workspace-title logistics-title loading-title">
         <div>
           <p className="eyebrow">Получение товара</p>
-          <h1>Моя погрузка</h1>
+          <h1>{pageTitle}</h1>
           <p>Сверьте товар и подтвердите фактически полученное количество.</p>
         </div>
         <label>
