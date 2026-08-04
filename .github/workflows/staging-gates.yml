@@ -48,7 +48,9 @@ jobs:
 
       - name: Validate load profile
         if: inputs.run_load
-        run: node scripts/load-test.mjs --validate tests/load/factory-staging.example.json
+        run: |
+          node scripts/load-test.mjs --validate tests/load/factory-staging.example.json
+          node scripts/load-test.mjs --validate tests/load/factory-staging-diagnostics.json
 
       - name: Require the staging read token
         if: inputs.run_load
@@ -67,3 +69,10 @@ jobs:
           LOAD_BUSINESS_DATE: ${{ inputs.business_date }}
           LOAD_READ_TOKEN: ${{ secrets.STAGING_READ_TOKEN }}
         run: node scripts/load-test.mjs --run tests/load/factory-staging.example.json
+
+      - name: Run 70-user platform diagnostics
+        if: ${{ inputs.run_load && always() }}
+        continue-on-error: true
+        env:
+          LOAD_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+        run: node scripts/load-test.mjs --run tests/load/factory-staging-diagnostics.json
