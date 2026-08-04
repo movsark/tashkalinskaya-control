@@ -124,6 +124,13 @@ test.describe("B20 browser and HTTP regression", () => {
     const menu = page.getByRole("dialog", { name: "Разделы приложения" });
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("link", { exact: true, name: "Сотрудники" })).toBeVisible();
+    await expect(
+      menu.getByRole("link", { exact: true, name: "Подтверждение водителем" }),
+    ).toBeVisible();
+    await expect(
+      menu.getByRole("link", { exact: true, name: "Управление погрузкой" }),
+    ).toBeVisible();
+    await expect(menu.getByRole("link", { exact: true, name: "Моя погрузка" })).toHaveCount(0);
   });
 
   test("a bound personal device signs in with login and password only", async ({ page }) => {

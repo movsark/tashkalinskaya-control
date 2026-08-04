@@ -60,14 +60,15 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/logistics/today",
-    label: "Моя погрузка",
+    driverLabel: "Моя погрузка",
+    label: "Подтверждение водителем",
     roles: ["ADMIN", "DRIVER", "MANAGER"],
     shortLabel: "Погрузка",
     symbol: "М",
   },
   {
     href: "/logistics/warehouse",
-    label: "Погрузка",
+    label: "Управление погрузкой",
     roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
     shortLabel: "Погрузка",
     symbol: "Г",
