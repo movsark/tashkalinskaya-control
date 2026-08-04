@@ -20,6 +20,7 @@ export class DatabaseService implements OnApplicationShutdown {
         : createDatabasePool({
             applicationName: "tashkalinskaya-api",
             connectionString: config.databaseUrl,
+            maxConnections: config.databaseMaxConnections,
             sslMode: config.databaseSsl,
           });
   }

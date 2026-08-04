@@ -9,6 +9,7 @@ describe("loadApiConfig", () => {
     expect(config.authTokenPepper.length).toBeGreaterThanOrEqual(32);
     expect(config.csrfSecret.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(4000);
+    expect(config.databaseMaxConnections).toBe(10);
     expect(config.databaseRequired).toBe(false);
     expect(config.corsOrigins).toEqual(["http://localhost:3000"]);
     expect(config.fileStorageDriver).toBe("local");
@@ -31,6 +32,12 @@ describe("loadApiConfig", () => {
 
   it("requires a database URL when the database is mandatory", () => {
     expect(() => loadApiConfig({ DATABASE_REQUIRED: "true" })).toThrow("DATABASE_URL");
+  });
+
+  it("accepts a bounded database pool size", () => {
+    expect(loadApiConfig({ DATABASE_MAX_CONNECTIONS: "20" }).databaseMaxConnections).toBe(20);
+    expect(() => loadApiConfig({ DATABASE_MAX_CONNECTIONS: "0" })).toThrow();
+    expect(() => loadApiConfig({ DATABASE_MAX_CONNECTIONS: "101" })).toThrow();
   });
 
   it("enables a digest-only read credential in staging", () => {
