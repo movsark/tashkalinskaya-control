@@ -44,7 +44,7 @@ PR нельзя объединять, если не прошли:
 - production build API, worker и web;
 - `npm audit --omit=dev --audit-level=high`;
 - применение миграций дважды на чистой PostgreSQL 18;
-- пять Playwright-сценариев Chromium;
+- пятнадцать Playwright-сценариев Chromium, включая мобильные роли и потерю связи;
 - сборка контейнеров API, web и worker.
 
 Access-policy test автоматически обнаруживает каждый route контроллеров. Новый
