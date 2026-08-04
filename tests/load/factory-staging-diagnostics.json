@@ -1,0 +1,27 @@
+{
+  "name": "factory-staging-70-diagnostics",
+  "virtualUsers": 70,
+  "iterationsPerUser": 10,
+  "timeoutMs": 10000,
+  "thresholds": {
+    "p95Ms": 1000,
+    "maxErrorRate": 0.01,
+    "maxTotalDurationMs": 120000
+  },
+  "requests": [
+    {
+      "name": "api-live-no-database",
+      "method": "GET",
+      "path": "/api/v1/health/live",
+      "weight": 1,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "api-ready-with-database",
+      "method": "GET",
+      "path": "/api/v1/health/ready",
+      "weight": 1,
+      "expectedStatuses": [200]
+    }
+  ]
+}

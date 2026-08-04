@@ -30,7 +30,7 @@
     "start:worker": "npm run start -w @tashkalinskaya/worker",
     "test": "npm run test:scripts && npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
-    "test:load:validate": "node scripts/load-test.mjs --validate tests/load/local-70-read.json && node scripts/load-test.mjs --validate tests/load/factory-staging.example.json",
+    "test:load:validate": "node scripts/load-test.mjs --validate tests/load/local-70-read.json && node scripts/load-test.mjs --validate tests/load/factory-staging.example.json && node scripts/load-test.mjs --validate tests/load/factory-staging-diagnostics.json",
     "test:recovery:capture": "node scripts/recovery-manifest.mjs capture",
     "test:recovery:verify": "node scripts/recovery-manifest.mjs verify",
     "test:scripts": "node --test scripts/*.spec.mjs",
