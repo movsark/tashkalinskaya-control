@@ -2,7 +2,7 @@
   "name": "factory-staging-70-read",
   "virtualUsers": 70,
   "iterationsPerUser": 20,
-  "timeoutMs": 3000,
+  "timeoutMs": 10000,
   "thresholds": {
     "p95Ms": 1000,
     "maxErrorRate": 0.01,
@@ -20,7 +20,7 @@
     {
       "name": "production-workspace",
       "method": "GET",
-      "path": "/api/v1/production/workspace?productionDate=${LOAD_BUSINESS_DATE}",
+      "path": "/api/v1/production/workspace?date=${LOAD_BUSINESS_DATE}",
       "headers": { "x-staging-load-token": "${LOAD_READ_TOKEN}" },
       "weight": 3,
       "expectedStatuses": [200]

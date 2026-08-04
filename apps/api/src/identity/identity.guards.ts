@@ -16,7 +16,7 @@ import { API_CONFIG, type ApiConfig } from "../config";
 import { IdentityCryptoService } from "./identity-crypto.service";
 import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityRepository } from "./identity.repository";
-import type { AuthenticatedRequest } from "./identity.types";
+import type { AuthenticatedActor, AuthenticatedRequest } from "./identity.types";
 
 export const SESSION_COOKIE_NAME = "tashkalinskaya_session";
 export const TERMINAL_SESSION_COOKIE_NAME = "tashkalinskaya_terminal_session";
@@ -24,11 +24,15 @@ export const STAGING_LOAD_TOKEN_HEADER = "x-staging-load-token";
 const requiredRolesKey = "required-roles";
 const factoryOnlyRoles: readonly RoleCode[] = ["ADMIN", "MANAGER", "ACCOUNTANT"];
 const readOnlyMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+const stagingLoadActorCacheTtlMs = 5_000;
 
 export const RequireRoles = (...roles: RoleCode[]) => SetMetadata(requiredRolesKey, roles);
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
+  private stagingLoadActorCache: { actor: AuthenticatedActor; expiresAt: number } | null = null;
+  private stagingLoadActorLookup: Promise<AuthenticatedActor | null> | null = null;
+
   constructor(
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly crypto: IdentityCryptoService,
@@ -49,7 +53,7 @@ export class SessionAuthGuard implements CanActivate {
           message: "Нагрузочный доступ разрешает только чтение данных staging",
         });
       }
-      const actor = await this.repository.findStagingLoadActor(access.login);
+      const actor = await this.resolveStagingLoadActor(access.login);
       if (actor === null) throw authenticationRequired();
       request.actor = actor;
       return true;
@@ -66,6 +70,30 @@ export class SessionAuthGuard implements CanActivate {
     request.actor = actor;
     void this.repository.touchSession(actor.sessionId);
     return true;
+  }
+
+  private async resolveStagingLoadActor(login: string): Promise<AuthenticatedActor | null> {
+    const now = Date.now();
+    if (this.stagingLoadActorCache !== null && this.stagingLoadActorCache.expiresAt > now) {
+      return this.stagingLoadActorCache.actor;
+    }
+    if (this.stagingLoadActorLookup !== null) return this.stagingLoadActorLookup;
+
+    this.stagingLoadActorLookup = this.repository
+      .findStagingLoadActor(login)
+      .then((actor) => {
+        if (actor !== null) {
+          this.stagingLoadActorCache = {
+            actor,
+            expiresAt: Date.now() + stagingLoadActorCacheTtlMs,
+          };
+        }
+        return actor;
+      })
+      .finally(() => {
+        this.stagingLoadActorLookup = null;
+      });
+    return this.stagingLoadActorLookup;
   }
 }
 

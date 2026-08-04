@@ -95,6 +95,33 @@ function summarize(profileValue, resultsValue, startedAt, durationMs) {
     p95Ms: p95Ms <= profileValue.thresholds.p95Ms,
     totalDurationMs: durationMs <= profileValue.thresholds.maxTotalDurationMs,
   };
+  const requests = Object.fromEntries(
+    [...new Set(resultsValue.map((result) => result.name))].sort().map((name) => {
+      const requestResults = resultsValue.filter((result) => result.name === name);
+      const requestDurations = requestResults
+        .map((result) => result.durationMs)
+        .sort((left, right) => left - right);
+      const requestFailures = requestResults.filter((result) => !result.ok);
+      const statuses = Object.fromEntries(
+        [...new Set(requestResults.map((result) => String(result.status)))]
+          .sort()
+          .map((status) => [
+            status,
+            requestResults.filter((result) => String(result.status) === status).length,
+          ]),
+      );
+      return [
+        name,
+        {
+          errorRate: rounded(requestFailures.length / requestResults.length),
+          p50Ms: rounded(percentile(requestDurations, 0.5)),
+          p95Ms: rounded(percentile(requestDurations, 0.95)),
+          statuses,
+          totalRequests: requestResults.length,
+        },
+      ];
+    }),
+  );
   return {
     checks,
     durationMs: rounded(durationMs),
@@ -106,6 +133,7 @@ function summarize(profileValue, resultsValue, startedAt, durationMs) {
     p99Ms: rounded(p99Ms),
     passed: Object.values(checks).every(Boolean),
     profile: profileValue.name,
+    requests,
     startedAt: startedAt.toISOString(),
     totalRequests: resultsValue.length,
     virtualUsers: profileValue.virtualUsers,
