@@ -167,7 +167,7 @@ function validateRequest(request, index) {
 function resolveEnvironment(value) {
   return value.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (_, name) => {
     const resolved = process.env[name];
-    if (resolved === undefined)
+    if (resolved === undefined || resolved.trim().length === 0)
       fail(`Environment variable ${name} is required by the load profile`);
     return resolved;
   });

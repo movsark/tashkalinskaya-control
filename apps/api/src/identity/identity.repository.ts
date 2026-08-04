@@ -83,6 +83,10 @@ interface SessionActorRow extends EmployeeRow {
   readonly step_up_expires_at: Date | null;
 }
 
+interface StagingLoadActorRow extends EmployeeRow {
+  readonly account_id: string;
+}
+
 interface RefreshSessionRow {
   readonly absolute_expires_at: Date;
   readonly account_id: string;
@@ -895,6 +899,7 @@ export class IdentityRepository {
     const employee = mapEmployee(row);
     return {
       accountId: row.account_id,
+      authenticationKind: "SESSION",
       deviceId: row.device_id,
       employee,
       roles: employee.roles,
@@ -902,6 +907,72 @@ export class IdentityRepository {
       sessionId: row.session_id,
       sessionToken,
       stepUpExpiresAt: row.step_up_expires_at,
+    };
+  }
+
+  async findStagingLoadActor(loginNormalized: string): Promise<AuthenticatedActor | null> {
+    const result = await this.database.query<StagingLoadActorRow>(
+      `
+        select
+          e.id,
+          e.personnel_number,
+          e.full_name,
+          e.department_id,
+          e.employment_status,
+          e.version,
+          ua.id as account_id,
+          ua.login_normalized,
+          ua.status as account_status,
+          coalesce(
+            jsonb_agg(
+              jsonb_build_object(
+                'id', ra.id,
+                'roleCode', ra.role_code,
+                'scopeType', ra.scope_type,
+                'scopeId', ra.scope_id
+              )
+            ) filter (
+              where ra.id is not null
+                and ra.revoked_at is null
+                and ra.valid_from <= now()
+                and (ra.valid_until is null or ra.valid_until > now())
+            ),
+            '[]'::jsonb
+          ) as roles
+        from identity.employee e
+        join identity.user_account ua on ua.employee_id = e.id
+        left join identity.role_assignment ra on ra.employee_id = e.id
+        where ua.login_normalized = $1
+          and ua.status = 'ACTIVE'
+          and e.employment_status = 'ACTIVE'
+          and exists (
+            select 1
+            from identity.role_assignment allowed_role
+            where allowed_role.employee_id = e.id
+              and allowed_role.role_code in ('ADMIN', 'MANAGER')
+              and allowed_role.scope_type = 'FACTORY'
+              and allowed_role.scope_id is null
+              and allowed_role.revoked_at is null
+              and allowed_role.valid_from <= now()
+              and (allowed_role.valid_until is null or allowed_role.valid_until > now())
+          )
+        group by e.id, ua.id
+      `,
+      [loginNormalized],
+    );
+    const row = result.rows[0];
+    if (row === undefined) return null;
+    const employee = mapEmployee(row);
+    return {
+      accountId: row.account_id,
+      authenticationKind: "STAGING_LOAD_READ_ONLY",
+      deviceId: "staging-load-read-only",
+      employee,
+      roles: employee.roles,
+      sessionExpiresAt: new Date(Date.now() + 60_000),
+      sessionId: "staging-load-read-only",
+      sessionToken: "staging-load-read-only",
+      stepUpExpiresAt: null,
     };
   }
 

@@ -118,9 +118,10 @@ STAGING_BASE_URL=https://staging.example EXPECTED_APP_VERSION=<sha> npm run test
 LOAD_BASE_URL=http://127.0.0.1:4180 node scripts/load-test.mjs --run tests/load/local-70-read.json
 ```
 
-Staging-профиль требует `LOAD_BASE_URL`, `LOAD_BUSINESS_DATE` и отдельную тестовую
-`LOAD_SESSION_COOKIE`. Значения не сохраняются в репозитории и не выводятся в
-отчёт.
+Staging-профиль требует `LOAD_BASE_URL`, `LOAD_BUSINESS_DATE` и отдельный
+`LOAD_READ_TOKEN`. Исходный ключ хранится только в GitHub Environment, в Timeweb
+находится лишь SHA-256 отпечаток. Значения не сохраняются в репозитории и не
+выводятся в отчёт.
 
 Развёртывание, GitHub Environment и recovery-команды описаны в
 [runbook B20.2](B20_2_STAGING_RUNBOOK.md).

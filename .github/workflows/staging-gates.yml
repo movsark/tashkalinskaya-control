@@ -50,10 +50,20 @@ jobs:
         if: inputs.run_load
         run: node scripts/load-test.mjs --validate tests/load/factory-staging.example.json
 
+      - name: Require the staging read token
+        if: inputs.run_load
+        env:
+          LOAD_READ_TOKEN: ${{ secrets.STAGING_READ_TOKEN }}
+        run: |
+          if [ -z "$LOAD_READ_TOKEN" ]; then
+            echo "::error::STAGING_READ_TOKEN is not configured in the staging environment"
+            exit 1
+          fi
+
       - name: Run authenticated 70-user read profile
         if: inputs.run_load
         env:
           LOAD_BASE_URL: ${{ vars.STAGING_BASE_URL }}
           LOAD_BUSINESS_DATE: ${{ inputs.business_date }}
-          LOAD_SESSION_COOKIE: ${{ secrets.STAGING_READ_SESSION_COOKIE }}
+          LOAD_READ_TOKEN: ${{ secrets.STAGING_READ_TOKEN }}
         run: node scripts/load-test.mjs --run tests/load/factory-staging.example.json

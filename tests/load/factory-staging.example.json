@@ -13,7 +13,7 @@
       "name": "attendance-control",
       "method": "GET",
       "path": "/api/v1/attendance/control?date=${LOAD_BUSINESS_DATE}",
-      "headers": { "cookie": "${LOAD_SESSION_COOKIE}" },
+      "headers": { "x-staging-load-token": "${LOAD_READ_TOKEN}" },
       "weight": 3,
       "expectedStatuses": [200]
     },
@@ -21,7 +21,7 @@
       "name": "production-workspace",
       "method": "GET",
       "path": "/api/v1/production/workspace?productionDate=${LOAD_BUSINESS_DATE}",
-      "headers": { "cookie": "${LOAD_SESSION_COOKIE}" },
+      "headers": { "x-staging-load-token": "${LOAD_READ_TOKEN}" },
       "weight": 3,
       "expectedStatuses": [200]
     },
@@ -29,7 +29,7 @@
       "name": "warehouse-workspace",
       "method": "GET",
       "path": "/api/v1/warehouse/workspace?date=${LOAD_BUSINESS_DATE}",
-      "headers": { "cookie": "${LOAD_SESSION_COOKIE}" },
+      "headers": { "x-staging-load-token": "${LOAD_READ_TOKEN}" },
       "weight": 2,
       "expectedStatuses": [200]
     },
@@ -37,7 +37,7 @@
       "name": "reports-control",
       "method": "GET",
       "path": "/api/v1/reports/control?date=${LOAD_BUSINESS_DATE}",
-      "headers": { "cookie": "${LOAD_SESSION_COOKIE}" },
+      "headers": { "x-staging-load-token": "${LOAD_READ_TOKEN}" },
       "weight": 1,
       "expectedStatuses": [200]
     }

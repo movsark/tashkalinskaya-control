@@ -18,6 +18,7 @@ const localConfig: ApiConfig = {
   pushVapidPublicKey: null,
   s3: null,
   sessionTokenPepper: "test-session-pepper-32-characters",
+  stagingLoadAccess: null,
   webauthnOrigins: ["http://localhost:3000"],
   webauthnRpId: "localhost",
   webauthnRpName: "Ташкалинская фабрика",
