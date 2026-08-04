@@ -91,7 +91,7 @@ export default function SpoilagePage() {
 
   if (!data || !session)
     return (
-      <main className="workspace-layout spoilage-page">
+      <main className="workspace-layout spoilage-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -113,7 +113,7 @@ export default function SpoilagePage() {
       : data.products.map((item) => ({ ...item, suffix: "" }));
 
   return (
-    <main className="workspace-layout spoilage-page">
+    <main className="workspace-layout spoilage-page simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -127,7 +127,7 @@ export default function SpoilagePage() {
 
       <section className="spoilage-hero">
         <div>
-          <p className="eyebrow">B16 · контролируемое списание</p>
+          <p className="eyebrow">Склад</p>
           <h1>Порча и запросы на списание</h1>
           <p>
             Принятое количество блокируется сразу. Фактическое списание выполняется только после
@@ -417,13 +417,11 @@ export default function SpoilagePage() {
         </div>
       </section>
 
-      <section className="spoilage-panel">
-        <div className="spoilage-heading">
-          <div>
-            <p className="eyebrow">Неизменяемый реестр</p>
-            <h2>Решения и сверка документов</h2>
-          </div>
-        </div>
+      <details className="spoilage-panel workspace-more">
+        <summary>
+          <span>Решения и сверка документов</span>
+          <small>{registry.length} записей</small>
+        </summary>
         <div className="spoilage-list">
           {registry.map((item) => {
             const draft = checks[item.id] ?? {
@@ -534,7 +532,7 @@ export default function SpoilagePage() {
           })}
           {!registry.length ? <p className="logistics-empty">Решений пока нет.</p> : null}
         </div>
-      </section>
+      </details>
     </main>
   );
 }

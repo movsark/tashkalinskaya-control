@@ -151,7 +151,7 @@ export default function StorePage() {
 
   if (workspace === null) {
     return (
-      <main className="workspace-layout store-layout">
+      <main className="workspace-layout store-layout simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -163,7 +163,7 @@ export default function StorePage() {
   }
 
   return (
-    <main className="workspace-layout store-layout">
+    <main className="workspace-layout store-layout simple-workspace">
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -177,7 +177,7 @@ export default function StorePage() {
 
       <section className="store-hero">
         <div>
-          <p className="eyebrow">B10 · фирменный магазин</p>
+          <p className="eyebrow">Фирменный магазин</p>
           <h1>Заказ на завтра</h1>
           <p>
             Зафиксируйте потребность до отсечки. Подтвержденная версия автоматически входит в план
@@ -427,13 +427,11 @@ export default function StorePage() {
           )}
         </section>
 
-        <aside className="store-history-card">
-          <div className="store-section-heading">
-            <div>
-              <p className="eyebrow">Неизменяемая история</p>
-              <h2>Версии заказа</h2>
-            </div>
-          </div>
+        <details className="store-history-card workspace-more">
+          <summary>
+            <span>История заказа</span>
+            <small>{workspace.versions.length} версий</small>
+          </summary>
           {workspace.versions.length === 0 ? (
             <p className="logistics-empty">Подтвержденных версий пока нет.</p>
           ) : (
@@ -465,7 +463,7 @@ export default function StorePage() {
               ))}
             </div>
           )}
-        </aside>
+        </details>
       </div>
 
       {isPrivileged ? (
