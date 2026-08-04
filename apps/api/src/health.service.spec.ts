@@ -9,6 +9,7 @@ const localConfig: ApiConfig = {
   corsOrigins: ["http://localhost:3000"],
   csrfSecret: "test-csrf-secret-32-characters-ok",
   databaseRequired: false,
+  databaseMaxConnections: 10,
   databaseSsl: "disable",
   fileStorageDriver: "local",
   fileStorageLocalDirectory: "var/test-private-files",

@@ -18,6 +18,7 @@ const environmentSchema = z.object({
   CORS_ORIGINS: z.string().default("http://localhost:3000"),
   CSRF_SECRET: z.string().min(32).default("local-csrf-secret-change-me-now-x"),
   DATABASE_REQUIRED: booleanFromEnvironment,
+  DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(10),
   DATABASE_SSL: z.enum(["disable", "require"]).default("disable"),
   DATABASE_URL: z.string().trim().min(1).optional(),
   FILE_STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
@@ -48,6 +49,7 @@ export interface ApiConfig {
   readonly corsOrigins: readonly string[];
   readonly csrfSecret: string;
   readonly databaseRequired: boolean;
+  readonly databaseMaxConnections: number;
   readonly databaseSsl: "disable" | "require";
   readonly databaseUrl?: string;
   readonly fileStorageDriver: "local" | "s3";
@@ -133,6 +135,7 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0),
     csrfSecret: parsed.CSRF_SECRET,
+    databaseMaxConnections: parsed.DATABASE_MAX_CONNECTIONS,
     databaseRequired: parsed.DATABASE_REQUIRED,
     databaseSsl: parsed.DATABASE_SSL,
     ...(databaseUrl === undefined ? {} : { databaseUrl }),
