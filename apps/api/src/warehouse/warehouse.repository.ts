@@ -15,6 +15,7 @@ import type {
 import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
+import { ReadSnapshotCache } from "../read-snapshot-cache";
 
 export interface WarehouseActor {
   readonly deviceId: string;
@@ -26,67 +27,75 @@ const warehouseId = "15000000-0000-4000-8000-000000000001";
 
 @Injectable()
 export class WarehouseRepository {
+  private readonly workspaceSnapshots = new ReadSnapshotCache<WarehouseWorkspaceView>();
+
   constructor(private readonly database: DatabaseService) {}
 
   workspace(actor: WarehouseActor): Promise<WarehouseWorkspaceView> {
     assertRole(actor, ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER"]);
-    return this.database.transaction(async (client) => {
-      const [queue, balances, reasons, discrepancies, location] = await sequential(client, actor);
-      return {
-        balances: balances.rows.map((row) => ({
-          blockedQuantity: Number(row.blocked_quantity),
-          freeQuantity: Number(row.free_quantity),
-          integrityStatus: row.integrity_status,
-          onHandQuantity: Number(row.on_hand_quantity),
-          productCode: row.product_code,
-          productId: row.product_id,
-          productName: row.product_name,
-          reservedLoadingQuantity: Number(row.reserved_loading_quantity),
-          reservedStoreQuantity: Number(row.reserved_store_quantity),
-          returnPoolQuantity: Number(row.return_pool_quantity),
-          updatedAt: row.updated_at.toISOString(),
-        })),
-        discrepancies: discrepancies.rows.map((row) => ({
-          acceptedQuantity: row.accepted_quantity,
-          batchId: row.batch_id,
-          declaredQuantity: row.declared_quantity,
-          differenceQuantity: row.difference_quantity,
-          dueAt: row.due_at.toISOString(),
-          id: row.id,
-          productName: row.product_name,
-          status: row.status,
-          version: row.version,
-          warehouseComment: row.warehouse_comment,
-          workshopExplanation: row.workshop_explanation,
-          workshopId: row.workshop_id,
-          workshopName: row.workshop_name,
-        })),
-        queue: queue.rows.map((row) => ({
-          batchId: row.batch_id,
-          batchVersion: row.batch_version,
-          claimedAt: row.claimed_at?.toISOString() ?? null,
-          claimedById: row.claimed_by_id,
-          claimedByName: row.claimed_by_name,
-          isNight: row.production_window === "NIGHT",
-          productCode: row.product_code,
-          productId: row.product_id,
-          productName: row.product_name,
-          productionDate: row.production_date,
-          quantity: row.quantity,
-          submittedAt: row.submitted_at.toISOString(),
-          workshopId: row.workshop_id,
-          workshopName: row.workshop_name,
-        })),
-        reasons: reasons.rows.map((row) => ({
-          code: row.code,
-          displayName: row.display_name,
-          id: row.id,
-          kind: row.reason_kind,
-        })),
-        serverTime: new Date().toISOString(),
-        warehouseName: location.rows[0]?.name ?? "Основной склад",
-      };
-    });
+    const key = JSON.stringify([
+      actor.employeeId,
+      actor.roles.map((role) => [role.roleCode, role.scopeType, role.scopeId]),
+    ]);
+    return this.workspaceSnapshots.get(key, () =>
+      this.database.transaction(async (client) => {
+        const [queue, balances, reasons, discrepancies, location] = await sequential(client, actor);
+        return {
+          balances: balances.rows.map((row) => ({
+            blockedQuantity: Number(row.blocked_quantity),
+            freeQuantity: Number(row.free_quantity),
+            integrityStatus: row.integrity_status,
+            onHandQuantity: Number(row.on_hand_quantity),
+            productCode: row.product_code,
+            productId: row.product_id,
+            productName: row.product_name,
+            reservedLoadingQuantity: Number(row.reserved_loading_quantity),
+            reservedStoreQuantity: Number(row.reserved_store_quantity),
+            returnPoolQuantity: Number(row.return_pool_quantity),
+            updatedAt: row.updated_at.toISOString(),
+          })),
+          discrepancies: discrepancies.rows.map((row) => ({
+            acceptedQuantity: row.accepted_quantity,
+            batchId: row.batch_id,
+            declaredQuantity: row.declared_quantity,
+            differenceQuantity: row.difference_quantity,
+            dueAt: row.due_at.toISOString(),
+            id: row.id,
+            productName: row.product_name,
+            status: row.status,
+            version: row.version,
+            warehouseComment: row.warehouse_comment,
+            workshopExplanation: row.workshop_explanation,
+            workshopId: row.workshop_id,
+            workshopName: row.workshop_name,
+          })),
+          queue: queue.rows.map((row) => ({
+            batchId: row.batch_id,
+            batchVersion: row.batch_version,
+            claimedAt: row.claimed_at?.toISOString() ?? null,
+            claimedById: row.claimed_by_id,
+            claimedByName: row.claimed_by_name,
+            isNight: row.production_window === "NIGHT",
+            productCode: row.product_code,
+            productId: row.product_id,
+            productName: row.product_name,
+            productionDate: row.production_date,
+            quantity: row.quantity,
+            submittedAt: row.submitted_at.toISOString(),
+            workshopId: row.workshop_id,
+            workshopName: row.workshop_name,
+          })),
+          reasons: reasons.rows.map((row) => ({
+            code: row.code,
+            displayName: row.display_name,
+            id: row.id,
+            kind: row.reason_kind,
+          })),
+          serverTime: new Date().toISOString(),
+          warehouseName: location.rows[0]?.name ?? "Основной склад",
+        };
+      }),
+    );
   }
 
   claim(batchId: string, version: number, actor: WarehouseActor, correlationId: string) {
