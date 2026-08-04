@@ -117,8 +117,14 @@ Pepper и CSRF-ключи генерируются независимо. Зна�
 В GitHub создать Environment `staging` с ручным подтверждением владельца:
 
 - variable `STAGING_BASE_URL` — HTTPS origin staging;
-- secret `STAGING_READ_SESSION_COOKIE` — отдельная короткоживущая тестовая
-  сессия только для read-нагрузки.
+- secret `STAGING_READ_TOKEN` — отдельный случайный ключ только для
+  read-нагрузки.
+
+В Timeweb для API задаются `STAGING_LOAD_AUTH_ENABLED=true`,
+`STAGING_LOAD_LOGIN=<логин синтетического администратора>` и
+`STAGING_LOAD_TOKEN_SHA256=<SHA-256 отпечаток ключа>`. Исходный ключ в Timeweb
+не хранится. Механизм запускается только при `NODE_ENV=staging`; `POST`, `PUT`,
+`PATCH` и `DELETE` с этим ключом запрещены до выполнения бизнес-логики.
 
 Workflow `Staging gates` запускается вручную. `expected_version` — точный SHA,
 который развернут как `APP_VERSION`. Public smoke проверяет:
@@ -131,7 +137,7 @@ Workflow `Staging gates` запускается вручную. `expected_versio
 
 Нагрузку включать только после наполнения синтетическим объёмом. Профиль выполняет
 70 параллельных пользователей и допускает p95 не более 1 секунды, ошибок не более
-1%. Cookie не выводится инструментом в отчёт.
+1%. Ключ не выводится инструментом в отчёт.
 
 ## 7. Recovery drill
 

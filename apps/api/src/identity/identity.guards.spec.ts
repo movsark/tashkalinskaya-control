@@ -1,9 +1,18 @@
+import { createHash } from "node:crypto";
+
 import type { ExecutionContext } from "@nestjs/common";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
 import { describe, expect, it, vi } from "vitest";
 
-import { RolesGuard, StepUpGuard } from "./identity.guards";
+import type { ApiConfig } from "../config";
+import type { IdentityCryptoService } from "./identity-crypto.service";
+import {
+  RolesGuard,
+  SessionAuthGuard,
+  STAGING_LOAD_TOKEN_HEADER,
+  StepUpGuard,
+} from "./identity.guards";
 import type { IdentityRepository } from "./identity.repository";
 import type { AuthenticatedRequest } from "./identity.types";
 
@@ -103,3 +112,98 @@ describe("administrative guards", () => {
     ).resolves.toBe(true);
   });
 });
+
+describe("staging load authentication", () => {
+  const rawToken = "a-secure-random-staging-load-token-with-more-than-32-characters";
+  const digest = createHash("sha256").update(rawToken).digest("hex");
+
+  it("accepts a valid read-only staging token", async () => {
+    const actor = actorWithRole("FACTORY", null);
+    const repository = {
+      findStagingLoadActor: vi.fn().mockResolvedValue(actor),
+    };
+    const guard = new SessionAuthGuard(
+      configWithStagingLoad(digest),
+      {} as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+    const request = requestWithHeader("GET", rawToken);
+
+    await expect(guard.canActivate(contextFor(request))).resolves.toBe(true);
+    expect(request.actor).toBe(actor);
+    expect(repository.findStagingLoadActor).toHaveBeenCalledWith("b20-admin");
+  });
+
+  it("rejects a mutating request before resolving an actor", async () => {
+    const repository = { findStagingLoadActor: vi.fn() };
+    const guard = new SessionAuthGuard(
+      configWithStagingLoad(digest),
+      {} as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+
+    await expect(
+      guard.canActivate(contextFor(requestWithHeader("POST", rawToken))),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.findStagingLoadActor).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid or disabled staging token", async () => {
+    const repository = { findStagingLoadActor: vi.fn() };
+    const invalidGuard = new SessionAuthGuard(
+      configWithStagingLoad(digest),
+      {} as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+    const disabledGuard = new SessionAuthGuard(
+      { stagingLoadAccess: null } as ApiConfig,
+      {} as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+
+    await expect(
+      invalidGuard.canActivate(contextFor(requestWithHeader("GET", "wrong-token"))),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      disabledGuard.canActivate(contextFor(requestWithHeader("GET", rawToken))),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("keeps normal cookie sessions unchanged", async () => {
+    const actor = actorWithRole("FACTORY", null);
+    const crypto = { hashSessionToken: vi.fn().mockReturnValue("session-hash") };
+    const repository = {
+      findActorBySessionHash: vi.fn().mockResolvedValue(actor),
+      touchSession: vi.fn().mockResolvedValue(undefined),
+    };
+    const guard = new SessionAuthGuard(
+      { stagingLoadAccess: null } as ApiConfig,
+      crypto as unknown as IdentityCryptoService,
+      repository as unknown as IdentityRepository,
+    );
+    const sessionToken = "s".repeat(40);
+    const request = {
+      header: () => undefined,
+      headers: { cookie: `tashkalinskaya_session=${sessionToken}` },
+      method: "GET",
+    } as Partial<AuthenticatedRequest> as AuthenticatedRequest;
+
+    await expect(guard.canActivate(contextFor(request))).resolves.toBe(true);
+    expect(repository.findActorBySessionHash).toHaveBeenCalledWith("session-hash", sessionToken);
+  });
+});
+
+function configWithStagingLoad(tokenSha256: string): ApiConfig {
+  return {
+    stagingLoadAccess: { login: "b20-admin", tokenSha256 },
+  } as ApiConfig;
+}
+
+function requestWithHeader(method: string, value: string): AuthenticatedRequest {
+  return {
+    header: (name: string) =>
+      name.toLowerCase() === STAGING_LOAD_TOKEN_HEADER ? value : undefined,
+    headers: {},
+    method,
+  } as Partial<AuthenticatedRequest> as AuthenticatedRequest;
+}

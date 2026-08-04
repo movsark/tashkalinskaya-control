@@ -1,7 +1,10 @@
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+
 import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   SetMetadata,
   UnauthorizedException,
@@ -9,6 +12,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { RoleCode } from "@tashkalinskaya/contracts";
 
+import { API_CONFIG, type ApiConfig } from "../config";
 import { IdentityCryptoService } from "./identity-crypto.service";
 import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityRepository } from "./identity.repository";
@@ -16,20 +20,40 @@ import type { AuthenticatedRequest } from "./identity.types";
 
 export const SESSION_COOKIE_NAME = "tashkalinskaya_session";
 export const TERMINAL_SESSION_COOKIE_NAME = "tashkalinskaya_terminal_session";
+export const STAGING_LOAD_TOKEN_HEADER = "x-staging-load-token";
 const requiredRolesKey = "required-roles";
 const factoryOnlyRoles: readonly RoleCode[] = ["ADMIN", "MANAGER", "ACCOUNTANT"];
+const readOnlyMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export const RequireRoles = (...roles: RoleCode[]) => SetMetadata(requiredRolesKey, roles);
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
   constructor(
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly crypto: IdentityCryptoService,
     private readonly repository: IdentityRepository,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const stagingLoadToken = request.header(STAGING_LOAD_TOKEN_HEADER);
+    if (stagingLoadToken !== undefined) {
+      const access = this.config.stagingLoadAccess;
+      if (access === null || !matchesSha256(stagingLoadToken, access.tokenSha256)) {
+        throw authenticationRequired();
+      }
+      if (!readOnlyMethods.has(request.method.toUpperCase())) {
+        throw new ForbiddenException({
+          code: "STAGING_LOAD_READ_ONLY",
+          message: "Нагрузочный доступ разрешает только чтение данных staging",
+        });
+      }
+      const actor = await this.repository.findStagingLoadActor(access.login);
+      if (actor === null) throw authenticationRequired();
+      request.actor = actor;
+      return true;
+    }
     const cookieHeader = request.headers.cookie;
     const sessionToken = readCookie(cookieHeader, SESSION_COOKIE_NAME);
     if (sessionToken === undefined || sessionToken.length < 40) throw authenticationRequired();
@@ -43,6 +67,13 @@ export class SessionAuthGuard implements CanActivate {
     void this.repository.touchSession(actor.sessionId);
     return true;
   }
+}
+
+export function matchesSha256(value: string, expectedHexDigest: string): boolean {
+  if (!/^[a-f0-9]{64}$/i.test(expectedHexDigest)) return false;
+  const actual = createHash("sha256").update(value, "utf8").digest();
+  const expected = Buffer.from(expectedHexDigest, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 @Injectable()
@@ -179,4 +210,3 @@ function readCookie(header: string | undefined, name: string): string | undefine
   }
   return undefined;
 }
-import { randomUUID } from "node:crypto";

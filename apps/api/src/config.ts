@@ -34,6 +34,9 @@ const environmentSchema = z.object({
   S3_REGION: z.string().trim().min(1).default("ru-1"),
   S3_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
   SESSION_TOKEN_PEPPER: z.string().min(32).default("local-session-pepper-change-me-now"),
+  STAGING_LOAD_AUTH_ENABLED: booleanFromEnvironment,
+  STAGING_LOAD_LOGIN: optionalTrimmed(1),
+  STAGING_LOAD_TOKEN_SHA256: optionalTrimmed(64),
   WEBAUTHN_ORIGINS: z.string().default("http://localhost:3000"),
   WEBAUTHN_RP_ID: z.string().trim().min(1).default("localhost"),
   WEBAUTHN_RP_NAME: z.string().trim().min(1).default("Ташкалинская фабрика"),
@@ -61,6 +64,10 @@ export interface ApiConfig {
     readonly secretAccessKey: string;
   } | null;
   readonly sessionTokenPepper: string;
+  readonly stagingLoadAccess: {
+    readonly login: string;
+    readonly tokenSha256: string;
+  } | null;
   readonly webauthnOrigins: readonly string[];
   readonly webauthnRpId: string;
   readonly webauthnRpName: string;
@@ -102,6 +109,22 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
       "S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required",
     );
   }
+  if (parsed.STAGING_LOAD_AUTH_ENABLED) {
+    if (parsed.NODE_ENV !== "staging") {
+      throw new Error("STAGING_LOAD_AUTH_ENABLED=true is allowed only when NODE_ENV=staging");
+    }
+    if (parsed.STAGING_LOAD_LOGIN === undefined) {
+      throw new Error("STAGING_LOAD_LOGIN is required when STAGING_LOAD_AUTH_ENABLED=true");
+    }
+    if (
+      parsed.STAGING_LOAD_TOKEN_SHA256 === undefined ||
+      !/^[a-f0-9]{64}$/i.test(parsed.STAGING_LOAD_TOKEN_SHA256)
+    ) {
+      throw new Error(
+        "STAGING_LOAD_TOKEN_SHA256 must be a 64-character SHA-256 hex digest when STAGING_LOAD_AUTH_ENABLED=true",
+      );
+    }
+  }
 
   return {
     appVersion: parsed.APP_VERSION,
@@ -130,6 +153,12 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
           }
         : null,
     sessionTokenPepper: parsed.SESSION_TOKEN_PEPPER,
+    stagingLoadAccess: parsed.STAGING_LOAD_AUTH_ENABLED
+      ? {
+          login: parsed.STAGING_LOAD_LOGIN!.toLowerCase(),
+          tokenSha256: parsed.STAGING_LOAD_TOKEN_SHA256!.toLowerCase(),
+        }
+      : null,
     webauthnOrigins: parsed.WEBAUTHN_ORIGINS.split(",")
       .map((origin) => origin.trim().replace(/\/$/, ""))
       .filter((origin) => origin.length > 0),

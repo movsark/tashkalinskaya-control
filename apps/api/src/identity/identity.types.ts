@@ -33,6 +33,7 @@ export interface DeviceRecord {
 
 export interface AuthenticatedActor {
   readonly accountId: string;
+  readonly authenticationKind?: "SESSION" | "STAGING_LOAD_READ_ONLY";
   readonly deviceId: string;
   readonly employee: EmployeeSummary;
   readonly roles: readonly RoleAssignmentView[];
