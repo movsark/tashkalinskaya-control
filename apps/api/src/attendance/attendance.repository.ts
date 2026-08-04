@@ -20,6 +20,7 @@ import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
 import type { AuthenticatedActor, AuthenticatedTerminal } from "../identity/identity.types";
+import { ReadSnapshotCache } from "../read-snapshot-cache";
 
 interface CursorRow {
   readonly last_event_at: Date | null;
@@ -142,6 +143,8 @@ type ScanOutcome =
 
 @Injectable()
 export class AttendanceRepository {
+  private readonly controlSnapshots = new ReadSnapshotCache<AttendanceControlView>();
+
   constructor(private readonly database: DatabaseService) {}
 
   async getSetup(): Promise<AttendanceSetupView> {
@@ -441,8 +444,14 @@ export class AttendanceRepository {
     departmentIds: readonly string[] | null;
     requestedDepartmentId?: string;
   }): Promise<AttendanceControlView> {
-    const result = await this.database.query<ControlRow & { as_of: Date }>(
-      `
+    const key = JSON.stringify([
+      input.businessDate ?? null,
+      input.departmentIds,
+      input.requestedDepartmentId ?? null,
+    ]);
+    return this.controlSnapshots.get(key, async () => {
+      const result = await this.database.query<ControlRow & { as_of: Date }>(
+        `
         with clock as (
           select
             now() as as_of,
@@ -517,33 +526,34 @@ export class AttendanceRepository {
           and ($3::uuid is null or e.department_id = $3::uuid)
         order by d.name, e.full_name
       `,
-      [
-        input.businessDate ?? null,
-        input.departmentIds === null ? null : [...input.departmentIds],
-        input.requestedDepartmentId ?? null,
-      ],
-    );
-    const asOf =
-      result.rows[0]?.as_of ??
-      (await this.database.query<{ as_of: Date }>("select now() as as_of")).rows[0]!.as_of;
-    const businessDate = input.businessDate ?? toMoscowDate(asOf);
-    const items = result.rows.map((row) => controlItem(row, asOf));
-    const summary: Record<AttendanceControlStatus, number> = {
-      ABSENT: 0,
-      CLOSED: 0,
-      EXPECTED: 0,
-      MISSING_EXIT: 0,
-      OPEN: 0,
-      REVIEW: 0,
-    };
-    for (const item of items) summary[item.status] += 1;
-    return {
-      asOf: asOf.toISOString(),
-      businessDate,
-      departmentId: input.requestedDepartmentId ?? null,
-      items,
-      summary,
-    };
+        [
+          input.businessDate ?? null,
+          input.departmentIds === null ? null : [...input.departmentIds],
+          input.requestedDepartmentId ?? null,
+        ],
+      );
+      const asOf =
+        result.rows[0]?.as_of ??
+        (await this.database.query<{ as_of: Date }>("select now() as as_of")).rows[0]!.as_of;
+      const businessDate = input.businessDate ?? toMoscowDate(asOf);
+      const items = result.rows.map((row) => controlItem(row, asOf));
+      const summary: Record<AttendanceControlStatus, number> = {
+        ABSENT: 0,
+        CLOSED: 0,
+        EXPECTED: 0,
+        MISSING_EXIT: 0,
+        OPEN: 0,
+        REVIEW: 0,
+      };
+      for (const item of items) summary[item.status] += 1;
+      return {
+        asOf: asOf.toISOString(),
+        businessDate,
+        departmentId: input.requestedDepartmentId ?? null,
+        items,
+        summary,
+      };
+    });
   }
 
   async recordManual(input: {

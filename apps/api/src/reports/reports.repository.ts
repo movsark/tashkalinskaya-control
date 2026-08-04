@@ -19,6 +19,7 @@ import type {
 import type { PoolClient, QueryResultRow } from "pg";
 
 import { DatabaseService } from "../database.service";
+import { ReadSnapshotCache } from "../read-snapshot-cache";
 import { REPORT_CATALOG, REPORT_DEFINITIONS, REPORT_TEMPLATE_VERSION } from "./report.catalog";
 
 export interface ReportsActor {
@@ -58,22 +59,30 @@ type SnapshotRow = QueryResultRow & Record<string, ReportSnapshotCell>;
 
 @Injectable()
 export class ReportsRepository {
+  private readonly controlSnapshots = new ReadSnapshotCache<ControlCenterView>();
+
   constructor(private readonly database: DatabaseService) {}
 
   async control(date: string, actor: ReportsActor): Promise<ControlCenterView> {
     assertFactoryReader(actor);
     requireDate(date);
-    const result = await this.database.query<{
-      attendance_open: number;
-      critical_alerts: number;
-      inventory_open: number;
-      loading_pending: number;
-      plan_quantity: number;
-      produced_quantity: number;
-      spoilage_pending: number;
-      warehouse_free: number;
-    }>(
-      `select
+    const key = JSON.stringify([
+      date,
+      actor.employeeId,
+      actor.roles.map((role) => [role.roleCode, role.scopeType, role.scopeId]),
+    ]);
+    return this.controlSnapshots.get(key, async () => {
+      const result = await this.database.query<{
+        attendance_open: number;
+        critical_alerts: number;
+        inventory_open: number;
+        loading_pending: number;
+        plan_quantity: number;
+        produced_quantity: number;
+        spoilage_pending: number;
+        warehouse_free: number;
+      }>(
+        `select
         (select count(*)::int from attendance.work_shift where business_date=$1 and status='OPEN') attendance_open,
         (select count(distinct source_outbox_id)::int from notification.feed_item
           where occurred_at >= $1::date and occurred_at < $1::date+1 and severity='CRITICAL' and read_at is null) critical_alerts,
@@ -91,89 +100,90 @@ export class ReportsRepository {
         (select coalesce(sum(case when m.target_bucket='FREE_STOCK' then m.quantity else 0 end)
                    -sum(case when m.source_bucket='FREE_STOCK' then m.quantity else 0 end),0)::int
           from warehouse.movement m where m.business_date<=$1) warehouse_free`,
-      [date],
-    );
-    const row = result.rows[0]!;
-    const metrics: ControlCenterView["metrics"] = [
-      metric(
-        "PLAN_QUANTITY",
-        "План производства",
-        row.plan_quantity,
-        "PIECES",
-        "OK",
-        "/planning/plan",
-      ),
-      metric(
-        "PRODUCED_QUANTITY",
-        "Выпущено",
-        row.produced_quantity,
-        "PIECES",
-        row.produced_quantity < row.plan_quantity ? "WARNING" : "OK",
-        "/production",
-      ),
-      metric(
-        "WAREHOUSE_FREE",
-        "Свободный склад",
-        row.warehouse_free,
-        "PIECES",
-        row.warehouse_free < 0 ? "ALERT" : "OK",
-        "/warehouse",
-      ),
-      metric(
-        "LOADING_PENDING",
-        "Погрузки не завершены",
-        row.loading_pending,
-        "ROWS",
-        row.loading_pending ? "WARNING" : "OK",
-        "/logistics/warehouse",
-      ),
-      metric(
-        "INVENTORY_OPEN",
-        "Расхождения инвентаризации",
-        row.inventory_open,
-        "ROWS",
-        row.inventory_open ? "ALERT" : "OK",
-        "/warehouse/inventory",
-      ),
-      metric(
-        "SPOILAGE_PENDING",
-        "Списания ждут решения",
-        row.spoilage_pending,
-        "ROWS",
-        row.spoilage_pending ? "ALERT" : "OK",
-        "/spoilage",
-      ),
-      metric(
-        "ATTENDANCE_OPEN",
-        "Незакрытые смены",
-        row.attendance_open,
-        "PEOPLE",
-        row.attendance_open ? "WARNING" : "OK",
-        "/attendance/control",
-      ),
-      metric(
-        "CRITICAL_ALERTS",
-        "Критичные тревоги",
-        row.critical_alerts,
-        "ROWS",
-        row.critical_alerts ? "ALERT" : "OK",
-        "/notifications",
-      ),
-    ];
-    return {
-      generatedAt: new Date().toISOString(),
-      issues: metrics
-        .filter((item) => item.status !== "OK")
-        .map((item) => ({
-          code: item.code,
-          count: item.value,
-          href: item.href,
-          label: item.label,
-          severity: item.status === "ALERT" ? "CRITICAL" : "HIGH",
-        })),
-      metrics,
-      selectedDate: date,
-    };
+        [date],
+      );
+      const row = result.rows[0]!;
+      const metrics: ControlCenterView["metrics"] = [
+        metric(
+          "PLAN_QUANTITY",
+          "План производства",
+          row.plan_quantity,
+          "PIECES",
+          "OK",
+          "/planning/plan",
+        ),
+        metric(
+          "PRODUCED_QUANTITY",
+          "Выпущено",
+          row.produced_quantity,
+          "PIECES",
+          row.produced_quantity < row.plan_quantity ? "WARNING" : "OK",
+          "/production",
+        ),
+        metric(
+          "WAREHOUSE_FREE",
+          "Свободный склад",
+          row.warehouse_free,
+          "PIECES",
+          row.warehouse_free < 0 ? "ALERT" : "OK",
+          "/warehouse",
+        ),
+        metric(
+          "LOADING_PENDING",
+          "Погрузки не завершены",
+          row.loading_pending,
+          "ROWS",
+          row.loading_pending ? "WARNING" : "OK",
+          "/logistics/warehouse",
+        ),
+        metric(
+          "INVENTORY_OPEN",
+          "Расхождения инвентаризации",
+          row.inventory_open,
+          "ROWS",
+          row.inventory_open ? "ALERT" : "OK",
+          "/warehouse/inventory",
+        ),
+        metric(
+          "SPOILAGE_PENDING",
+          "Списания ждут решения",
+          row.spoilage_pending,
+          "ROWS",
+          row.spoilage_pending ? "ALERT" : "OK",
+          "/spoilage",
+        ),
+        metric(
+          "ATTENDANCE_OPEN",
+          "Незакрытые смены",
+          row.attendance_open,
+          "PEOPLE",
+          row.attendance_open ? "WARNING" : "OK",
+          "/attendance/control",
+        ),
+        metric(
+          "CRITICAL_ALERTS",
+          "Критичные тревоги",
+          row.critical_alerts,
+          "ROWS",
+          row.critical_alerts ? "ALERT" : "OK",
+          "/notifications",
+        ),
+      ];
+      return {
+        generatedAt: new Date().toISOString(),
+        issues: metrics
+          .filter((item) => item.status !== "OK")
+          .map((item) => ({
+            code: item.code,
+            count: item.value,
+            href: item.href,
+            label: item.label,
+            severity: item.status === "ALERT" ? "CRITICAL" : "HIGH",
+          })),
+        metrics,
+        selectedDate: date,
+      };
+    });
   }
 
   async workspace(actor: ReportsActor): Promise<ReportsWorkspaceView> {

@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
 import type { AuthenticatedActor } from "../identity/identity.types";
+import { ReadSnapshotCache } from "../read-snapshot-cache";
 
 export interface ProductionActor {
   readonly deviceId: string;
@@ -106,6 +107,8 @@ interface LockedTask {
 
 @Injectable()
 export class ProductionRepository {
+  private readonly workspaceSnapshots = new ReadSnapshotCache<ProductionWorkspaceView>();
+
   constructor(private readonly database: DatabaseService) {}
 
   workspace(
@@ -113,8 +116,16 @@ export class ProductionRepository {
     workshopId: string | null,
     actor: ProductionActor,
   ): Promise<ProductionWorkspaceView> {
-    return this.database.transaction((client) =>
-      loadWorkspace(client, productionDate, workshopId, actor),
+    const key = JSON.stringify([
+      productionDate,
+      workshopId,
+      actor.employeeId,
+      actor.roles.map((role) => [role.roleCode, role.scopeType, role.scopeId]),
+    ]);
+    return this.workspaceSnapshots.get(key, () =>
+      this.database.transaction((client) =>
+        loadWorkspace(client, productionDate, workshopId, actor),
+      ),
     );
   }
 
