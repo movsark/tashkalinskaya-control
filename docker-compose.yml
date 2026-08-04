@@ -31,8 +31,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-    ports:
-      - "3000:3000"
+    # App Platform/Caddy reaches this port through the compose network. A fixed
+    # host binding prevents replacement because old and new web containers
+    # overlap while Timeweb switches the deployment.
+    expose:
+      - "3000"
     restart: unless-stopped
 
   migrate:
