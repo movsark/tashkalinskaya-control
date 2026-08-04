@@ -79,6 +79,37 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(serviceWorker.status()).toBe(200);
   });
 
+  test("a worker sees loss and restoration of server connection", async ({ page }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/health/live", (route) =>
+      json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-04T11:00:00.000Z",
+        version: "test",
+      }),
+    );
+    await page.goto("/");
+
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    await expect(page.locator(".connection-status.is-offline")).toContainText(
+      "Нет связи с сервером",
+    );
+    await expect(page.locator(".connection-status.is-offline")).toContainText(
+      "Не повторяйте операцию",
+    );
+
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".connection-status.is-restored")).toContainText(
+      "Связь восстановлена",
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("an installed icon opens the saved administrator session without another login", async ({
     page,
   }) => {

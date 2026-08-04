@@ -7238,6 +7238,102 @@ a {
   margin-bottom: 12px;
 }
 
+/* Связь с сервером во время фабричных операций */
+
+.connection-status {
+  position: fixed;
+  right: 16px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  left: 16px;
+  z-index: 85;
+  display: grid;
+  width: min(620px, calc(100% - 32px));
+  min-height: 58px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  box-shadow: 0 12px 38px rgb(16 31 27 / 20%);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.connection-status > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.connection-status strong,
+.connection-status small {
+  display: block;
+}
+
+.connection-status small {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.connection-status button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 780;
+}
+
+.connection-status.is-offline {
+  border-color: #d8786d;
+  color: #fff;
+  background: #96382f;
+}
+
+.connection-status.is-offline > span {
+  color: #96382f;
+  background: #fff;
+}
+
+.connection-status.is-restored {
+  color: #fff;
+  background: var(--forest);
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.connection-status.is-restored > span {
+  color: var(--forest);
+  background: #fff;
+}
+
+@media (max-width: 520px) {
+  .connection-status {
+    right: 8px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: calc(100% - 16px);
+    gap: 9px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .connection-status small {
+    max-width: 210px;
+  }
+
+  .connection-status button {
+    padding: 7px 9px;
+    font-size: 0.78rem;
+  }
+}
+
 @media (max-width: 650px) {
   .store-content-grid,
   .returns-forms,
