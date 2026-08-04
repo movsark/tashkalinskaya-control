@@ -8,6 +8,27 @@ import "./globals.css";
 export const metadata: Metadata = {
   applicationName: "Ташкалинская — контроль",
   description: "Внутренняя система контроля Ташкалинской кондитерской фабрики",
+  icons: {
+    apple: [
+      {
+        sizes: "180x180",
+        type: "image/png",
+        url: "/icons/tashkalinskaya-apple-touch.png",
+      },
+    ],
+    icon: [
+      {
+        sizes: "64x64",
+        type: "image/png",
+        url: "/icons/tashkalinskaya-64.png",
+      },
+      {
+        sizes: "192x192",
+        type: "image/png",
+        url: "/icons/tashkalinskaya-192.png",
+      },
+    ],
+  },
   title: {
     default: "Ташкалинская — внутренний контроль",
     template: "%s · Ташкалинская",
