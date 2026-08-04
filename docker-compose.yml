@@ -31,11 +31,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-    # Publish the container port to a Docker-assigned free host port. Timeweb
-    # discovers that binding for Caddy, while overlapping deployments do not
-    # compete for a fixed host port.
+    # Timeweb App Platform discovers the public service only from a fixed
+    # published port. Stop the current staging app before a manual deploy so
+    # the replacement container can bind this port without overlap.
     ports:
-      - "3000"
+      - "3000:3000"
     restart: unless-stopped
 
   migrate:
