@@ -81,6 +81,12 @@ test.describe("B20 browser and HTTP regression", () => {
 
   test("a worker sees loss and restoration of server connection", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
+    await page.addInitScript(() => {
+      Object.defineProperty(window.navigator, "onLine", {
+        configurable: true,
+        get: () => false,
+      });
+    });
     await page.route("**/api/v1/health/live", (route) =>
       json(route, {
         service: "api",
@@ -91,7 +97,6 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.goto("/");
 
-    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
     await expect(page.locator(".connection-status.is-offline")).toContainText(
       "Нет связи с сервером",
     );
@@ -99,7 +104,13 @@ test.describe("B20 browser and HTTP regression", () => {
       "Не повторяйте операцию",
     );
 
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await page.evaluate(() => {
+      Object.defineProperty(window.navigator, "onLine", {
+        configurable: true,
+        get: () => true,
+      });
+      window.dispatchEvent(new Event("online"));
+    });
     await expect(page.locator(".connection-status.is-restored")).toContainText(
       "Связь восстановлена",
     );
