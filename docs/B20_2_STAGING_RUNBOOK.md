@@ -76,6 +76,7 @@ BuildKit общий кэш: зависимости, TypeScript и Next.js фак
 | `PUBLIC_ORIGIN` | `https://staging.example.ru`, без завершающего `/` |
 | `WEBAUTHN_RP_ID` | только hostname staging-домена |
 | `DATABASE_URL` | отдельный пользователь staging, TLS, без public-доступа |
+| `DATABASE_MAX_CONNECTIONS` | лимит пула API; по умолчанию `10`, менять только измеряемым нагрузочным экспериментом |
 | `AUTH_TOKEN_PEPPER` | отдельное случайное значение не короче 32 символов |
 | `SESSION_TOKEN_PEPPER` | отдельное случайное значение не короче 32 символов |
 | `CSRF_SECRET` | отдельное случайное значение не короче 32 символов |
