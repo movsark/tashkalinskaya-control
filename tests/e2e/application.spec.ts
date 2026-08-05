@@ -890,6 +890,16 @@ test.describe("B20 browser and HTTP regression", () => {
     page,
   }) => {
     const productId = "20000000-0000-4000-8000-000000000100";
+    const dryProductId = "20000000-0000-4000-8000-000000000107";
+    const territories = Array.from({ length: 9 }, (_, index) => ({
+      description: null,
+      id: `20000000-0000-4000-8000-${String(index + 110).padStart(12, "0")}`,
+      name: `Территория ${index + 1}`,
+      number: index + 1,
+      sortOrder: index + 1,
+      status: "ACTIVE",
+      version: 1,
+    }));
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -914,6 +924,34 @@ test.describe("B20 browser and HTTP regression", () => {
           version: 1,
         },
         sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/planning/setup", (route) =>
+      json(route, {
+        productGroups: [
+          { code: "BASIC_CAKES", name: "Торты Базовые", sortOrder: 1 },
+          { code: "PREMIUM_CAKES", name: "Торты Премиум", sortOrder: 2 },
+          { code: "PIES_AND_PASTRIES", name: "Пироги", sortOrder: 3 },
+          { code: "DESSERTS", name: "Десерты", sortOrder: 4 },
+          { code: "DRY_BAKERY", name: "Сухая выпечка", sortOrder: 5 },
+        ],
+        products: [
+          {
+            categoryCode: "DRY_BAKERY",
+            categoryName: "Сухая выпечка",
+            code: "SV-001",
+            id: dryProductId,
+            name: "СВ Печенье тестовое",
+          },
+        ],
+        territories,
+      }),
+    );
+    await page.route("**/api/v1/planning/territory-norms/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-06",
+        lines: [{ productId: dryProductId, quantity: 7, version: 1 }],
+        territoryId: territories[2].id,
       }),
     );
     await page.route("**/api/v1/planning/plans/*", (route) =>
@@ -964,19 +1002,31 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning/plan");
     await expect(page.getByRole("heading", { level: 1, name: "План производства" })).toBeVisible();
+    await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
+    await page.getByRole("button", { name: /Территория 3/ }).click();
+    await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
+    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
+    await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
+    await page.getByText("Сводный опубликованный план по цехам", { exact: true }).click();
     await expect(
-      page.locator(".planning-plan-section .planning-plan-line").getByText("12 шт.", {
+      page.locator(".published-plan-summary .planning-plan-line").getByText("12 шт.", {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByText("физический пересчет склада не подтвержден")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Спрос по направлениям" })).not.toBeVisible();
-    await expect(page.getByLabel("Новое количество Торт тестовый")).not.toBeVisible();
+    await expect(page.getByText("физический пересчёт склада не подтверждён")).toBeVisible();
+    const demandDetails = page.locator(".planning-calculation .planning-demand-line");
+    const publishedProductLine = page
+      .locator(".published-plan-summary .planning-plan-line")
+      .filter({ hasText: "Торт тестовый" });
+    await expect(demandDetails).not.toBeVisible();
+    await expect(publishedProductLine.getByLabel("Новое количество")).not.toBeVisible();
 
     await page.getByText("Как рассчитан план", { exact: false }).click();
-    await expect(page.getByRole("heading", { name: "Спрос по направлениям" })).toBeVisible();
-    await page.getByText("Изменить план", { exact: true }).click();
-    await expect(page.getByLabel("Новое количество Торт тестовый")).toBeVisible();
+    await expect(
+      demandDetails.getByText("Территория 3 · вывоз 05.08", { exact: true }),
+    ).toBeVisible();
+    await publishedProductLine.getByText("Изменить опубликованный план", { exact: true }).click();
+    await expect(publishedProductLine.getByLabel("Новое количество")).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
