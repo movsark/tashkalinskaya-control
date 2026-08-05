@@ -16,6 +16,8 @@ export interface AccountRecord {
   readonly employeeStatus: EmploymentStatus;
   readonly lockedUntil: Date | null;
   readonly passwordHash: string | null;
+  readonly phoneE164: string | null;
+  readonly phoneVerifiedAt: Date | null;
 }
 
 export interface DeviceRecord {

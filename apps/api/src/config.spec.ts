@@ -16,6 +16,12 @@ describe("loadApiConfig", () => {
     expect(config.s3).toBeNull();
     expect(config.pushVapidPublicKey).toBeNull();
     expect(config.sessionTokenPepper.length).toBeGreaterThanOrEqual(32);
+    expect(config.smsRuApiId).toBeNull();
+  });
+
+  it("enables SMS only when the provider secret is configured", () => {
+    expect(loadApiConfig({ SMS_RU_API_ID: "a".repeat(20) }).smsRuApiId).toBe("a".repeat(20));
+    expect(() => loadApiConfig({ SMS_RU_API_ID: "short" })).toThrow();
   });
 
   it("rejects an invalid port", () => {

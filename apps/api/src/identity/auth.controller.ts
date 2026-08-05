@@ -18,11 +18,16 @@ import {
   ActivateAccountDto,
   ActivationOptionsDto,
   AssertionDto,
+  ChangePasswordDto,
+  ConfirmPhoneRecoveryDto,
+  ConfirmPhoneVerificationDto,
   LoginDto,
   LoginOptionsDto,
   PreviewEmployeeRegistrationDto,
   RecoverAccountDto,
   RegisterEmployeeDto,
+  RequestPhoneRecoveryDto,
+  RequestPhoneVerificationDto,
   RecoveryOptionsDto,
   StepUpDto,
 } from "./identity.dto";
@@ -39,6 +44,30 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly repository: IdentityRepository,
   ) {}
+
+  @Get("recovery/config")
+  recoveryConfig() {
+    return this.authService.recoveryConfig();
+  }
+
+  @HttpCode(202)
+  @Post("phone-recovery/request")
+  requestPhoneRecovery(@Body() dto: RequestPhoneRecoveryDto, @Req() request: AuthenticatedRequest) {
+    return this.authService.requestPhoneRecovery(
+      dto,
+      requireCorrelationId(request),
+      request.ip ?? request.socket.remoteAddress ?? "unknown",
+    );
+  }
+
+  @Post("phone-recovery/confirm")
+  confirmPhoneRecovery(@Body() dto: ConfirmPhoneRecoveryDto, @Req() request: AuthenticatedRequest) {
+    return this.authService.confirmPhoneRecovery(
+      dto,
+      requireCorrelationId(request),
+      request.ip ?? request.socket.remoteAddress ?? "unknown",
+    );
+  }
 
   @Post("activate/options")
   activationOptions(@Body() dto: ActivationOptionsDto) {
@@ -159,6 +188,54 @@ export class AuthController {
     );
     this.setSessionCookie(response, actor.sessionToken, result.sessionExpiresAt);
     return result;
+  }
+
+  @Get("account")
+  @UseGuards(SessionAuthGuard)
+  account(@Req() request: AuthenticatedRequest) {
+    return this.authService.accountProfile(requireActor(request));
+  }
+
+  @HttpCode(204)
+  @Post("account/password")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  async changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.authService.changePassword(
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("account/phone/request")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  requestPhoneVerification(
+    @Body() dto: RequestPhoneVerificationDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.authService.requestPhoneVerification(
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+      request.ip ?? request.socket.remoteAddress ?? "unknown",
+    );
+  }
+
+  @HttpCode(204)
+  @Post("account/phone/confirm")
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  async confirmPhoneVerification(
+    @Body() dto: ConfirmPhoneVerificationDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.authService.confirmPhoneVerification(
+      dto,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
   }
 
   @HttpCode(204)

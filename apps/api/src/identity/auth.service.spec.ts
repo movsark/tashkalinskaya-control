@@ -4,6 +4,7 @@ import { AuthService } from "./auth.service";
 import type { DeviceSecurityRepository } from "./device-security.repository";
 import type { IdentityCryptoService } from "./identity-crypto.service";
 import type { IdentityRepository, NewSession } from "./identity.repository";
+import type { SmsRuService } from "./sms-ru.service";
 import type { WebAuthnService } from "./webauthn.service";
 
 const accountId = "10000000-0000-4000-8000-000000000001";
@@ -72,6 +73,7 @@ describe("AuthService simple personal login", () => {
       crypto as unknown as IdentityCryptoService,
       {} as DeviceSecurityRepository,
       repository as unknown as IdentityRepository,
+      { available: false } as SmsRuService,
       webauthn as unknown as WebAuthnService,
     );
 
@@ -137,6 +139,7 @@ describe("AuthService simple personal login", () => {
       crypto as unknown as IdentityCryptoService,
       {} as DeviceSecurityRepository,
       repository as unknown as IdentityRepository,
+      { available: false } as SmsRuService,
       webauthn as unknown as WebAuthnService,
     );
 
@@ -164,5 +167,91 @@ describe("AuthService simple personal login", () => {
       }),
     );
     expect(webauthn.verifyRegistration).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthService account self-service", () => {
+  const actor = {
+    accountId,
+    deviceId,
+    employee: {
+      accountStatus: "ACTIVE",
+      departmentId: null,
+      employmentStatus: "ACTIVE",
+      fullName: "Администратор",
+      id: employeeId,
+      login: "admin",
+      personnelNumber: "A-01",
+      roles: [],
+      version: 1,
+    },
+    roles: [],
+    sessionExpiresAt: new Date("2026-08-06T00:00:00.000Z"),
+    sessionId: "10000000-0000-4000-8000-000000000006",
+    sessionToken: "session-token",
+    stepUpExpiresAt: null,
+  } as const;
+
+  it("returns only a masked verified phone", async () => {
+    const repository = {
+      getAccountProfile: vi.fn().mockResolvedValue({
+        fullName: "Администратор",
+        login: "admin",
+        phoneE164: "+79001234567",
+        phoneVerified: true,
+      }),
+    };
+    const service = new AuthService(
+      {} as IdentityCryptoService,
+      {} as DeviceSecurityRepository,
+      repository as unknown as IdentityRepository,
+      { available: true } as SmsRuService,
+      {} as WebAuthnService,
+    );
+
+    await expect(service.accountProfile(actor)).resolves.toEqual({
+      fullName: "Администратор",
+      login: "admin",
+      phoneMasked: "+7 ••• •••-45-67",
+      phoneVerified: true,
+      smsRecoveryAvailable: true,
+    });
+  });
+
+  it("changes the password only after checking the current password", async () => {
+    const repository = {
+      changePassword: vi.fn(),
+      findAccountByLogin: vi.fn().mockResolvedValue({
+        accountId,
+        passwordHash: "stored-hash",
+      }),
+    };
+    const crypto = {
+      hashPassword: vi.fn().mockResolvedValue("new-hash"),
+      verifyPassword: vi.fn().mockResolvedValue(true),
+    };
+    const service = new AuthService(
+      crypto as unknown as IdentityCryptoService,
+      {} as DeviceSecurityRepository,
+      repository as unknown as IdentityRepository,
+      { available: false } as SmsRuService,
+      {} as WebAuthnService,
+    );
+
+    await service.changePassword(
+      { currentPassword: "старый-пароль", newPassword: "новый-пароль" },
+      actor,
+      "10000000-0000-4000-8000-000000000007",
+    );
+
+    expect(crypto.verifyPassword).toHaveBeenCalledWith("stored-hash", "старый-пароль");
+    expect(repository.changePassword).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId,
+        employeeId,
+        passwordHash: "new-hash",
+        sessionId: actor.sessionId,
+      }),
+    );
   });
 });

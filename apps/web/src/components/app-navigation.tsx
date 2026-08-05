@@ -132,6 +132,11 @@ export function AppNavigation() {
                   <i aria-hidden="true">›</i>
                 </Link>
               ))}
+              <Link href="/account">
+                <span aria-hidden="true">●</span>
+                <strong>Личный кабинет</strong>
+                <i aria-hidden="true">›</i>
+              </Link>
             </div>
           </section>
         </div>

@@ -61,6 +61,19 @@ export interface AuthenticatedUser {
   readonly sessionExpiresAt: string;
 }
 
+export interface AccountProfileView {
+  readonly fullName: string;
+  readonly login: string;
+  readonly phoneMasked: string | null;
+  readonly phoneVerified: boolean;
+  readonly smsRecoveryAvailable: boolean;
+}
+
+export interface PhoneRecoveryResult {
+  readonly deviceId: string;
+  readonly login: string;
+}
+
 export interface EmployeeListResponse {
   readonly items: readonly EmployeeSummary[];
   readonly total: number;

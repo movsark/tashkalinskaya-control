@@ -35,6 +35,7 @@ const environmentSchema = z.object({
   S3_REGION: z.string().trim().min(1).default("ru-1"),
   S3_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
   SESSION_TOKEN_PEPPER: z.string().min(32).default("local-session-pepper-change-me-now"),
+  SMS_RU_API_ID: optionalTrimmed(20),
   STAGING_LOAD_AUTH_ENABLED: booleanFromEnvironment,
   STAGING_LOAD_LOGIN: optionalTrimmed(1),
   STAGING_LOAD_TOKEN_SHA256: optionalTrimmed(64),
@@ -66,6 +67,7 @@ export interface ApiConfig {
     readonly secretAccessKey: string;
   } | null;
   readonly sessionTokenPepper: string;
+  readonly smsRuApiId: string | null;
   readonly stagingLoadAccess: {
     readonly login: string;
     readonly tokenSha256: string;
@@ -156,6 +158,7 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
           }
         : null,
     sessionTokenPepper: parsed.SESSION_TOKEN_PEPPER,
+    smsRuApiId: parsed.SMS_RU_API_ID ?? null,
     stagingLoadAccess: parsed.STAGING_LOAD_AUTH_ENABLED
       ? {
           login: parsed.STAGING_LOAD_LOGIN!.toLowerCase(),

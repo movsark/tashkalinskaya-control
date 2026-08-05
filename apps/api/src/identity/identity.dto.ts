@@ -114,6 +114,7 @@ export class ActivateAccountDto {
 
   @IsString()
   @Length(1, 100)
+  @Matches(/\S/u)
   deviceLabel!: string;
 
   @IsIn(["ANDROID", "IOS", "IPADOS", "OTHER"])
@@ -149,6 +150,59 @@ export class LoginDto extends LoginOptionsDto {
 
   @IsUUID()
   deviceId!: string;
+}
+
+export class ChangePasswordDto {
+  @IsString()
+  @Length(1, 128)
+  currentPassword!: string;
+
+  @IsString()
+  @Length(8, 128)
+  newPassword!: string;
+}
+
+export class RequestPhoneVerificationDto {
+  @IsString()
+  @Length(1, 128)
+  currentPassword!: string;
+
+  @IsString()
+  @Length(8, 32)
+  phone!: string;
+}
+
+export class ConfirmPhoneVerificationDto {
+  @IsString()
+  @Matches(/^\d{6}$/u)
+  code!: string;
+}
+
+export class RequestPhoneRecoveryDto {
+  @IsString()
+  @Length(8, 32)
+  phone!: string;
+}
+
+export class ConfirmPhoneRecoveryDto extends RequestPhoneRecoveryDto {
+  @IsString()
+  @Matches(/^\d{6}$/u)
+  code!: string;
+
+  @IsUUID()
+  deviceId!: string;
+
+  @IsString()
+  @Length(1, 100)
+  @Matches(/\S/u)
+  deviceLabel!: string;
+
+  @IsString()
+  @Length(8, 128)
+  newPassword!: string;
+
+  @IsIn(["ANDROID", "IOS", "IPADOS", "OTHER"])
+  platformFamily!: "ANDROID" | "IOS" | "IPADOS" | "OTHER";
 }
 
 export class AssertionDto {
