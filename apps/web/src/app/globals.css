@@ -3386,6 +3386,161 @@ select:focus {
   background: #fff;
 }
 
+.territory-norm-breadcrumbs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.territory-norm-breadcrumbs button,
+.territory-norm-breadcrumbs span {
+  border: 0;
+  border-radius: 999px;
+  background: var(--sand);
+  color: var(--forest);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 760;
+  padding: 8px 12px;
+}
+
+.territory-norm-breadcrumbs button {
+  cursor: pointer;
+}
+
+.territory-norm-breadcrumbs button:not(:last-child)::after {
+  content: "  ›";
+}
+
+.territory-norm-breadcrumbs .is-current,
+.territory-norm-breadcrumbs span {
+  background: var(--forest);
+  color: #fff;
+}
+
+.territory-norm-step,
+.territory-norm-products {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  padding: 18px;
+}
+
+.territory-norm-grid,
+.territory-product-group-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.territory-norm-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.territory-product-group-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.territory-norm-grid button,
+.territory-product-group-grid button {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 7px;
+  min-height: 108px;
+  padding: 16px;
+  text-align: left;
+}
+
+.territory-norm-grid button:hover,
+.territory-product-group-grid button:hover {
+  border-color: var(--forest);
+  box-shadow: 0 8px 22px rgba(32, 75, 60, 0.1);
+  transform: translateY(-1px);
+}
+
+.territory-norm-grid button > span:first-child {
+  align-items: center;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+  display: inline-flex;
+  font-size: 1.05rem;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.territory-norm-grid small,
+.territory-product-group-grid span,
+.territory-product-group-grid small {
+  color: var(--ink-soft);
+}
+
+.territory-norm-product-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.territory-norm-product-head,
+.territory-norm-product-list > label {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 150px;
+}
+
+.territory-norm-product-head {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 760;
+  padding: 0 14px;
+  text-transform: uppercase;
+}
+
+.territory-norm-product-list > label {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.territory-norm-product-list > label > span {
+  display: grid;
+  gap: 3px;
+}
+
+.territory-norm-product-list small {
+  color: var(--ink-soft);
+}
+
+.territory-norm-product-list input {
+  font-size: 1rem;
+  font-weight: 760;
+  text-align: right;
+}
+
+.territory-norm-save {
+  margin-top: 16px;
+  width: 100%;
+}
+
+.published-plan-summary {
+  margin: 0;
+}
+
+.published-plan-date {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  max-width: 260px;
+}
+
 .planning-plan-empty p,
 .planning-plan-warning p {
   color: var(--ink-soft);
@@ -5084,6 +5239,25 @@ select:focus {
 
   .planning-plan-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .territory-norm-grid,
+  .territory-product-group-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .territory-norm-step,
+  .territory-norm-products {
+    border-radius: 17px;
+    padding: 13px;
+  }
+
+  .territory-norm-product-head {
+    display: none;
+  }
+
+  .territory-norm-product-list > label {
+    grid-template-columns: minmax(0, 1fr) 100px;
   }
 
   .planning-plan-line,

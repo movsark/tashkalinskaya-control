@@ -26,6 +26,32 @@ export class NormRequestLineDto {
   quantity!: number;
 }
 
+export class TerritoryDailyNormLineDto {
+  @IsUUID()
+  productId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  quantity!: number;
+}
+
+export class SaveTerritoryDailyNormDto {
+  @IsDateString()
+  dispatchDate!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => TerritoryDailyNormLineDto)
+  lines!: TerritoryDailyNormLineDto[];
+
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+}
+
 export class CreateNormRequestDto {
   @IsIn(["PERMANENT", "ONE_OFF"])
   kind!: "PERMANENT" | "ONE_OFF";
