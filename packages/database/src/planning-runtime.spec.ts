@@ -5,6 +5,7 @@ import { calculateProductionPlan, type PlanningSnapshot } from "./planning-runti
 const baseLine: PlanningSnapshot["lines"][number] = {
   allocatedFreeStock: 0,
   allocatedGoodReturn: 0,
+  dailyNormQuantity: null,
   dispatchDate: "2035-04-02",
   directionKind: "TERRITORY",
   oneOffQuantity: null,
@@ -46,6 +47,11 @@ describe("production plan calculator", () => {
     );
     expect(result.demandLines[0]).toMatchObject({ effectiveDemand: 10, newProduction: 5 });
     expect(result.productionLines[0]?.quantity).toBe(5);
+  });
+
+  it("uses a daily territory norm before the legacy weekly norm", () => {
+    const result = calculateProductionPlan(snapshot([{ ...baseLine, dailyNormQuantity: 7 }]));
+    expect(result.demandLines[0]).toMatchObject({ effectiveDemand: 7, newProduction: 7 });
   });
 
   it("does not produce a negative quantity and exposes an excess return", () => {

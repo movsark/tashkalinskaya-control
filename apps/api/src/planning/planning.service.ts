@@ -14,6 +14,7 @@ import type {
   DecideNormRequestDto,
   OverrideProductionPlanDto,
   RunProductionPlanDto,
+  SaveTerritoryDailyNormDto,
 } from "./planning.dto";
 import { PlanningRepository } from "./planning.repository";
 import { API_CONFIG, type ApiConfig } from "../config";
@@ -51,6 +52,31 @@ export class PlanningService {
 
   requests() {
     return this.repository.listRequests();
+  }
+
+  territoryDailyNorm(territoryId: string, dispatchDate: string) {
+    assertDate(dispatchDate);
+    return this.repository.getTerritoryDailyNorm(territoryId, dispatchDate);
+  }
+
+  saveTerritoryDailyNorm(
+    territoryId: string,
+    dto: SaveTerritoryDailyNormDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    assertDate(dto.dispatchDate);
+    if (new Set(dto.lines.map((line) => line.productId)).size !== dto.lines.length) {
+      throw new BadRequestException("Один товар указан несколько раз");
+    }
+    return this.repository.saveTerritoryDailyNorm({
+      actorEmployeeId,
+      correlationId,
+      dispatchDate: dto.dispatchDate,
+      lines: dto.lines,
+      reason: dto.reason.trim(),
+      territoryId,
+    });
   }
 
   createRequest(dto: CreateNormRequestDto, actorEmployeeId: string, correlationId: string) {

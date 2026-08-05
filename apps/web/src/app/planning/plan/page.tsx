@@ -1,6 +1,11 @@
 "use client";
 
-import type { AuthenticatedUser, ProductionPlanView } from "@tashkalinskaya/contracts";
+import type {
+  AuthenticatedUser,
+  PlanningSetupView,
+  ProductionPlanView,
+  TerritoryDailyNormView,
+} from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -8,37 +13,333 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
+  getPlanningSetup,
   getProductionPlan,
   getSession,
+  getTerritoryDailyNorm,
   overrideProductionPlan,
   runProductionPlan,
+  saveTerritoryDailyNorm,
 } from "../../../lib/api";
 
 export default function ProductionPlanPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
+  const [setup, setSetup] = useState<PlanningSetupView | null>(null);
+  const [dispatchDate, setDispatchDate] = useState(tomorrow());
+  const [territoryId, setTerritoryId] = useState("");
+  const [groupCode, setGroupCode] = useState("");
+  const [norm, setNorm] = useState<TerritoryDailyNormView | null>(null);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const isAdmin = useMemo(
+    () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
+    [session],
+  );
+  const territories = useMemo(
+    () =>
+      setup?.territories
+        .filter((territory) => territory.status === "ACTIVE")
+        .sort((left, right) => left.number - right.number) ?? [],
+    [setup],
+  );
+  const selectedTerritory = territories.find((territory) => territory.id === territoryId);
+  const selectedGroup = setup?.productGroups.find((group) => group.code === groupCode);
+  const groupProducts = useMemo(
+    () => setup?.products.filter((product) => product.categoryCode === groupCode) ?? [],
+    [groupCode, setup],
+  );
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [currentSession, currentSetup] = await Promise.all([
+          getSession(),
+          getPlanningSetup(),
+        ]);
+        setSession(currentSession);
+        setSetup(currentSetup);
+      } catch (caught) {
+        if (caught instanceof ApiRequestError && caught.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        setError(messageOf(caught));
+      }
+    }
+    void load();
+  }, [router]);
+
+  useEffect(() => {
+    if (territoryId === "") {
+      setNorm(null);
+      setQuantities({});
+      return;
+    }
+    setError("");
+    setMessage("");
+    getTerritoryDailyNorm(territoryId, dispatchDate)
+      .then((loaded) => {
+        setNorm(loaded);
+        setQuantities(
+          Object.fromEntries(loaded.lines.map((line) => [line.productId, line.quantity])),
+        );
+      })
+      .catch((caught) => setError(messageOf(caught)));
+  }, [dispatchDate, territoryId]);
+
+  async function saveGroup() {
+    if (!session || !selectedTerritory || !selectedGroup || groupProducts.length === 0) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await saveTerritoryDailyNorm(
+        selectedTerritory.id,
+        {
+          dispatchDate,
+          lines: groupProducts.map((product) => ({
+            productId: product.id,
+            quantity: quantities[product.id] ?? 0,
+          })),
+          reason: `Норма территории ${selectedTerritory.number}: ${selectedGroup.name}`,
+        },
+        session.csrfToken,
+      );
+      setNorm(saved);
+      setQuantities(Object.fromEntries(saved.lines.map((line) => [line.productId, line.quantity])));
+      setMessage(`Норма сохранена: территория ${selectedTerritory.number}, ${selectedGroup.name}.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="workspace-layout planning-layout simple-workspace planning-simple-workspace">
+      <header className="workspace-header">
+        <AppBrand />
+        <div className="workspace-user">
+          <span>{session?.employee.fullName ?? "Загрузка…"}</span>
+          <small>
+            План производства · <Link href="/planning">календарь и запросы</Link>
+          </small>
+        </div>
+      </header>
+
+      <section className="workspace-title planning-title">
+        <div>
+          <p className="eyebrow">Нормы территорий</p>
+          <h1>План производства</h1>
+          <p>Сначала выберите территорию, затем группу продукции и укажите количество товаров.</p>
+        </div>
+        <label>
+          Дата вывоза
+          <input
+            type="date"
+            value={dispatchDate}
+            onChange={(event) => {
+              setDispatchDate(event.target.value);
+              setGroupCode("");
+            }}
+          />
+        </label>
+      </section>
+
+      {error ? <p className="form-error">{error}</p> : null}
+      {message ? <p className="logistics-success">{message}</p> : null}
+
+      <nav className="territory-norm-breadcrumbs" aria-label="Путь выбора">
+        <button
+          className={territoryId === "" ? "is-current" : ""}
+          onClick={() => {
+            setTerritoryId("");
+            setGroupCode("");
+          }}
+          type="button"
+        >
+          9 территорий
+        </button>
+        {selectedTerritory ? (
+          <button
+            className={groupCode === "" ? "is-current" : ""}
+            onClick={() => setGroupCode("")}
+            type="button"
+          >
+            Территория {selectedTerritory.number}
+          </button>
+        ) : null}
+        {selectedGroup ? <span>{selectedGroup.name}</span> : null}
+      </nav>
+
+      {territoryId === "" ? (
+        <TerritoryGrid
+          territories={territories}
+          onSelect={(nextTerritoryId) => {
+            setTerritoryId(nextTerritoryId);
+            setGroupCode("");
+          }}
+        />
+      ) : groupCode === "" ? (
+        <ProductGroupGrid
+          groups={setup?.productGroups ?? []}
+          norm={norm}
+          products={setup?.products ?? []}
+          onSelect={setGroupCode}
+        />
+      ) : (
+        <section className="territory-norm-products">
+          <div className="planning-section-heading">
+            <div>
+              <p className="eyebrow">Территория {selectedTerritory?.number}</p>
+              <h2>{selectedGroup?.name}</h2>
+            </div>
+            <span>{shortDate(dispatchDate)}</span>
+          </div>
+          {groupProducts.length === 0 ? (
+            <p className="planning-empty-note">В этой группе пока нет товаров.</p>
+          ) : (
+            <div className="territory-norm-product-list">
+              <div className="territory-norm-product-head" aria-hidden="true">
+                <span>Наименование</span>
+                <span>Количество</span>
+              </div>
+              {groupProducts.map((product) => (
+                <label key={product.id}>
+                  <span>
+                    <strong>{product.name}</strong>
+                    <small>{product.code}</small>
+                  </span>
+                  {isAdmin ? (
+                    <input
+                      aria-label={`Количество ${product.name}`}
+                      inputMode="numeric"
+                      min="0"
+                      max="100000"
+                      onChange={(event) =>
+                        setQuantities((current) => ({
+                          ...current,
+                          [product.id]: Math.max(0, Number(event.target.value) || 0),
+                        }))
+                      }
+                      type="number"
+                      value={quantities[product.id] ?? 0}
+                    />
+                  ) : (
+                    <strong>{quantities[product.id] ?? 0} шт.</strong>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+          {isAdmin && groupProducts.length > 0 ? (
+            <button
+              className="primary-button territory-norm-save"
+              disabled={busy}
+              onClick={() => void saveGroup()}
+              type="button"
+            >
+              {busy ? "Сохраняем…" : "Сохранить количество"}
+            </button>
+          ) : null}
+        </section>
+      )}
+
+      <PublishedPlanSummary isAdmin={isAdmin} session={session} />
+    </main>
+  );
+}
+
+function TerritoryGrid({
+  onSelect,
+  territories,
+}: {
+  onSelect: (territoryId: string) => void;
+  territories: PlanningSetupView["territories"];
+}) {
+  return (
+    <section className="territory-norm-step">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Шаг 1</p>
+          <h2>Выберите территорию</h2>
+        </div>
+        <span>{territories.length} из 9</span>
+      </div>
+      <div className="territory-norm-grid">
+        {territories.map((territory) => (
+          <button key={territory.id} onClick={() => onSelect(territory.id)} type="button">
+            <span>{territory.number}</span>
+            <strong>Территория {territory.number}</strong>
+            <small>Открыть норму →</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductGroupGrid({
+  groups,
+  norm,
+  onSelect,
+  products,
+}: {
+  groups: PlanningSetupView["productGroups"];
+  norm: TerritoryDailyNormView | null;
+  onSelect: (groupCode: string) => void;
+  products: PlanningSetupView["products"];
+}) {
+  const quantityByProduct = new Map(norm?.lines.map((line) => [line.productId, line.quantity]));
+  return (
+    <section className="territory-norm-step">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Шаг 2</p>
+          <h2>Выберите группу продукции</h2>
+        </div>
+        <span>{groups.length} групп</span>
+      </div>
+      <div className="territory-product-group-grid">
+        {groups.map((group) => {
+          const groupProducts = products.filter((product) => product.categoryCode === group.code);
+          const total = groupProducts.reduce(
+            (sum, product) => sum + (quantityByProduct.get(product.id) ?? 0),
+            0,
+          );
+          return (
+            <button key={group.code} onClick={() => onSelect(group.code)} type="button">
+              <strong>{group.name}</strong>
+              <span>{productCountLabel(groupProducts.length)}</span>
+              <small>{total} шт. →</small>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PublishedPlanSummary({
+  isAdmin,
+  session,
+}: {
+  isAdmin: boolean;
+  session: AuthenticatedUser | null;
+}) {
   const [productionDate, setProductionDate] = useState(tomorrow());
   const [plan, setPlan] = useState<ProductionPlanView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const isAdmin = useMemo(
-    () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
-    [session],
-  );
   const totalQuantity = useMemo(
     () => plan?.productionLines.reduce((sum, line) => sum + line.quantity, 0) ?? 0,
     [plan],
   );
-
-  useEffect(() => {
-    getSession()
-      .then(setSession)
-      .catch((caught) => {
-        if (caught instanceof ApiRequestError && caught.status === 401) router.replace("/login");
-        else setError(messageOf(caught));
-      });
-  }, [router]);
 
   useEffect(() => {
     setError("");
@@ -65,24 +366,10 @@ export default function ProductionPlanPage() {
   }
 
   return (
-    <main className="workspace-layout planning-layout simple-workspace planning-simple-workspace">
-      <header className="workspace-header">
-        <AppBrand />
-        <div className="workspace-user">
-          <span>{session?.employee.fullName ?? "Загрузка…"}</span>
-          <small>
-            План производства · <Link href="/planning">нормы и календарь</Link>
-          </small>
-        </div>
-      </header>
-
-      <section className="workspace-title planning-title">
-        <div>
-          <p className="eyebrow">Производство на выбранную дату</p>
-          <h1>План производства</h1>
-          <p>Сначала показано, сколько нужно произвести. Источники расчёта открываются отдельно.</p>
-        </div>
-        <label>
+    <details className="workspace-more published-plan-summary">
+      <summary>Сводный опубликованный план по цехам</summary>
+      <div className="workspace-more__content">
+        <label className="published-plan-date">
           Дата производства
           <input
             type="date"
@@ -90,74 +377,61 @@ export default function ProductionPlanPage() {
             onChange={(event) => setProductionDate(event.target.value)}
           />
         </label>
-      </section>
-
-      {error ? <p className="form-error">{error}</p> : null}
-      {message ? <p className="logistics-success">{message}</p> : null}
-
-      {!plan ? (
-        <section className="planning-plan-empty">
-          <h2>План ещё не сформирован</h2>
-          <p>Система сформирует его автоматически после 10:00 по московскому времени.</p>
-          {isAdmin && session ? (
-            <button
-              className="button button-primary"
-              disabled={busy}
-              onClick={() =>
-                void act(
-                  () => runProductionPlan(productionDate, session.csrfToken),
-                  "План рассчитан и опубликован.",
-                )
-              }
-              type="button"
-            >
-              {busy ? "Формируем…" : "Сформировать сейчас"}
-            </button>
-          ) : null}
-        </section>
-      ) : (
-        <>
-          {plan.warnings.length ? (
-            <section className="planning-plan-warning" role="alert">
-              <strong>Нужно обратить внимание</strong>
-              <p>{plan.warnings.map(warningLabel).join(" · ")}</p>
-            </section>
-          ) : null}
-
-          <section className="planning-plan-meta" aria-label="Сводка плана">
-            <div>
-              <small>Товаров</small>
-              <strong>{plan.productionLines.length}</strong>
-            </div>
-            <div>
-              <small>Всего произвести</small>
-              <strong>{totalQuantity} шт.</strong>
-            </div>
-            <div>
-              <small>Опубликован</small>
-              <strong>{dateTime(plan.publishedAt)}</strong>
-            </div>
-            <div>
-              <small>Состояние</small>
-              <strong>{plan.warnings.length ? "Есть предупреждение" : "Готов к работе"}</strong>
-            </div>
-          </section>
-
-          <section className="planning-requests planning-plan-section">
-            <div className="planning-section-heading">
+        {error ? <p className="form-error">{error}</p> : null}
+        {message ? <p className="logistics-success">{message}</p> : null}
+        {!plan ? (
+          <div className="planning-plan-empty">
+            <h2>План ещё не сформирован</h2>
+            <p>Сначала заполните нормы территорий и календарную связь дат.</p>
+            {isAdmin ? (
+              <button
+                className="button button-primary"
+                disabled={busy || !session}
+                onClick={() => {
+                  if (!session) return;
+                  void act(
+                    () => runProductionPlan(productionDate, session.csrfToken),
+                    "План рассчитан и опубликован.",
+                  );
+                }}
+              >
+                {busy ? "Формируем…" : "Сформировать сейчас"}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            {plan.warnings.length ? (
+              <section className="planning-plan-warning" role="alert">
+                <strong>Нужно обратить внимание</strong>
+                <p>{plan.warnings.map(warningLabel).join(" · ")}</p>
+              </section>
+            ) : null}
+            <section className="planning-plan-meta" aria-label="Сводка плана">
               <div>
-                <p className="eyebrow">Главное действие</p>
-                <h2>Произвести</h2>
+                <small>Товаров</small>
+                <strong>{plan.productionLines.length}</strong>
               </div>
-              <span>Версия № {plan.version}</span>
-            </div>
+              <div>
+                <small>Всего произвести</small>
+                <strong>{totalQuantity} шт.</strong>
+              </div>
+              <div>
+                <small>Опубликован</small>
+                <strong>{dateTime(plan.publishedAt)}</strong>
+              </div>
+              <div>
+                <small>Версия</small>
+                <strong>№ {plan.version}</strong>
+              </div>
+            </section>
             <div className="planning-plan-table">
               {plan.productionLines.map((line) => (
-                <PlanLine
+                <PublishedPlanLine
+                  busy={busy}
                   isAdmin={isAdmin}
                   key={`${line.workshopId}:${line.productId}`}
                   line={line}
-                  busy={busy}
                   onOverride={(quantity, reason) => {
                     if (!session) return;
                     void act(
@@ -167,21 +441,17 @@ export default function ProductionPlanPage() {
                           { productId: line.productId, quantity, reason },
                           session.csrfToken,
                         ),
-                      "Создана новая версия плана; событие для уведомления сохранено.",
+                      "Создана новая версия опубликованного плана.",
                     );
                   }}
                 />
               ))}
             </div>
-          </section>
-
-          <details className="workspace-more planning-calculation">
-            <summary>
-              Как рассчитан план <b>{plan.demandLines.length}</b>
-            </summary>
-            <div className="workspace-more__content">
-              <h2>Спрос по направлениям</h2>
-              <div className="planning-plan-table">
+            <details className="workspace-more planning-calculation">
+              <summary>
+                Как рассчитан план <b>{plan.demandLines.length}</b>
+              </summary>
+              <div className="workspace-more__content planning-plan-table">
                 {plan.demandLines.map((line) => (
                   <article
                     className="planning-plan-line planning-demand-line"
@@ -193,7 +463,7 @@ export default function ProductionPlanPage() {
                         {line.directionKind === "STORE"
                           ? "Фирменный магазин"
                           : `Территория ${line.territoryNumber}`}{" "}
-                        · вывоз {shortDate(line.dispatchDate)}
+                        · вывоз {shortNumericDate(line.dispatchDate)}
                       </small>
                     </div>
                     <dl>
@@ -217,24 +487,15 @@ export default function ProductionPlanPage() {
                   </article>
                 ))}
               </div>
-            </div>
-          </details>
-
-          <details className="workspace-more planning-technical">
-            <summary>Технические сведения</summary>
-            <div className="workspace-more__content planning-technical-grid">
-              <span>Версия: № {plan.version}</span>
-              <span>Попыток формирования: {plan.attempts}</span>
-              <span>Контроль входов: {plan.inputHash.slice(0, 12)}</span>
-            </div>
-          </details>
-        </>
-      )}
-    </main>
+            </details>
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
-function PlanLine({
+function PublishedPlanLine({
   busy,
   isAdmin,
   line,
@@ -258,12 +519,11 @@ function PlanLine({
       <strong>{line.quantity} шт.</strong>
       {isAdmin ? (
         <details className="planning-plan-edit">
-          <summary>Изменить план</summary>
+          <summary>Изменить опубликованный план</summary>
           <div className="planning-plan-override">
             <label>
               Новое количество
               <input
-                aria-label={`Новое количество ${line.productName}`}
                 min="0"
                 onChange={(event) => setQuantity(Number(event.target.value))}
                 type="number"
@@ -273,7 +533,6 @@ function PlanLine({
             <label>
               Причина
               <input
-                aria-label={`Причина изменения ${line.productName}`}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="Обязательно укажите причину"
                 value={reason}
@@ -295,9 +554,49 @@ function PlanLine({
 }
 
 function tomorrow(): string {
-  const value = new Date();
-  value.setDate(value.getDate() + 1);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const valueByType = new Map(parts.map((part) => [part.type, part.value]));
+  const value = new Date(
+    Date.UTC(
+      Number(valueByType.get("year")),
+      Number(valueByType.get("month")) - 1,
+      Number(valueByType.get("day")) + 1,
+    ),
+  );
   return value.toISOString().slice(0, 10);
+}
+
+function productCountLabel(value: number): string {
+  const lastTwo = value % 100;
+  const last = value % 10;
+  const word =
+    lastTwo >= 11 && lastTwo <= 14
+      ? "товаров"
+      : last === 1
+        ? "товар"
+        : last < 5
+          ? "товара"
+          : "товаров";
+  return `${value} ${word}`;
+}
+
+function shortDate(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function shortNumericDate(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(
+    new Date(`${value}T00:00:00`),
+  );
 }
 
 function dateTime(value: string): string {
@@ -306,17 +605,11 @@ function dateTime(value: string): string {
   );
 }
 
-function shortDate(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(
-    new Date(`${value}T00:00:00`),
-  );
-}
-
 function warningLabel(code: string): string {
   return (
     (
       {
-        INVENTORY_NOT_CONFIRMED: "физический пересчет склада не подтвержден",
+        INVENTORY_NOT_CONFIRMED: "физический пересчёт склада не подтверждён",
         STORE_ORDER_MISSING: "заказ фирменного магазина отсутствует",
       } as Record<string, string>
     )[code] ?? code

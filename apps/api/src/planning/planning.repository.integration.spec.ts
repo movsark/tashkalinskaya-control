@@ -25,6 +25,7 @@ const weekStart = nextMonday(new Date(Date.UTC(2100, 0, 1 + uniqueOffset)));
 const friday = addDays(weekStart, 4);
 const wednesday = addDays(weekStart, 2);
 const tuesday = addDays(weekStart, 1);
+const dailyNormDate = addDays(weekStart, 21);
 
 describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
   beforeAll(async () => {
@@ -126,6 +127,37 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       productionDate: wednesday,
       territoryNumber: 9,
     });
+  });
+
+  it("versions a daily territory norm without a driver assignment in the norm", async () => {
+    const first = await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId,
+      dispatchDate: dailyNormDate,
+      lines: [{ productId, quantity: 11 }],
+      reason: "Первая дневная норма",
+      territoryId: territoryOneId,
+    });
+    expect(first.lines).toEqual([{ productId, quantity: 11, version: 1 }]);
+
+    const second = await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId,
+      dispatchDate: dailyNormDate,
+      lines: [{ productId, quantity: 13 }],
+      reason: "Уточнение дневной нормы",
+      territoryId: territoryOneId,
+    });
+    expect(second.lines).toEqual([{ productId, quantity: 13, version: 2 }]);
+
+    const history = await database.query<{ current_count: string; total_count: string }>(
+      `select count(*)::text as total_count,
+              count(*) filter (where is_current)::text as current_count
+       from planning.territory_daily_norm
+       where territory_id = $1 and dispatch_date = $2 and product_id = $3`,
+      [territoryOneId, dailyNormDate, productId],
+    );
+    expect(history.rows[0]).toEqual({ current_count: "1", total_count: "2" });
   });
 
   it("creates and atomically approves a permanent driver request", async () => {

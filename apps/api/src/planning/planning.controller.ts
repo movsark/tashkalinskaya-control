@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Query,
@@ -19,6 +20,7 @@ import {
   DecideNormRequestDto,
   OverrideProductionPlanDto,
   RunProductionPlanDto,
+  SaveTerritoryDailyNormDto,
 } from "./planning.dto";
 import { PlanningService } from "./planning.service";
 
@@ -29,7 +31,7 @@ export class PlanningController {
   constructor(private readonly planning: PlanningService) {}
 
   @Get("setup")
-  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "DRIVER")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER", "DRIVER")
   setup() {
     return this.planning.setup();
   }
@@ -53,6 +55,30 @@ export class PlanningController {
   @RequireRoles("ADMIN", "MANAGER")
   requests() {
     return this.planning.requests();
+  }
+
+  @Get("territory-norms/:territoryId")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER")
+  territoryDailyNorm(
+    @Param("territoryId", ParseUUIDPipe) territoryId: string,
+    @Query("date") dispatchDate: string,
+  ) {
+    return this.planning.territoryDailyNorm(territoryId, dispatchDate);
+  }
+
+  @Patch("territory-norms/:territoryId")
+  @RequireRoles("ADMIN")
+  saveTerritoryDailyNorm(
+    @Param("territoryId", ParseUUIDPipe) territoryId: string,
+    @Body() dto: SaveTerritoryDailyNormDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.planning.saveTerritoryDailyNorm(
+      territoryId,
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
   }
 
   @Post("requests")

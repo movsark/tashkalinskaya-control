@@ -2,11 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-export const PLANNING_ENGINE_VERSION = "b15.1-v4";
+export const PLANNING_ENGINE_VERSION = "b15.1-v5";
 
 export interface PlanningSnapshotLine {
   readonly allocatedFreeStock: number;
   readonly allocatedGoodReturn: number;
+  readonly dailyNormQuantity: number | null;
   readonly dispatchDate: string;
   readonly directionKind: "STORE" | "TERRITORY";
   readonly oneOffQuantity: number | null;
@@ -99,7 +100,10 @@ export function calculateProductionPlan(snapshot: PlanningSnapshot): CalculatedP
   const demandLines = snapshot.lines
     .map((line) => {
       const effectiveDemand =
-        line.oneOffQuantity ?? line.weeklyNormQuantity ?? line.storeOrderQuantity;
+        line.oneOffQuantity ??
+        line.dailyNormQuantity ??
+        line.weeklyNormQuantity ??
+        line.storeOrderQuantity;
       const afterStock = Math.max(0, effectiveDemand - line.allocatedFreeStock);
       return {
         ...line,
@@ -264,10 +268,11 @@ export async function publishScheduledPlan(
       await client.query(
         `insert into planning.plan_demand_line (
            id, snapshot_id, dispatch_date, direction_kind, territory_id, product_id, workshop_id,
-           weekly_norm_quantity, one_off_quantity, store_order_quantity, store_order_version_id,
+           daily_norm_quantity, weekly_norm_quantity, one_off_quantity,
+           store_order_quantity, store_order_version_id,
            allocated_free_stock, allocated_good_return, effective_demand,
            new_production, excess_return, explanation
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           randomUUID(),
           snapshotId,
@@ -276,6 +281,7 @@ export async function publishScheduledPlan(
           line.territoryId,
           line.productId,
           line.workshopId,
+          line.dailyNormQuantity,
           line.weeklyNormQuantity,
           line.oneOffQuantity,
           line.storeOrderQuantity,
@@ -289,9 +295,11 @@ export async function publishScheduledPlan(
             effectiveSource:
               line.directionKind === "STORE"
                 ? "STORE_ORDER"
-                : line.oneOffQuantity === null
-                  ? "WEEKLY_NORM"
-                  : "ONE_OFF",
+                : line.oneOffQuantity !== null
+                  ? "ONE_OFF"
+                  : line.dailyNormQuantity !== null
+                    ? "DAILY_TERRITORY_NORM"
+                    : "WEEKLY_NORM",
             formula: "max(0, demand - free_stock - good_return)",
           },
         ],
@@ -565,6 +573,7 @@ async function buildSnapshot(
     primary_workshop_id: string | null;
     territory_id: string;
     territory_number: number;
+    daily_quantity: number | null;
     weekly_quantity: number | null;
     one_off_quantity: number | null;
     workshop_name: string | null;
@@ -591,6 +600,12 @@ async function buildSnapshot(
          and (n.valid_until is null or n.valid_until >= el.dispatch_date)
        where el.production_date = $1
        union
+       select el.dispatch_date, el.territory_id, el.territory_number, d.product_id
+       from effective_links el
+       join planning.territory_daily_norm d on d.territory_id = el.territory_id
+         and d.dispatch_date = el.dispatch_date and d.is_current
+       where el.production_date = $1
+       union
        select el.dispatch_date, el.territory_id, el.territory_number, o.product_id
        from effective_links el
        join planning.one_off_norm_override o on o.territory_id = el.territory_id
@@ -600,10 +615,17 @@ async function buildSnapshot(
      select k.dispatch_date::text, k.territory_id, k.territory_number,
             p.id as product_id, p.product_code, p.name as product_name,
             p.primary_workshop_id, d.name as workshop_name,
-            n.quantity as weekly_quantity, o.quantity as one_off_quantity
+            dn.quantity as daily_quantity, n.quantity as weekly_quantity,
+            o.quantity as one_off_quantity
      from product_keys k
      join catalog.product p on p.id = k.product_id and p.status = 'ACTIVE'
      left join identity.department d on d.id = p.primary_workshop_id
+     left join lateral (
+       select quantity from planning.territory_daily_norm
+       where territory_id = k.territory_id and dispatch_date = k.dispatch_date
+         and product_id = k.product_id and is_current
+       limit 1
+     ) dn on true
      left join lateral (
        select quantity from planning.weekly_norm
        where territory_id = k.territory_id and product_id = k.product_id
@@ -723,6 +745,7 @@ async function buildSnapshot(
     allocatedFreeStock: 0,
     allocatedGoodReturn:
       returnsByDemand.get(`${row.dispatch_date}:${row.territory_id}:${row.product_id}`) ?? 0,
+    dailyNormQuantity: row.daily_quantity,
     dispatchDate: row.dispatch_date,
     directionKind: "TERRITORY",
     oneOffQuantity: row.one_off_quantity,
@@ -740,6 +763,7 @@ async function buildSnapshot(
   const storeDemandLines: PlanningSnapshotLine[] = storeLines.rows.map((row) => ({
     allocatedFreeStock: 0,
     allocatedGoodReturn: 0,
+    dailyNormQuantity: null,
     dispatchDate: row.delivery_date,
     directionKind: "STORE",
     oneOffQuantity: null,
@@ -818,7 +842,11 @@ function allocateFreeStock(
 ): PlanningSnapshotLine[] {
   return [...lines].sort(compareSnapshot).map((line) => {
     const available = availableByProduct.get(line.productId) ?? 0;
-    const demand = line.oneOffQuantity ?? line.weeklyNormQuantity ?? line.storeOrderQuantity;
+    const demand =
+      line.oneOffQuantity ??
+      line.dailyNormQuantity ??
+      line.weeklyNormQuantity ??
+      line.storeOrderQuantity;
     const allocatedFreeStock = Math.min(available, Math.max(0, demand - line.allocatedGoodReturn));
     availableByProduct.set(line.productId, available - allocatedFreeStock);
     return { ...line, allocatedFreeStock };
@@ -872,6 +900,7 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
       allocated_good_return: number;
       dispatch_date: string;
       direction_kind: "STORE" | "TERRITORY";
+      daily_norm_quantity: number | null;
       effective_demand: number;
       excess_return: number;
       new_production: number;
@@ -889,7 +918,8 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
     }>(
       `select d.dispatch_date::text, d.direction_kind, d.territory_id, t.territory_number,
               d.product_id, p.product_code, p.name as product_name,
-              d.workshop_id, w.name as workshop_name, d.weekly_norm_quantity,
+              d.workshop_id, w.name as workshop_name, d.daily_norm_quantity,
+              d.weekly_norm_quantity,
               d.one_off_quantity, d.store_order_quantity, d.store_order_version_id,
               d.allocated_free_stock,
               d.allocated_good_return, d.effective_demand, d.new_production,
@@ -924,6 +954,7 @@ async function loadPlan(client: PoolClient, planId: string): Promise<PublishedPl
     demandLines: demand.rows.map((line) => ({
       allocatedFreeStock: line.allocated_free_stock,
       allocatedGoodReturn: line.allocated_good_return,
+      dailyNormQuantity: line.daily_norm_quantity,
       dispatchDate: line.dispatch_date,
       directionKind: line.direction_kind,
       effectiveDemand: line.effective_demand,

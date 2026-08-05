@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PlanningService } from "./planning.service";
 
 function service() {
+  const saveTerritoryDailyNorm = vi.fn();
   return new PlanningService(
     {
       canDriverViewTerritory: vi.fn().mockResolvedValue(false),
@@ -12,6 +13,7 @@ function service() {
       getSetup: vi.fn(),
       getWeek: vi.fn(),
       listRequests: vi.fn(),
+      saveTerritoryDailyNorm,
     } as never,
     { nodeEnvironment: "test" } as never,
   );
@@ -61,5 +63,23 @@ describe("PlanningService calendar invariants", () => {
         ["ADMIN"],
       ),
     ).rejects.toThrow("Неделя должна начинаться с понедельника");
+  });
+
+  it("rejects duplicate products in a territory daily norm", () => {
+    expect(() =>
+      service().saveTerritoryDailyNorm(
+        "12000000-0000-4000-8000-000000000001",
+        {
+          dispatchDate: "2035-01-08",
+          lines: [
+            { productId: "21000000-0000-4000-8000-000000000001", quantity: 4 },
+            { productId: "21000000-0000-4000-8000-000000000001", quantity: 6 },
+          ],
+          reason: "Плановая норма",
+        },
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+      ),
+    ).toThrow("Один товар указан несколько раз");
   });
 });

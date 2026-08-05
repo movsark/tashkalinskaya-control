@@ -52,6 +52,7 @@ import type {
   RoleCode,
   RoleAssignmentView,
   TerminalSessionView,
+  TerritoryDailyNormView,
   TerritoryDefaultAssignmentView,
   TerritoryNormWeekView,
   TerritoryRunView,
@@ -864,6 +865,31 @@ export async function getTerritoryNormWeek(
   weekStart: string,
 ): Promise<TerritoryNormWeekView> {
   return request(`/planning/weeks/${territoryId}?start=${encodeURIComponent(weekStart)}`);
+}
+
+export async function getTerritoryDailyNorm(
+  territoryId: string,
+  dispatchDate: string,
+): Promise<TerritoryDailyNormView> {
+  return request(
+    `/planning/territory-norms/${territoryId}?date=${encodeURIComponent(dispatchDate)}`,
+  );
+}
+
+export async function saveTerritoryDailyNorm(
+  territoryId: string,
+  input: {
+    dispatchDate: string;
+    lines: ReadonlyArray<{ productId: string; quantity: number }>;
+    reason: string;
+  },
+  csrfToken: string,
+): Promise<TerritoryDailyNormView> {
+  return request(`/planning/territory-norms/${territoryId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "PATCH",
+  });
 }
 
 export async function listNormChangeRequests(): Promise<readonly NormChangeRequestView[]> {

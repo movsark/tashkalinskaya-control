@@ -439,6 +439,17 @@ export interface PlanningProductView {
   readonly name: string;
 }
 
+export interface TerritoryPlanningProductView extends PlanningProductView {
+  readonly categoryCode: string;
+  readonly categoryName: string;
+}
+
+export interface PlanningProductGroupView {
+  readonly code: string;
+  readonly name: string;
+  readonly sortOrder: number;
+}
+
 export interface WeeklyNormView {
   readonly id: string;
   readonly productCode: string;
@@ -492,8 +503,21 @@ export interface NormChangeRequestView {
 }
 
 export interface PlanningSetupView {
-  readonly products: readonly PlanningProductView[];
+  readonly productGroups: readonly PlanningProductGroupView[];
+  readonly products: readonly TerritoryPlanningProductView[];
   readonly territories: readonly TerritoryView[];
+}
+
+export interface TerritoryDailyNormLineView {
+  readonly productId: string;
+  readonly quantity: number;
+  readonly version: number;
+}
+
+export interface TerritoryDailyNormView {
+  readonly dispatchDate: string;
+  readonly lines: readonly TerritoryDailyNormLineView[];
+  readonly territoryId: string;
 }
 
 export interface TerritoryNormWeekView {
@@ -507,6 +531,7 @@ export interface TerritoryNormWeekView {
 export interface PlanDemandLineView {
   readonly allocatedFreeStock: number;
   readonly allocatedGoodReturn: number;
+  readonly dailyNormQuantity: number | null;
   readonly dispatchDate: string;
   readonly directionKind: "STORE" | "TERRITORY";
   readonly effectiveDemand: number;
