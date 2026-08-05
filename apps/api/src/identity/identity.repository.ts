@@ -47,6 +47,22 @@ interface AccountRow {
   readonly employee_status: EmploymentStatus;
   readonly locked_until: Date | null;
   readonly password_hash: string | null;
+  readonly phone_e164: string | null;
+  readonly phone_verified_at: Date | null;
+}
+
+interface AccountProfileRow {
+  readonly full_name: string;
+  readonly login_normalized: string;
+  readonly phone_e164: string | null;
+  readonly phone_verified_at: Date | null;
+}
+
+export interface AccountProfileRecord {
+  readonly fullName: string;
+  readonly login: string;
+  readonly phoneE164: string | null;
+  readonly phoneVerified: boolean;
 }
 
 interface DeviceRow {
@@ -203,6 +219,8 @@ export class IdentityRepository {
           ua.authorization_version,
           ua.locked_until,
           ua.password_hash,
+          ua.phone_e164,
+          ua.phone_verified_at,
           e.id as employee_id,
           e.employment_status as employee_status
         from identity.user_account ua
@@ -212,6 +230,346 @@ export class IdentityRepository {
       [loginNormalized],
     );
     return result.rows[0] === undefined ? null : mapAccount(result.rows[0]);
+  }
+
+  async findAccountByVerifiedPhone(phoneE164: string): Promise<AccountRecord | null> {
+    const result = await this.database.query<AccountRow>(
+      `
+        select
+          ua.id as account_id,
+          ua.status as account_status,
+          ua.authorization_version,
+          ua.locked_until,
+          ua.password_hash,
+          ua.phone_e164,
+          ua.phone_verified_at,
+          e.id as employee_id,
+          e.employment_status as employee_status
+        from identity.user_account ua
+        join identity.employee e on e.id = ua.employee_id
+        where ua.phone_e164 = $1 and ua.phone_verified_at is not null
+      `,
+      [phoneE164],
+    );
+    return result.rows[0] === undefined ? null : mapAccount(result.rows[0]);
+  }
+
+  async getAccountProfile(accountId: string): Promise<AccountProfileRecord> {
+    const result = await this.database.query<AccountProfileRow>(
+      `
+        select e.full_name, ua.login_normalized, ua.phone_e164, ua.phone_verified_at
+        from identity.user_account ua
+        join identity.employee e on e.id = ua.employee_id
+        where ua.id = $1 and ua.status = 'ACTIVE' and e.employment_status = 'ACTIVE'
+      `,
+      [accountId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new NotFoundException("Учетная запись не найдена");
+    return {
+      fullName: row.full_name,
+      login: row.login_normalized,
+      phoneE164: row.phone_e164,
+      phoneVerified: row.phone_verified_at !== null,
+    };
+  }
+
+  async issuePhoneCode(input: {
+    accountId: string;
+    actorEmployeeId: string | null;
+    correlationId: string;
+    phoneE164: string;
+    purpose: "PASSWORD_RECOVERY" | "PHONE_VERIFICATION";
+    requestBucketHash: string;
+    tokenHash: string;
+  }): Promise<boolean> {
+    return this.database.transaction(async (client) => {
+      await client.query("select id from identity.user_account where id = $1 for update", [
+        input.accountId,
+      ]);
+      const recent = await client.query<{ created_at: Date }>(
+        `
+          select created_at
+          from identity.phone_code_challenge
+          where account_id = $1 and purpose = $2 and consumed_at is null
+          for update
+        `,
+        [input.accountId, input.purpose],
+      );
+      const createdAt = recent.rows[0]?.created_at;
+      if (createdAt !== undefined && createdAt > new Date(Date.now() - 60_000)) return false;
+
+      await client.query(
+        `
+          update identity.phone_code_challenge
+          set consumed_at = now()
+          where account_id = $1 and purpose = $2 and consumed_at is null
+        `,
+        [input.accountId, input.purpose],
+      );
+      await client.query(
+        `
+          insert into identity.phone_code_challenge (
+            id, account_id, purpose, phone_e164, token_hash, request_bucket_hash, expires_at
+          ) values ($1, $2, $3, $4, $5, $6, now() + interval '10 minutes')
+        `,
+        [
+          randomUUID(),
+          input.accountId,
+          input.purpose,
+          input.phoneE164,
+          input.tokenHash,
+          input.requestBucketHash,
+        ],
+      );
+      await this.insertAudit(client, {
+        action: `${input.purpose}_CODE_REQUESTED`,
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: {},
+        objectId: input.accountId,
+        objectType: "USER_ACCOUNT",
+      });
+      return true;
+    });
+  }
+
+  async markPhoneCodeDelivered(tokenHash: string): Promise<void> {
+    await this.database.query(
+      `
+        update identity.phone_code_challenge
+        set delivered_at = now()
+        where token_hash = $1 and consumed_at is null
+      `,
+      [tokenHash],
+    );
+  }
+
+  async invalidatePhoneCode(tokenHash: string): Promise<void> {
+    await this.database.query(
+      `
+        update identity.phone_code_challenge
+        set consumed_at = now()
+        where token_hash = $1 and consumed_at is null
+      `,
+      [tokenHash],
+    );
+  }
+
+  async confirmPhone(input: {
+    accountId: string;
+    actorEmployeeId: string;
+    correlationId: string;
+    tokenHash: string;
+  }): Promise<void> {
+    const confirmed = await this.database.transaction(async (client) => {
+      const challenge = await client.query<{ id: string; phone_e164: string }>(
+        `
+          select id, phone_e164
+          from identity.phone_code_challenge
+          where account_id = $1
+            and purpose = 'PHONE_VERIFICATION'
+            and token_hash = $2
+            and delivered_at is not null
+            and consumed_at is null
+            and expires_at > now()
+            and attempt_count < 5
+          for update
+        `,
+        [input.accountId, input.tokenHash],
+      );
+      const selected = challenge.rows[0];
+      if (selected === undefined) {
+        await client.query(
+          `
+            update identity.phone_code_challenge
+            set attempt_count = least(attempt_count + 1, 5)
+            where account_id = $1 and purpose = 'PHONE_VERIFICATION' and consumed_at is null
+          `,
+          [input.accountId],
+        );
+        return false;
+      }
+      await client.query(
+        `
+          update identity.user_account
+          set phone_e164 = $2, phone_verified_at = now(), updated_at = now(), version = version + 1
+          where id = $1 and status = 'ACTIVE'
+        `,
+        [input.accountId, selected.phone_e164],
+      );
+      await client.query(
+        "update identity.phone_code_challenge set consumed_at = now() where id = $1",
+        [selected.id],
+      );
+      await this.insertAudit(client, {
+        action: "PHONE_VERIFIED",
+        actorEmployeeId: input.actorEmployeeId,
+        correlationId: input.correlationId,
+        metadata: {},
+        objectId: input.accountId,
+        objectType: "USER_ACCOUNT",
+      });
+      return true;
+    });
+    if (!confirmed) throw invalidPhoneCode();
+  }
+
+  async changePassword(input: {
+    accountId: string;
+    correlationId: string;
+    employeeId: string;
+    passwordHash: string;
+    sessionId: string;
+  }): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const account = await client.query<{ authorization_version: number }>(
+        `
+          update identity.user_account
+          set password_hash = $2, password_changed_at = now(), failed_attempt_count = 0,
+            locked_until = null, authorization_version = authorization_version + 1,
+            updated_at = now(), version = version + 1
+          where id = $1 and status = 'ACTIVE'
+          returning authorization_version
+        `,
+        [input.accountId, input.passwordHash],
+      );
+      const authorizationVersion = account.rows[0]?.authorization_version;
+      if (authorizationVersion === undefined)
+        throw new NotFoundException("Учетная запись не найдена");
+      await client.query(
+        `
+          update identity.session
+          set revoked_at = now(), revoked_reason = 'PASSWORD_CHANGED'
+          where account_id = $1 and id <> $2 and revoked_at is null
+        `,
+        [input.accountId, input.sessionId],
+      );
+      await client.query(
+        `
+          update identity.session
+          set authorization_version = $2, step_up_expires_at = null
+          where id = $1 and revoked_at is null
+        `,
+        [input.sessionId, authorizationVersion],
+      );
+      await this.insertAudit(client, {
+        action: "PASSWORD_CHANGED",
+        actorEmployeeId: input.employeeId,
+        correlationId: input.correlationId,
+        metadata: {},
+        objectId: input.accountId,
+        objectType: "USER_ACCOUNT",
+      });
+    });
+  }
+
+  async completePhoneRecovery(input: {
+    correlationId: string;
+    deviceId: string;
+    deviceLabel: string;
+    passwordHash: string;
+    phoneE164: string;
+    platformFamily: DeviceRecord["platformFamily"];
+    tokenHash: string;
+  }): Promise<{ employeeId: string; login: string }> {
+    const completed = await this.database.transaction(async (client) => {
+      const challenge = await client.query<{
+        account_id: string;
+        employee_id: string;
+        id: string;
+        login_normalized: string;
+      }>(
+        `
+          select c.id, c.account_id, ua.employee_id, ua.login_normalized
+          from identity.phone_code_challenge c
+          join identity.user_account ua on ua.id = c.account_id
+          join identity.employee e on e.id = ua.employee_id
+          where c.phone_e164 = $1
+            and c.purpose = 'PASSWORD_RECOVERY'
+            and c.token_hash = $2
+            and c.delivered_at is not null
+            and c.consumed_at is null
+            and c.expires_at > now()
+            and c.attempt_count < 5
+            and ua.phone_e164 = c.phone_e164
+            and ua.phone_verified_at is not null
+            and ua.status = 'ACTIVE'
+            and e.employment_status = 'ACTIVE'
+          for update of c, ua
+        `,
+        [input.phoneE164, input.tokenHash],
+      );
+      const selected = challenge.rows[0];
+      if (selected === undefined) {
+        await client.query(
+          `
+            update identity.phone_code_challenge
+            set attempt_count = least(attempt_count + 1, 5)
+            where phone_e164 = $1 and purpose = 'PASSWORD_RECOVERY' and consumed_at is null
+          `,
+          [input.phoneE164],
+        );
+        return null;
+      }
+
+      await client.query(
+        `
+          update identity.session
+          set revoked_at = now(), revoked_reason = 'PHONE_RECOVERY_COMPLETED'
+          where account_id = $1 and revoked_at is null
+        `,
+        [selected.account_id],
+      );
+      await client.query(
+        `
+          update identity.personal_device
+          set status = 'REPLACED', revoked_at = now(), updated_at = now(), version = version + 1
+          where employee_id = $1 and status in ('ACTIVE', 'REVOKED')
+        `,
+        [selected.employee_id],
+      );
+      await client.query(
+        `
+          insert into identity.personal_device (
+            id, employee_id, public_key, device_label, platform_family, status, paired_at,
+            last_seen_at
+          ) values ($1, $2, $3, $4, $5, 'ACTIVE', now(), now())
+        `,
+        [
+          input.deviceId,
+          selected.employee_id,
+          `device-id:${input.deviceId}`,
+          input.deviceLabel,
+          input.platformFamily,
+        ],
+      );
+      await client.query(
+        `
+          update identity.user_account
+          set password_hash = $2, password_changed_at = now(), failed_attempt_count = 0,
+            locked_until = null, authorization_version = authorization_version + 1,
+            updated_at = now(), version = version + 1
+          where id = $1
+        `,
+        [selected.account_id, input.passwordHash],
+      );
+      await client.query(
+        "update identity.phone_code_challenge set consumed_at = now() where id = $1",
+        [selected.id],
+      );
+      await this.insertAudit(client, {
+        action: "ACCOUNT_RECOVERED_BY_PHONE",
+        actorEmployeeId: selected.employee_id,
+        correlationId: input.correlationId,
+        metadata: { deviceId: input.deviceId },
+        objectId: selected.account_id,
+        objectType: "USER_ACCOUNT",
+      });
+      return { employeeId: selected.employee_id, login: selected.login_normalized };
+    });
+    if (completed === null) throw invalidPhoneCode();
+    return completed;
   }
 
   async findActiveDevice(deviceId: string): Promise<DeviceRecord | null> {
@@ -1710,7 +2068,16 @@ function mapAccount(row: AccountRow): AccountRecord {
     employeeStatus: row.employee_status,
     lockedUntil: row.locked_until,
     passwordHash: row.password_hash,
+    phoneE164: row.phone_e164,
+    phoneVerifiedAt: row.phone_verified_at,
   };
+}
+
+function invalidPhoneCode(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: "PHONE_CODE_INVALID",
+    message: "Код недействителен, уже использован или закончился",
+  });
 }
 
 function mapDevice(row: DeviceRow | undefined): DeviceRecord | null {

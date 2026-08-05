@@ -14,6 +14,7 @@ import {
   TerminalSessionAuthGuard,
 } from "./identity.guards";
 import { IdentityRepository } from "./identity.repository";
+import { SmsRuService } from "./sms-ru.service";
 import { TerminalsController } from "./terminals.controller";
 import { TerminalsService } from "./terminals.service";
 import { WebAuthnService } from "./webauthn.service";
@@ -29,6 +30,7 @@ import { WebAuthnService } from "./webauthn.service";
     IdentityRepository,
     RolesGuard,
     SessionAuthGuard,
+    SmsRuService,
     StepUpGuard,
     TerminalSessionAuthGuard,
     TerminalsService,

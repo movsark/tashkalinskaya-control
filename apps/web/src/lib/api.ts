@@ -1,4 +1,5 @@
 import type {
+  AccountProfileView,
   ApiError,
   AttendanceControlView,
   AttendanceCorrectionView,
@@ -33,6 +34,7 @@ import type {
   LoadingGroupView,
   LoadingWarehouseDayView,
   PlatformFamily,
+  PhoneRecoveryResult,
   PlanningSetupView,
   ProductionPlanView,
   ProductListResponse,
@@ -80,6 +82,65 @@ export class ApiRequestError extends Error {
 
 export async function getSession(): Promise<AuthenticatedUser> {
   return request<AuthenticatedUser>("/auth/session");
+}
+
+export async function getAccountProfile(): Promise<AccountProfileView> {
+  return request<AccountProfileView>("/auth/account");
+}
+
+export async function getRecoveryConfig(): Promise<{ smsRecoveryAvailable: boolean }> {
+  return request("/auth/recovery/config");
+}
+
+export async function changePassword(
+  input: { currentPassword: string; newPassword: string },
+  csrfToken: string,
+): Promise<void> {
+  return request("/auth/account/password", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function requestPhoneVerification(
+  input: { currentPassword: string; phone: string },
+  csrfToken: string,
+): Promise<{ message: string }> {
+  return request("/auth/account/phone/request", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function confirmPhoneVerification(code: string, csrfToken: string): Promise<void> {
+  return request("/auth/account/phone/confirm", {
+    body: JSON.stringify({ code }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function requestPhoneRecovery(phone: string): Promise<{ message: string }> {
+  return request("/auth/phone-recovery/request", {
+    body: JSON.stringify({ phone }),
+    method: "POST",
+  });
+}
+
+export async function confirmPhoneRecovery(input: {
+  code: string;
+  deviceId: string;
+  deviceLabel: string;
+  newPassword: string;
+  phone: string;
+  platformFamily: PlatformFamily;
+}): Promise<PhoneRecoveryResult> {
+  return request("/auth/phone-recovery/confirm", {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
 }
 
 export async function loginOptions(input: {

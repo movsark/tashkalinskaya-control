@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { Algorithm, hash, verify } from "@node-rs/argon2";
@@ -73,6 +73,10 @@ export class IdentityCryptoService {
 
   generateAccessCode(): string {
     return randomBytes(20).toString("base64url");
+  }
+
+  generatePhoneCode(): string {
+    return randomInt(0, 1_000_000).toString().padStart(6, "0");
   }
 
   hashAccessCode(code: string): string {

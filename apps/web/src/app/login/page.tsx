@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import { ApiRequestError, login } from "../../lib/api";
@@ -15,6 +15,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    setLoginValue(parameters.get("login") ?? "");
+    if (parameters.get("recovered") === "1") {
+      setNotice("Пароль изменён, устройство привязано. Войдите с новым паролем.");
+    }
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,6 +96,7 @@ export default function LoginPage() {
               />
             </label>
             {error ? <p className="form-error">{error}</p> : null}
+            {notice ? <p className="form-success">{notice}</p> : null}
             <button className="primary-button" disabled={submitting} type="submit">
               {submitting ? "Входим…" : "Войти"}
             </button>

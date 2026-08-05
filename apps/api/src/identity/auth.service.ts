@@ -2,17 +2,27 @@ import { randomUUID } from "node:crypto";
 
 import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
-import type { AuthenticatedUser, EmployeeSummary } from "@tashkalinskaya/contracts";
+import type {
+  AccountProfileView,
+  AuthenticatedUser,
+  EmployeeSummary,
+  PhoneRecoveryResult,
+} from "@tashkalinskaya/contracts";
 
 import type {
   ActivateAccountDto,
   ActivationOptionsDto,
   AssertionDto,
+  ChangePasswordDto,
+  ConfirmPhoneRecoveryDto,
+  ConfirmPhoneVerificationDto,
   LoginDto,
   LoginOptionsDto,
   PreviewEmployeeRegistrationDto,
   RecoverAccountDto,
   RegisterEmployeeDto,
+  RequestPhoneRecoveryDto,
+  RequestPhoneVerificationDto,
   RecoveryOptionsDto,
   StepUpDto,
 } from "./identity.dto";
@@ -20,6 +30,8 @@ import { DeviceSecurityRepository } from "./device-security.repository";
 import { IdentityCryptoService } from "./identity-crypto.service";
 import { IdentityRepository, type NewSession } from "./identity.repository";
 import type { AuthenticatedActor } from "./identity.types";
+import { maskPhone, normalizePhone } from "./phone-number";
+import { SmsRuService } from "./sms-ru.service";
 import { WebAuthnService } from "./webauthn.service";
 
 const persistentSessionMilliseconds = 365 * 24 * 60 * 60 * 1000;
@@ -36,8 +48,184 @@ export class AuthService {
     private readonly crypto: IdentityCryptoService,
     private readonly deviceSecurity: DeviceSecurityRepository,
     private readonly repository: IdentityRepository,
+    private readonly sms: SmsRuService,
     private readonly webauthn: WebAuthnService,
   ) {}
+
+  async accountProfile(actor: AuthenticatedActor): Promise<AccountProfileView> {
+    const profile = await this.repository.getAccountProfile(actor.accountId);
+    return {
+      fullName: profile.fullName,
+      login: profile.login,
+      phoneMasked: maskPhone(profile.phoneE164),
+      phoneVerified: profile.phoneVerified,
+      smsRecoveryAvailable: this.sms.available,
+    };
+  }
+
+  recoveryConfig(): { smsRecoveryAvailable: boolean } {
+    return { smsRecoveryAvailable: this.sms.available };
+  }
+
+  async changePassword(
+    dto: ChangePasswordDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ): Promise<void> {
+    const account = await this.repository.findAccountByLogin(actor.employee.login);
+    const valid = await this.crypto.verifyPassword(
+      account?.passwordHash ?? null,
+      dto.currentPassword,
+    );
+    if (account === null || account.accountId !== actor.accountId || !valid) {
+      throw genericAuthenticationError();
+    }
+    await this.repository.changePassword({
+      accountId: actor.accountId,
+      correlationId,
+      employeeId: actor.employee.id,
+      passwordHash: await this.crypto.hashPassword(dto.newPassword),
+      sessionId: actor.sessionId,
+    });
+  }
+
+  async requestPhoneVerification(
+    dto: RequestPhoneVerificationDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+    source: string,
+  ): Promise<{ message: string }> {
+    const account = await this.repository.findAccountByLogin(actor.employee.login);
+    const passwordValid = await this.crypto.verifyPassword(
+      account?.passwordHash ?? null,
+      dto.currentPassword,
+    );
+    if (account === null || account.accountId !== actor.accountId || !passwordValid) {
+      throw genericAuthenticationError();
+    }
+    const phoneE164 = normalizePhone(dto.phone);
+    const code = this.crypto.generatePhoneCode();
+    const tokenHash = this.crypto.hashAccessCode(code);
+    const issued = await this.repository.issuePhoneCode({
+      accountId: actor.accountId,
+      actorEmployeeId: actor.employee.id,
+      correlationId,
+      phoneE164,
+      purpose: "PHONE_VERIFICATION",
+      requestBucketHash: this.crypto.hashRateLimitBucket(source, `phone:${phoneE164}`),
+      tokenHash,
+    });
+    if (!issued) {
+      throw new ConflictException({
+        code: "PHONE_CODE_COOLDOWN",
+        message: "Новый код можно запросить через минуту",
+      });
+    }
+    try {
+      await this.sms.sendCode(phoneE164, code, "PHONE_VERIFICATION");
+      await this.repository.markPhoneCodeDelivered(tokenHash);
+    } catch (error) {
+      await this.repository.invalidatePhoneCode(tokenHash);
+      throw error;
+    }
+    return { message: "Код подтверждения отправлен" };
+  }
+
+  async confirmPhoneVerification(
+    dto: ConfirmPhoneVerificationDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ): Promise<void> {
+    try {
+      await this.repository.confirmPhone({
+        accountId: actor.accountId,
+        actorEmployeeId: actor.employee.id,
+        correlationId,
+        tokenHash: this.crypto.hashAccessCode(dto.code),
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: "PHONE_ALREADY_USED",
+          message: "Этот номер уже привязан к другой учётной записи",
+        });
+      }
+      throw error;
+    }
+  }
+
+  async requestPhoneRecovery(
+    dto: RequestPhoneRecoveryDto,
+    correlationId: string,
+    source: string,
+  ): Promise<{ message: string }> {
+    const startedAt = Date.now();
+    const phoneE164 = normalizePhone(dto.phone);
+    const requestBucket = this.crypto.hashRateLimitBucket(source, `recovery:${phoneE164}`);
+    const blocked = await this.repository.isLoginBucketBlocked(requestBucket);
+    if (!blocked) {
+      await this.repository.recordLoginBucketFailure(requestBucket);
+      const account = await this.repository.findAccountByVerifiedPhone(phoneE164);
+      if (
+        this.sms.available &&
+        account !== null &&
+        account.accountStatus === "ACTIVE" &&
+        account.employeeStatus === "ACTIVE"
+      ) {
+        const code = this.crypto.generatePhoneCode();
+        const tokenHash = this.crypto.hashAccessCode(code);
+        const issued = await this.repository.issuePhoneCode({
+          accountId: account.accountId,
+          actorEmployeeId: null,
+          correlationId,
+          phoneE164,
+          purpose: "PASSWORD_RECOVERY",
+          requestBucketHash: requestBucket,
+          tokenHash,
+        });
+        if (issued) {
+          try {
+            await this.sms.sendCode(phoneE164, code, "PASSWORD_RECOVERY");
+            await this.repository.markPhoneCodeDelivered(tokenHash);
+          } catch {
+            await this.repository.invalidatePhoneCode(tokenHash);
+          }
+        }
+      }
+    }
+    await waitForMinimumDuration(startedAt, 600);
+    return {
+      message: "Если этот номер подтверждён в системе, код восстановления будет отправлен по SMS",
+    };
+  }
+
+  async confirmPhoneRecovery(
+    dto: ConfirmPhoneRecoveryDto,
+    correlationId: string,
+    source: string,
+  ): Promise<PhoneRecoveryResult> {
+    const phoneE164 = normalizePhone(dto.phone);
+    const attemptBucket = this.crypto.hashRateLimitBucket(source, `confirm:${phoneE164}`);
+    if (await this.repository.isLoginBucketBlocked(attemptBucket)) {
+      throw genericAuthenticationError();
+    }
+    try {
+      const result = await this.repository.completePhoneRecovery({
+        correlationId,
+        deviceId: dto.deviceId,
+        deviceLabel: dto.deviceLabel.trim(),
+        passwordHash: await this.crypto.hashPassword(dto.newPassword),
+        phoneE164,
+        platformFamily: dto.platformFamily,
+        tokenHash: this.crypto.hashAccessCode(dto.code),
+      });
+      await this.repository.clearLoginBucket(attemptBucket);
+      return { deviceId: dto.deviceId, login: result.login };
+    } catch (error) {
+      await this.repository.recordLoginBucketFailure(attemptBucket);
+      throw error;
+    }
+  }
 
   async activationOptions(dto: ActivationOptionsDto) {
     const loginNormalized = this.crypto.normalizeLogin(dto.login);
@@ -510,4 +698,9 @@ function isUniqueViolation(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "23505"
   );
+}
+
+async function waitForMinimumDuration(startedAt: number, milliseconds: number): Promise<void> {
+  const remaining = milliseconds - (Date.now() - startedAt);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
 }
