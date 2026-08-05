@@ -56,16 +56,25 @@ services:
       - -eu
       - -c
       - |
-        if [ "$${BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ]; then
+        if [ "$${BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ] && [ "$${BREAK_GLASS_ADMIN_RECOVERY_ENABLED:-false}" = "true" ]; then
+          echo "Bootstrap and break-glass recovery cannot run together" >&2
+          exit 1
+        elif [ "$${BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ]; then
           node apps/api/dist/identity/bootstrap-admin.js
+        elif [ "$${BREAK_GLASS_ADMIN_RECOVERY_ENABLED:-false}" = "true" ]; then
+          node apps/api/dist/identity/recover-admin.js
         else
-          echo "Bootstrap admin is disabled"
+          echo "Bootstrap admin and break-glass recovery are disabled"
         fi
     depends_on:
       migrate:
         condition: service_completed_successfully
     environment:
       AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
+      BREAK_GLASS_ADMIN_RECOVERY_CODE: ${BREAK_GLASS_ADMIN_RECOVERY_CODE:-}
+      BREAK_GLASS_ADMIN_RECOVERY_ENABLED: ${BREAK_GLASS_ADMIN_RECOVERY_ENABLED:-false}
+      BREAK_GLASS_ADMIN_RECOVERY_LOGIN: ${BREAK_GLASS_ADMIN_RECOVERY_LOGIN:-}
+      BREAK_GLASS_ADMIN_RECOVERY_REASON: ${BREAK_GLASS_ADMIN_RECOVERY_REASON:-}
       BOOTSTRAP_ADMIN_ACTIVATION_CODE: ${BOOTSTRAP_ADMIN_ACTIVATION_CODE:-}
       BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-false}
       BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
