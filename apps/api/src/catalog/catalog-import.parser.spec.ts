@@ -31,7 +31,7 @@ describe("catalog import parser", () => {
     await setCells(zip, "xl/worksheets/sheet2.xml", {
       A4: "TKF-00001",
       B4: "Торт контрольный",
-      C4: "Торты базовые",
+      C4: "Торты Базовые",
       D4: "шт",
       E4: "4006381333931",
       F4: "CAKE",
