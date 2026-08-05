@@ -25,7 +25,7 @@ const productRow: ParsedImportRow = {
   normalized: {
     active: true,
     barcode,
-    category: "Торты базовые",
+    category: "Торты Базовые",
     comment: null,
     externalCode: null,
     name: "Интеграционный торт B07",
