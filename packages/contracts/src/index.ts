@@ -746,9 +746,26 @@ export interface ProductionTransferView {
   readonly version: number;
 }
 
+export interface ProductionNormDemandLineView {
+  readonly productCode: string;
+  readonly productGroup: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly quantity: number;
+  readonly workshopId: string | null;
+  readonly workshopName: string | null;
+}
+
+export interface ProductionNormDemandView {
+  readonly dispatchDates: readonly string[];
+  readonly lines: readonly ProductionNormDemandLineView[];
+  readonly source: "CALENDAR" | "NEXT_DAY_FALLBACK";
+}
+
 export interface ProductionWorkspaceView {
   readonly availableTransferWorkshops: readonly { id: string; name: string }[];
   readonly employees: readonly ProductionEmployeeView[];
+  readonly normDemand: ProductionNormDemandView;
   readonly productionDate: string;
   readonly reasons: readonly ProductionReasonView[];
   readonly serverTime: string;
