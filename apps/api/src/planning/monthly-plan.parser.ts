@@ -106,7 +106,14 @@ export async function parseMonthlyPlan(
         headers.push({ date: toIso(match[2]), row: rowNumber, territory: Number(match[1]) });
       }
     }
-    if (headers.length !== 9) throw invalid(`На листе «${sheet.name}» ожидаются 9 территорий`);
+    if (headers.length !== 9) {
+      const date = headers[0]?.date;
+      const starts = [1, 54, 107, 160, 213, 266, 319, 372, 425];
+      if (date !== undefined && headers.length >= 2) {
+        headers.length = 0;
+        starts.forEach((row, index) => headers.push({ date, row, territory: index + 1 }));
+      } else throw invalid(`На листе «${sheet.name}» ожидаются 9 территорий`);
+    }
     for (let index = 0; index < headers.length; index += 1) {
       const header = headers[index];
       if (header === undefined) continue;
