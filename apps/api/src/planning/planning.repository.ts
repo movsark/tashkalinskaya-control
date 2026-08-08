@@ -75,6 +75,15 @@ interface RequestRow {
   readonly version: number;
 }
 
+interface SaveTerritoryDailyNormCommand {
+  readonly actorEmployeeId: string;
+  readonly correlationId: string;
+  readonly dispatchDate: string;
+  readonly lines: ReadonlyArray<{ productId: string; quantity: number }>;
+  readonly reason: string;
+  readonly territoryId: string;
+}
+
 const requestSelect = `
   select
     r.id, r.request_kind, r.territory_id, t.territory_number,
@@ -205,96 +214,106 @@ export class PlanningRepository {
     };
   }
 
-  async saveTerritoryDailyNorm(command: {
-    actorEmployeeId: string;
-    correlationId: string;
-    dispatchDate: string;
-    lines: ReadonlyArray<{ productId: string; quantity: number }>;
-    reason: string;
-    territoryId: string;
-  }): Promise<TerritoryDailyNormView> {
+  async saveTerritoryDailyNorm(
+    command: SaveTerritoryDailyNormCommand,
+  ): Promise<TerritoryDailyNormView> {
     await this.database.transaction(async (client) => {
-      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
-        `planning:territory-daily-norm:${command.territoryId}:${command.dispatchDate}`,
-      ]);
-      const territory = await client.query(
-        `select 1 from logistics.territory where id = $1 and status = 'ACTIVE'`,
-        [command.territoryId],
-      );
-      if (territory.rowCount === 0) throw new NotFoundException("Активная территория не найдена");
-      const productIds = command.lines.map((line) => line.productId);
-      const products = await client.query<{ id: string }>(
-        `select id from catalog.product where id = any($1::uuid[]) and status = 'ACTIVE'`,
-        [productIds],
-      );
-      if (products.rowCount !== productIds.length) {
-        throw new NotFoundException("Один из активных товаров не найден");
-      }
-      const current = await client.query<{
-        id: string;
-        product_id: string;
-        quantity: number;
-        version: number;
-      }>(
-        `select id, product_id, quantity, version
-         from planning.territory_daily_norm
-         where territory_id = $1 and dispatch_date = $2
-           and product_id = any($3::uuid[]) and is_current
-         for update`,
-        [command.territoryId, command.dispatchDate, productIds],
-      );
-      const currentByProduct = new Map(current.rows.map((row) => [row.product_id, row]));
-      const changes: Array<{ from: number; productId: string; to: number }> = [];
-      for (const line of command.lines) {
-        const previous = currentByProduct.get(line.productId);
-        if (previous?.quantity === line.quantity) continue;
-        if (previous !== undefined) {
-          await client.query(
-            `update planning.territory_daily_norm
-             set is_current = false, superseded_at = now()
-             where id = $1`,
-            [previous.id],
-          );
-        }
-        await client.query(
-          `insert into planning.territory_daily_norm (
-             id, territory_id, dispatch_date, product_id, quantity, version,
-             reason, created_by, correlation_id
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            randomUUID(),
-            command.territoryId,
-            command.dispatchDate,
-            line.productId,
-            line.quantity,
-            (previous?.version ?? 0) + 1,
-            command.reason,
-            command.actorEmployeeId,
-            command.correlationId,
-          ],
-        );
-        changes.push({
-          from: previous?.quantity ?? 0,
-          productId: line.productId,
-          to: line.quantity,
-        });
-      }
-      if (changes.length > 0) {
-        await insertAudit(
-          client,
-          command,
-          "TERRITORY_DAILY_NORM_UPDATED",
-          "TERRITORY_DAILY_NORM",
-          command.territoryId,
-          { changes, dispatchDate: command.dispatchDate, reason: command.reason },
-        );
-        await insertOutbox(client, "planning.territory-daily-norm.updated", command.territoryId, {
-          dispatchDate: command.dispatchDate,
-          territoryId: command.territoryId,
-        });
-      }
+      await this.saveTerritoryDailyNormWithClient(client, command);
     });
     return this.getTerritoryDailyNorm(command.territoryId, command.dispatchDate);
+  }
+
+  async saveTerritoryDailyNorms(commands: readonly SaveTerritoryDailyNormCommand[]): Promise<void> {
+    await this.database.transaction(async (client) => {
+      for (const command of commands) {
+        await this.saveTerritoryDailyNormWithClient(client, command);
+      }
+    });
+  }
+
+  private async saveTerritoryDailyNormWithClient(
+    client: PoolClient,
+    command: SaveTerritoryDailyNormCommand,
+  ): Promise<void> {
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+      `planning:territory-daily-norm:${command.territoryId}:${command.dispatchDate}`,
+    ]);
+    const territory = await client.query(
+      `select 1 from logistics.territory where id = $1 and status = 'ACTIVE'`,
+      [command.territoryId],
+    );
+    if (territory.rowCount === 0) throw new NotFoundException("Активная территория не найдена");
+    const productIds = command.lines.map((line) => line.productId);
+    const products = await client.query<{ id: string }>(
+      `select id from catalog.product where id = any($1::uuid[]) and status = 'ACTIVE'`,
+      [productIds],
+    );
+    if (products.rowCount !== productIds.length) {
+      throw new NotFoundException("Один из активных товаров не найден");
+    }
+    const current = await client.query<{
+      id: string;
+      product_id: string;
+      quantity: number;
+      version: number;
+    }>(
+      `select id, product_id, quantity, version
+       from planning.territory_daily_norm
+       where territory_id = $1 and dispatch_date = $2
+         and product_id = any($3::uuid[]) and is_current
+       for update`,
+      [command.territoryId, command.dispatchDate, productIds],
+    );
+    const currentByProduct = new Map(current.rows.map((row) => [row.product_id, row]));
+    const changes: Array<{ from: number; productId: string; to: number }> = [];
+    for (const line of command.lines) {
+      const previous = currentByProduct.get(line.productId);
+      if (previous?.quantity === line.quantity) continue;
+      if (previous !== undefined) {
+        await client.query(
+          `update planning.territory_daily_norm
+           set is_current = false, superseded_at = now()
+           where id = $1`,
+          [previous.id],
+        );
+      }
+      await client.query(
+        `insert into planning.territory_daily_norm (
+           id, territory_id, dispatch_date, product_id, quantity, version,
+           reason, created_by, correlation_id
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          randomUUID(),
+          command.territoryId,
+          command.dispatchDate,
+          line.productId,
+          line.quantity,
+          (previous?.version ?? 0) + 1,
+          command.reason,
+          command.actorEmployeeId,
+          command.correlationId,
+        ],
+      );
+      changes.push({
+        from: previous?.quantity ?? 0,
+        productId: line.productId,
+        to: line.quantity,
+      });
+    }
+    if (changes.length > 0) {
+      await insertAudit(
+        client,
+        command,
+        "TERRITORY_DAILY_NORM_UPDATED",
+        "TERRITORY_DAILY_NORM",
+        command.territoryId,
+        { changes, dispatchDate: command.dispatchDate, reason: command.reason },
+      );
+      await insertOutbox(client, "planning.territory-daily-norm.updated", command.territoryId, {
+        dispatchDate: command.dispatchDate,
+        territoryId: command.territoryId,
+      });
+    }
   }
 
   async canDriverViewTerritory(
