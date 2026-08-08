@@ -13,6 +13,7 @@ const actorEmployeeId = randomUUID();
 const driverEmployeeId = randomUUID();
 const correlationId = randomUUID();
 const departmentId = randomUUID();
+const productId = randomUUID();
 const territoryOneId = "12000000-0000-4000-8000-000000000001";
 const territoryTwoId = "12000000-0000-4000-8000-000000000002";
 const uniqueOffset = Number.parseInt(actorEmployeeId.slice(0, 6), 16) % 12_000;
@@ -25,6 +26,13 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     await database.query(
       `insert into identity.department (id, code, name) values ($1, $2, 'Тестовый склад B08')`,
       [departmentId, `B08-${departmentId.slice(0, 12)}`],
+    );
+    await database.query(
+      `insert into catalog.product (
+         id, product_code, name, category_id, unit_code, primary_workshop_id
+       ) values ($1, $2, 'Тестовый товар нормы водителя',
+         '11000000-0000-4000-8000-000000000001', 'PCS', $3)`,
+      [productId, `B08-P-${productId.slice(0, 8).toUpperCase()}`, departmentId],
     );
     await database.query(
       `
@@ -270,8 +278,23 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
   });
 
   it("shows only the driver's published runs and verifies attendance before loading", async () => {
+    await database.query(
+      `insert into planning.territory_daily_norm (
+         id, territory_id, dispatch_date, product_id, quantity, version,
+         reason, created_by, correlation_id
+       ) values ($1, $2, $3, $4, 23, 1, 'Проверка общей нормы водителя', $5, $6)`,
+      [randomUUID(), territoryOneId, dispatchDate, productId, actorEmployeeId, randomUUID()],
+    );
     const driverDay = await repository.getDriverDay(dispatchDate, driverEmployeeId);
     expect(driverDay.runs).toHaveLength(1);
+    expect(driverDay.totalNormQuantity).toBe(23);
+    const adminDay = await repository.getDay(dispatchDate);
+    expect(adminDay.driverNormTotals).toContainEqual({
+      driverEmployeeId,
+      driverName: "Водитель B08",
+      territoryCount: 1,
+      totalNormQuantity: 23,
+    });
     const run = driverDay.runs[0]!;
 
     await expect(

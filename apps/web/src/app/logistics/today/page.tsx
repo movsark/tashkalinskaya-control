@@ -119,6 +119,10 @@ export default function DriverLogisticsPage() {
       </section>
 
       <section className="driver-day-strip">
+        <div className="driver-day-total">
+          <span>Общая норма</span>
+          <strong>{routes?.totalNormQuantity ?? 0} шт.</strong>
+        </div>
         <strong>Рейсов: {routes?.runs.length ?? 0}</strong>
         <span>
           {routes?.runs[0]?.vehicleName

@@ -701,14 +701,32 @@ export class LogisticsRepository {
     dispatchDate: string,
     driverEmployeeId: string,
   ): Promise<DriverLogisticsDayView> {
-    const runs = await this.database.query<RunRow>(
-      `${runSelect}
-       where r.dispatch_date = $1 and r.driver_employee_id = $2
-         and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
-       order by r.planned_start_at, t.territory_number, r.run_no`,
-      [dispatchDate, driverEmployeeId],
-    );
-    return { dispatchDate, runs: runs.rows.map(mapRun) };
+    const [runs, normTotal] = await Promise.all([
+      this.database.query<RunRow>(
+        `${runSelect}
+         where r.dispatch_date = $1 and r.driver_employee_id = $2
+           and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+         order by r.planned_start_at, t.territory_number, r.run_no`,
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<{ total_norm_quantity: number }>(
+        `select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
+         from planning.territory_daily_norm n
+         where n.dispatch_date = $1 and n.is_current
+           and n.territory_id in (
+             select distinct r.territory_id
+             from logistics.territory_run r
+             where r.dispatch_date = $1 and r.driver_employee_id = $2
+               and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+           )`,
+        [dispatchDate, driverEmployeeId],
+      ),
+    ]);
+    return {
+      dispatchDate,
+      runs: runs.rows.map(mapRun),
+      totalNormQuantity: normTotal.rows[0]?.total_norm_quantity ?? 0,
+    };
   }
 
   async getWarehouseDay(dispatchDate: string): Promise<WarehouseLogisticsDayView> {
@@ -873,7 +891,7 @@ export class LogisticsRepository {
   }
 
   async getDay(dispatchDate: string): Promise<LogisticsDayView> {
-    const [groups, runs] = await Promise.all([
+    const [groups, runs, driverNormTotals] = await Promise.all([
       this.database.query<GroupRow>(
         `
           select id, dispatch_date::text, group_no, planned_start_at, planned_end_at,
@@ -888,10 +906,41 @@ export class LogisticsRepository {
         `${runSelect} where r.dispatch_date = $1 order by t.territory_number, r.run_no`,
         [dispatchDate],
       ),
+      this.database.query<{
+        driver_employee_id: string;
+        driver_name: string;
+        territory_count: number;
+        total_norm_quantity: number;
+      }>(
+        `with driver_territories as (
+           select distinct r.driver_employee_id,
+                  coalesce(e.full_name, r.driver_name_snapshot) as driver_name,
+                  r.territory_id
+           from logistics.territory_run r
+           left join identity.employee e on e.id = r.driver_employee_id
+           where r.dispatch_date = $1 and r.driver_employee_id is not null
+             and r.status <> 'CANCELLED'
+         )
+         select dt.driver_employee_id, max(dt.driver_name) as driver_name,
+                count(distinct dt.territory_id)::integer as territory_count,
+                coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
+         from driver_territories dt
+         left join planning.territory_daily_norm n
+           on n.territory_id = dt.territory_id and n.dispatch_date = $1 and n.is_current
+         group by dt.driver_employee_id
+         order by max(dt.driver_name), dt.driver_employee_id`,
+        [dispatchDate],
+      ),
     ]);
     const items = runs.rows.map(mapRun);
     return {
       dispatchDate,
+      driverNormTotals: driverNormTotals.rows.map((row) => ({
+        driverEmployeeId: row.driver_employee_id,
+        driverName: row.driver_name,
+        territoryCount: row.territory_count,
+        totalNormQuantity: row.total_norm_quantity,
+      })),
       groups: groups.rows.map(mapGroup),
       runs: items,
       summary: {

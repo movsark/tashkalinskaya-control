@@ -398,6 +398,14 @@ export interface TerritoryRunView {
 export interface DriverLogisticsDayView {
   readonly dispatchDate: string;
   readonly runs: readonly TerritoryRunView[];
+  readonly totalNormQuantity: number;
+}
+
+export interface DriverNormTotalView {
+  readonly driverEmployeeId: string;
+  readonly driverName: string;
+  readonly territoryCount: number;
+  readonly totalNormQuantity: number;
 }
 
 export interface WarehouseLogisticsDayView {
@@ -420,6 +428,7 @@ export interface LogisticsSetupView {
 
 export interface LogisticsDayView {
   readonly dispatchDate: string;
+  readonly driverNormTotals: readonly DriverNormTotalView[];
   readonly groups: readonly LoadingGroupView[];
   readonly runs: readonly TerritoryRunView[];
   readonly summary: {

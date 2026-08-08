@@ -7716,6 +7716,49 @@ a {
   background: #fff;
 }
 
+.driver-day-total {
+  display: grid;
+  gap: 2px;
+}
+
+.driver-day-total strong {
+  color: var(--forest);
+  font-size: 1.4rem;
+}
+
+.logistics-driver-norms {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.logistics-driver-norms__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.logistics-driver-norms__list article {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--sand);
+}
+
+.logistics-driver-norms__list strong {
+  color: var(--forest);
+  font-size: 1.35rem;
+}
+
+.logistics-driver-norms__list small {
+  color: var(--muted);
+}
+
 .simple-workspace .driver-return-priority {
   padding: 16px;
   color: var(--ink);

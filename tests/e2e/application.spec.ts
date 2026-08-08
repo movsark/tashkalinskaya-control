@@ -702,6 +702,7 @@ test.describe("B20 browser and HTTP regression", () => {
             version: 1,
           },
         ],
+        totalNormQuantity: 37,
       }),
     );
     await page.route("**/api/v1/loading/driver/days/*", (route) =>
@@ -772,6 +773,8 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
+    await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
+    await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Подтвердить 10" })).toBeVisible();
     await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
