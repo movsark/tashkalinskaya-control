@@ -167,6 +167,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("link", { exact: true, name: "Сотрудники" })).toBeVisible();
     await expect(
+      menu.getByRole("link", { exact: true, name: "Территории и водители" }),
+    ).toHaveAttribute("href", "/logistics");
+    await expect(
       menu.getByRole("link", { exact: true, name: "Подтверждение водителем" }),
     ).toBeVisible();
     await expect(
@@ -769,6 +772,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await driverNavigation.getByRole("button", { name: "Меню" }).click();
     const driverMenu = page.getByRole("dialog", { name: "Разделы приложения" });
     await expect(driverMenu.getByRole("link", { exact: true, name: "Моя норма" })).toBeVisible();
+    await expect(
+      driverMenu.getByRole("link", { exact: true, name: "Территории и водители" }),
+    ).toHaveCount(0);
     await expect(driverMenu.getByText("Маршрут водителя", { exact: true })).toHaveCount(0);
 
     await page.goto("/logistics/today");

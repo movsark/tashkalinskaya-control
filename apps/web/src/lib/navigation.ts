@@ -59,6 +59,13 @@ export const appDestinations: readonly AppDestination[] = [
     symbol: "С",
   },
   {
+    href: "/logistics",
+    label: "Территории и водители",
+    roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
+    shortLabel: "Рейсы",
+    symbol: "Р",
+  },
+  {
     href: "/logistics/today",
     driverLabel: "Моя погрузка",
     label: "Подтверждение водителем",
