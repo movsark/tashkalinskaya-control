@@ -17,6 +17,7 @@ import type {
   SaveTerritoryDailyNormDto,
 } from "./planning.dto";
 import { PlanningRepository } from "./planning.repository";
+import { parseMonthlyPlan } from "./monthly-plan.parser";
 import { API_CONFIG, type ApiConfig } from "../config";
 
 @Injectable()
@@ -28,6 +29,71 @@ export class PlanningService {
 
   setup() {
     return this.repository.getSetup();
+  }
+
+  async previewMonthlyPlan(file: Express.Multer.File | undefined) {
+    if (file === undefined) throw new BadRequestException("Выберите файл XLSX");
+    const parsed = await parseMonthlyPlan(file.buffer, file.originalname);
+    const productIds = await this.repository.findActiveProductsByName([
+      ...new Set(parsed.rows.map((row) => row.productName)),
+    ]);
+    const unknown = [...new Set(parsed.rows.map((row) => row.productName))].filter(
+      (name) => !productIds.has(name),
+    );
+    return {
+      dates: [...new Set(parsed.rows.map((row) => row.dispatchDate))].sort(),
+      lines: parsed.rows.length,
+      roundings: parsed.roundings,
+      territories: [...new Set(parsed.rows.map((row) => row.territoryNumber))].sort(),
+      unknownProducts: unknown.sort((left, right) => left.localeCompare(right, "ru")),
+    };
+  }
+
+  async applyMonthlyPlan(
+    file: Express.Multer.File | undefined,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    if (file === undefined) throw new BadRequestException("Выберите файл XLSX");
+    const parsed = await parseMonthlyPlan(file.buffer, file.originalname);
+    const setup = await this.repository.getSetup();
+    const products = await this.repository.findActiveProductsByName([
+      ...new Set(parsed.rows.map((row) => row.productName)),
+    ]);
+    const missing = [...new Set(parsed.rows.map((row) => row.productName))].filter(
+      (name) => !products.has(name),
+    );
+    if (missing.length > 0)
+      throw new BadRequestException(`Не найдены товары: ${missing.join(", ")}`);
+    const territories = new Map(setup.territories.map((item) => [item.number, item.id]));
+    const grouped = new Map<
+      string,
+      { date: string; lines: { productId: string; quantity: number }[]; territoryId: string }
+    >();
+    for (const row of parsed.rows) {
+      const territoryId = territories.get(row.territoryNumber);
+      const productId = products.get(row.productName);
+      if (!territoryId || !productId)
+        throw new BadRequestException("Не найдена территория или товар");
+      const key = `${territoryId}:${row.dispatchDate}`;
+      const current = grouped.get(key) ?? { date: row.dispatchDate, lines: [], territoryId };
+      current.lines.push({ productId, quantity: row.quantity });
+      grouped.set(key, current);
+    }
+    for (const group of grouped.values())
+      await this.repository.saveTerritoryDailyNorm({
+        actorEmployeeId,
+        correlationId,
+        dispatchDate: group.date,
+        lines: group.lines,
+        reason: "Импорт месячного плана",
+        territoryId: group.territoryId,
+      });
+    return {
+      dates: new Set(parsed.rows.map((row) => row.dispatchDate)).size,
+      lines: parsed.rows.length,
+      territories: new Set(parsed.rows.map((row) => row.territoryNumber)).size,
+    };
   }
 
   async week(
