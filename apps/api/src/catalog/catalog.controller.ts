@@ -18,7 +18,11 @@ import type { Response } from "express";
 
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
-import { ApplyCatalogImportDto, PreviewCatalogImportDto } from "./catalog.dto";
+import {
+  ApplyCatalogImportDto,
+  CreateCatalogProductDto,
+  PreviewCatalogImportDto,
+} from "./catalog.dto";
 import { CatalogService } from "./catalog.service";
 
 @ApiTags("Справочники и импорт")
@@ -31,6 +35,12 @@ export class CatalogController {
   @RequireRoles("ADMIN", "MANAGER", "WORKSHOP_MANAGER", "WAREHOUSE_KEEPER", "DRIVER")
   products() {
     return this.catalog.listProducts();
+  }
+
+  @Post("products")
+  @RequireRoles("ADMIN")
+  createProduct(@Body() dto: CreateCatalogProductDto, @Req() request: AuthenticatedRequest) {
+    return this.catalog.createProduct(dto, requireActorId(request), requireCorrelationId(request));
   }
 
   @Get("imports/template")

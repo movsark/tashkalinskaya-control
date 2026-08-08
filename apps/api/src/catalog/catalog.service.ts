@@ -15,7 +15,11 @@ import {
   type ParsedImportIssue,
   type ParsedImportRow,
 } from "./catalog-import.parser";
-import type { ApplyCatalogImportDto, PreviewCatalogImportDto } from "./catalog.dto";
+import type {
+  ApplyCatalogImportDto,
+  CreateCatalogProductDto,
+  PreviewCatalogImportDto,
+} from "./catalog.dto";
 import { CatalogRepository, type ReferenceData } from "./catalog.repository";
 import { normalizeUploadFileName } from "./catalog-upload-name";
 
@@ -25,6 +29,21 @@ export class CatalogService {
 
   listProducts() {
     return this.repository.listProducts();
+  }
+
+  async createProduct(
+    dto: CreateCatalogProductDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    const name = dto.name.trim().replace(/\s+/g, " ");
+    if (name.length < 2) {
+      throw new BadRequestException({
+        code: "PRODUCT_NAME_INVALID",
+        message: "Введите название товара",
+      });
+    }
+    return this.repository.createDirectProduct({ ...dto, name, actorEmployeeId, correlationId });
   }
 
   async loadTemplate(): Promise<Buffer> {

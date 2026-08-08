@@ -38,6 +38,7 @@ import type {
   PlanningSetupView,
   ProductionPlanView,
   ProductListResponse,
+  ProductView,
   ProductionBatchView,
   ProductionDefectView,
   ProductionTaskView,
@@ -1310,6 +1311,17 @@ export async function previewCatalogImport(
   body.set("effectiveFrom", effectiveFrom);
   return request("/catalog/imports/preview", {
     body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createCatalogProduct(
+  input: { categoryCode: string; name: string },
+  csrfToken: string,
+): Promise<ProductView> {
+  return request("/catalog/products", {
+    body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });

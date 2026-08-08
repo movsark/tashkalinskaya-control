@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsISO8601, IsString } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsISO8601, IsString, Length } from "class-validator";
 
 export class PreviewCatalogImportDto {
   @IsISO8601({ strict: true })
@@ -10,4 +10,13 @@ export class ApplyCatalogImportDto {
   @ArrayMaxSize(50)
   @IsString({ each: true })
   acknowledgedWarningCodes!: string[];
+}
+
+export class CreateCatalogProductDto {
+  @IsIn(["BASIC_CAKES", "PREMIUM_CAKES", "PIES_AND_PASTRIES", "DESSERTS", "DRY_BAKERY"])
+  categoryCode!: string;
+
+  @IsString()
+  @Length(2, 200)
+  name!: string;
 }
