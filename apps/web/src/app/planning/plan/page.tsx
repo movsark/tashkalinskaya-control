@@ -136,6 +136,11 @@ export default function ProductionPlanPage() {
           <p className="eyebrow">Нормы территорий</p>
           <h1>План производства</h1>
           <p>Сначала выберите территорию, затем группу продукции и укажите количество товаров.</p>
+          {isAdmin ? (
+            <Link className="secondary-button" href="/planning/monthly-import">
+              Загрузить месячный план
+            </Link>
+          ) : null}
         </div>
         <label>
           Дата вывоза
