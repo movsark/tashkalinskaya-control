@@ -210,6 +210,26 @@ export default function LogisticsPage() {
         <Metric label="Готовые назначения" value={day?.summary.completeAssignments ?? 0} />
       </section>
 
+      {day?.driverNormTotals.length ? (
+        <section className="logistics-driver-norms">
+          <div>
+            <p className="eyebrow">Общий объём на {dispatchDate}</p>
+            <h2>Норма по каждому водителю</h2>
+          </div>
+          <div className="logistics-driver-norms__list">
+            {day.driverNormTotals.map((driver) => (
+              <article key={driver.driverEmployeeId}>
+                <span>{driver.driverName}</span>
+                <strong>{driver.totalNormQuantity} шт.</strong>
+                <small>
+                  {driver.territoryCount} {territoryWord(driver.territoryCount)}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {isAdmin && session && setup ? (
         <section className="logistics-setup-grid">
           <VehicleForm
@@ -467,6 +487,15 @@ function VehicleForm({
       </button>
     </form>
   );
+}
+
+function territoryWord(count: number): string {
+  const value = Math.abs(count) % 100;
+  const last = value % 10;
+  if (value > 10 && value < 20) return "территорий";
+  if (last === 1) return "территория";
+  if (last >= 2 && last <= 4) return "территории";
+  return "территорий";
 }
 
 function DriverForm({
