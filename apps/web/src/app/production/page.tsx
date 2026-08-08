@@ -50,12 +50,22 @@ export default function ProductionPage() {
   const canSeeWarehouse = isAdmin || roles.has("MANAGER") || roles.has("WAREHOUSE_KEEPER");
   const metrics = useMemo(() => {
     const tasks = workspace?.tasks ?? [];
+    const normQuantity =
+      workspace?.normDemand.lines.reduce((sum, line) => sum + line.quantity, 0) ?? 0;
     return {
       accepted: tasks.reduce((sum, task) => sum + task.acceptedQuantity, 0),
       awaiting: tasks.reduce((sum, task) => sum + task.awaitingWarehouseQuantity, 0),
       defects: tasks.reduce((sum, task) => sum + task.confirmedDefectQuantity, 0),
-      plan: tasks.reduce((sum, task) => sum + task.targetQuantity, 0),
+      plan:
+        tasks.length > 0 ? tasks.reduce((sum, task) => sum + task.targetQuantity, 0) : normQuantity,
     };
+  }, [workspace]);
+  const normGroups = useMemo(() => {
+    const groups = new Map<string, ProductionWorkspaceView["normDemand"]["lines"]>();
+    for (const line of workspace?.normDemand.lines ?? []) {
+      groups.set(line.productGroup, [...(groups.get(line.productGroup) ?? []), line]);
+    }
+    return [...groups.entries()];
   }, [workspace]);
 
   useEffect(() => {
@@ -193,10 +203,56 @@ export default function ProductionPage() {
       {message ? <p className="logistics-success production-notice">{message}</p> : null}
 
       <section className="production-metrics" aria-label="Сводка производства">
-        <Metric label="План" value={metrics.plan} />
+        <Metric label="Нужно произвести" value={metrics.plan} />
         <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
         <Metric label="Принято складом" value={metrics.accepted} tone="green" />
         <Metric label="Подтвержденный брак" value={metrics.defects} tone="red" />
+      </section>
+
+      <section className="production-board production-norm-demand">
+        <div className="production-section-heading">
+          <div>
+            <p className="eyebrow">Нормы территорий</p>
+            <h2>Что нужно произвести {date === today() ? "сегодня" : dateLabel(date)}</h2>
+          </div>
+          <span>{workspace.normDemand.lines.length} позиций</span>
+        </div>
+        <p className="production-demand-caption">
+          Для вывоза:{" "}
+          {workspace.normDemand.dispatchDates.map(dateLabel).join(", ") ||
+            dateLabel(addDays(date, 1))}
+          .
+          {workspace.normDemand.source === "CALENDAR"
+            ? " Даты взяты из производственного календаря."
+            : " Пока действует правило: производство за день до вывоза."}
+        </p>
+        {normGroups.length === 0 ? (
+          <p className="logistics-empty">
+            На связанный день вывоза нормы ещё не загружены или равны нулю.
+          </p>
+        ) : (
+          <div className="production-demand-groups">
+            {normGroups.map(([group, lines]) => (
+              <article key={group}>
+                <header>
+                  <h3>{group}</h3>
+                  <span>{lines.reduce((sum, line) => sum + line.quantity, 0)} шт.</span>
+                </header>
+                <div>
+                  {lines.map((line) => (
+                    <p key={line.productId}>
+                      <span>
+                        <b>{line.productName}</b>
+                        <small>{line.workshopName ?? "Цех ещё не назначен"}</small>
+                      </span>
+                      <strong>{line.quantity}</strong>
+                    </p>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="production-board">
@@ -1039,6 +1095,12 @@ function today(): string {
     timeZone: "Europe/Moscow",
     year: "numeric",
   }).format(new Date());
+}
+
+function addDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function dateLabel(value: string): string {

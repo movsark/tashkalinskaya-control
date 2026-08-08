@@ -141,6 +141,27 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
     await database.onApplicationShutdown();
   });
 
+  it("shows tomorrow territory norms in today's production workspace", async () => {
+    await database.query(
+      `insert into planning.territory_daily_norm (
+         id, territory_id, dispatch_date, product_id, quantity, version,
+         reason, created_by, correlation_id
+       ) values ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
+                 'Проверка плана на сегодня', $4, $5)`,
+      [randomUUID(), addDays(productionDate, 1), productId, adminId, randomUUID()],
+    );
+
+    const workspace = await repository.workspace(productionDate, workshopId, manager);
+
+    expect(workspace.normDemand).toMatchObject({
+      dispatchDates: [addDays(productionDate, 1)],
+      source: "NEXT_DAY_FALLBACK",
+    });
+    expect(workspace.normDemand.lines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 7, workshopId }),
+    );
+  });
+
   it("generates one NIGHT task without duplicates and enforces workshop scope", async () => {
     const first = await repository.generateTasks({
       actor: admin,
@@ -349,4 +370,10 @@ function actor(
 
 function isoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function addDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

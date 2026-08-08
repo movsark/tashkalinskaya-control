@@ -1188,6 +1188,76 @@ async function loadWorkspace(
        order by reason_kind, display_name`,
     [productionDate],
   );
+  const calendarState = await client.query<{ has_links: boolean }>(
+    `with expanded_links as (
+       select l.production_date, l.dispatch_date, t.id as territory_id,
+              v.version_number, (l.territory_id is not null) as specific
+       from planning.production_dispatch_link l
+       join planning.calendar_version v on v.id = l.calendar_version_id
+       join logistics.territory t on t.status = 'ACTIVE'
+         and (l.territory_id is null or l.territory_id = t.id)
+     ), effective_links as (
+       select distinct on (dispatch_date, territory_id)
+              production_date, dispatch_date, territory_id
+       from expanded_links
+       order by dispatch_date, territory_id, specific desc, version_number desc
+     )
+     select exists (
+       select 1 from effective_links where production_date = $1
+     ) as has_links`,
+    [productionDate],
+  );
+  const normDemand = await client.query<{
+    dispatch_dates: string[];
+    product_code: string;
+    product_group: string;
+    product_id: string;
+    product_name: string;
+    quantity: number;
+    workshop_id: string | null;
+    workshop_name: string | null;
+  }>(
+    `with expanded_links as (
+       select l.production_date, l.dispatch_date, t.id as territory_id,
+              v.version_number, (l.territory_id is not null) as specific
+       from planning.production_dispatch_link l
+       join planning.calendar_version v on v.id = l.calendar_version_id
+       join logistics.territory t on t.status = 'ACTIVE'
+         and (l.territory_id is null or l.territory_id = t.id)
+     ), effective_links as (
+       select distinct on (dispatch_date, territory_id)
+              production_date, dispatch_date, territory_id
+       from expanded_links
+       order by dispatch_date, territory_id, specific desc, version_number desc
+     ), selected_norms as (
+       select n.dispatch_date, n.product_id, n.quantity
+       from planning.territory_daily_norm n
+       join logistics.territory t on t.id = n.territory_id and t.status = 'ACTIVE'
+       where n.is_current and (
+         (exists (select 1 from effective_links where production_date = $1)
+          and exists (
+            select 1 from effective_links l
+            where l.production_date = $1 and l.dispatch_date = n.dispatch_date
+              and l.territory_id = n.territory_id
+          ))
+         or
+         (not exists (select 1 from effective_links where production_date = $1)
+          and n.dispatch_date = $1::date + 1)
+       )
+     )
+     select array_agg(distinct n.dispatch_date::text order by n.dispatch_date::text) as dispatch_dates,
+            p.id as product_id, p.product_code, p.name as product_name,
+            c.name as product_group, p.primary_workshop_id as workshop_id,
+            w.name as workshop_name, sum(n.quantity)::integer as quantity
+     from selected_norms n
+     join catalog.product p on p.id = n.product_id and p.status = 'ACTIVE'
+     join catalog.category c on c.id = p.category_id
+     left join identity.department w on w.id = p.primary_workshop_id
+     where ($2::uuid[] is null or p.primary_workshop_id = any($2::uuid[]))
+     group by p.id, p.product_code, p.name, c.name, p.primary_workshop_id, w.name
+     order by c.name, p.name, p.product_code`,
+    [productionDate, selectedWorkshopIds],
+  );
   const transfers = await loadTransfers(client, selectedWorkshopIds);
   const assignmentMap = groupBy(assignments.rows, (row) => row.task_id);
   const batchMap = groupBy(batches.rows, (row) => row.task_id);
@@ -1200,6 +1270,19 @@ async function loadWorkspace(
       isPresent: row.is_present,
       personnelNumber: row.personnel_number,
     })),
+    normDemand: {
+      dispatchDates: [...new Set(normDemand.rows.flatMap((row) => row.dispatch_dates))].sort(),
+      lines: normDemand.rows.map((row) => ({
+        productCode: row.product_code,
+        productGroup: row.product_group,
+        productId: row.product_id,
+        productName: row.product_name,
+        quantity: row.quantity,
+        workshopId: row.workshop_id,
+        workshopName: row.workshop_name,
+      })),
+      source: calendarState.rows[0]?.has_links ? "CALENDAR" : "NEXT_DAY_FALLBACK",
+    },
     productionDate,
     reasons: reasons.rows.map((row) => ({
       code: row.code,
