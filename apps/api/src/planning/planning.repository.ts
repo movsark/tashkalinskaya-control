@@ -169,6 +169,14 @@ export class PlanningRepository {
     };
   }
 
+  async findActiveProductsByName(names: readonly string[]) {
+    const result = await this.database.query<{ id: string; name: string }>(
+      `select id, name from catalog.product where status = 'ACTIVE' and name = any($1::text[])`,
+      [names],
+    );
+    return new Map(result.rows.map((row) => [row.name, row.id]));
+  }
+
   async getTerritoryDailyNorm(
     territoryId: string,
     dispatchDate: string,

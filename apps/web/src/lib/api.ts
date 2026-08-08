@@ -861,6 +861,47 @@ export async function getPlanningSetup(): Promise<PlanningSetupView> {
   return request("/planning/setup");
 }
 
+export interface MonthlyPlanPreview {
+  readonly dates: readonly string[];
+  readonly lines: number;
+  readonly roundings: readonly {
+    from: number;
+    productName: string;
+    sheetName: string;
+    sourceCells: string;
+    territoryNumber: number;
+    to: number;
+  }[];
+  readonly territories: readonly number[];
+  readonly unknownProducts: readonly string[];
+}
+
+export async function previewMonthlyPlan(
+  file: File,
+  csrfToken: string,
+): Promise<MonthlyPlanPreview> {
+  const body = new FormData();
+  body.set("file", file);
+  return request("/planning/monthly-plan/preview", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function applyMonthlyPlan(
+  file: File,
+  csrfToken: string,
+): Promise<{ dates: number; lines: number; territories: number }> {
+  const body = new FormData();
+  body.set("file", file);
+  return request("/planning/monthly-plan/apply", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function getTerritoryNormWeek(
   territoryId: string,
   weekStart: string,

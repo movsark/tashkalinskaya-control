@@ -8,8 +8,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiTags } from "@nestjs/swagger";
 
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
@@ -34,6 +37,27 @@ export class PlanningController {
   @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER", "DRIVER")
   setup() {
     return this.planning.setup();
+  }
+
+  @Post("monthly-plan/preview")
+  @RequireRoles("ADMIN")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  previewMonthlyPlan(@UploadedFile() file: Express.Multer.File | undefined) {
+    return this.planning.previewMonthlyPlan(file);
+  }
+
+  @Post("monthly-plan/apply")
+  @RequireRoles("ADMIN")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  applyMonthlyPlan(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.planning.applyMonthlyPlan(
+      file,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
   }
 
   @Get("weeks/:territoryId")
