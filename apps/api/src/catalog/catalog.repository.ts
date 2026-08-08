@@ -366,6 +366,89 @@ export class CatalogRepository {
     };
   }
 
+  async createDirectProduct(input: {
+    actorEmployeeId: string;
+    categoryCode: string;
+    correlationId: string;
+    name: string;
+  }) {
+    return this.database.transaction(async (client) => {
+      const prefix = {
+        BASIC_CAKES: "TB",
+        PREMIUM_CAKES: "TP",
+        PIES_AND_PASTRIES: "PI",
+        DESSERTS: "DE",
+        DRY_BAKERY: "SV",
+      }[input.categoryCode];
+      if (prefix === undefined)
+        throw catalogConflict("CATEGORY_UNKNOWN", "Выберите группу продукции");
+      const next = await client.query<{ product_code: string }>(
+        `select product_code from catalog.product where product_code ~ $1 order by product_code desc limit 1 for update`,
+        [`^${prefix}-[0-9]+$`],
+      );
+      const number = Number(next.rows[0]?.product_code.split("-")[1] ?? 0) + 1;
+      const productCode = `${prefix}-${String(number).padStart(3, "0")}`;
+      const productId = randomUUID();
+      const result = await client.query<{
+        category: string;
+        id: string;
+        name: string;
+        product_code: string;
+        unit: string;
+        version: number;
+      }>(
+        `insert into catalog.product (id,product_code,name,category_id,unit_code,status)
+         select $1,$2,$3,c.id,'PCS','ACTIVE' from catalog.category c where c.code=$4 and c.status='ACTIVE'
+         returning id,product_code,name,(select name from catalog.category where id=category_id) category,'шт' unit,version`,
+        [productId, productCode, input.name, input.categoryCode],
+      );
+      const product = result.rows[0];
+      if (product === undefined)
+        throw catalogConflict("CATEGORY_UNKNOWN", "Группа продукции недоступна");
+      await client.query(
+        `insert into catalog.product_version (id,product_id,version,product_code,name,category_name,unit_name,status,source_import_batch_id)
+         values ($1,$2,$3,$4,$5,$6,$7,'ACTIVE',null)`,
+        [
+          randomUUID(),
+          product.id,
+          product.version,
+          product.product_code,
+          product.name,
+          product.category,
+          product.unit,
+        ],
+      );
+      await client.query(
+        `insert into audit.event (id,occurred_at,actor_employee_id,active_role,action,object_type,object_id,correlation_id,result,metadata)
+         values ($1,now(),$2,'ADMIN','PRODUCT_CREATED','PRODUCT',$3,$4,'SUCCESS',jsonb_build_object('productCode',$5))`,
+        [
+          randomUUID(),
+          input.actorEmployeeId,
+          product.id,
+          input.correlationId,
+          product.product_code,
+        ],
+      );
+      await client.query(
+        `insert into system.outbox_message (id,event_name,aggregate_type,aggregate_id,payload,occurred_at)
+         values ($1,'catalog.product.created.v1','PRODUCT',$2,jsonb_build_object('productCode',$3),now())`,
+        [randomUUID(), product.id, product.product_code],
+      );
+      return {
+        barcodes: [],
+        category: product.category,
+        externalCode: null,
+        id: product.id,
+        name: product.name,
+        primaryWorkshop: null,
+        productCode: product.product_code,
+        status: "ACTIVE" as const,
+        unit: product.unit,
+        version: product.version,
+      };
+    });
+  }
+
   async applyImport(input: {
     acknowledgedWarningCodes: readonly string[];
     actorEmployeeId: string;

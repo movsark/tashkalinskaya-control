@@ -10,6 +10,7 @@ import {
   ApiRequestError,
   applyCatalogImport,
   downloadCatalogTemplate,
+  createCatalogProduct,
   downloadImportIssues,
   getSession,
   listProducts,
@@ -34,6 +35,8 @@ export default function CatalogPage() {
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductCategory, setNewProductCategory] = useState("BASIC_CAKES");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -91,6 +94,27 @@ export default function CatalogPage() {
     }
   }
 
+  async function createProduct(event: FormEvent) {
+    event.preventDefault();
+    if (session === null || newProductName.trim() === "") return;
+    setBusy(true);
+    setError("");
+    try {
+      const product = await createCatalogProduct(
+        { categoryCode: newProductCategory, name: newProductName },
+        session.csrfToken,
+      );
+      setProducts((current) =>
+        [...current, product].sort((left, right) => left.name.localeCompare(right.name, "ru")),
+      );
+      setNewProductName("");
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="workspace-layout">
       <header className="workspace-header">
@@ -118,6 +142,42 @@ export default function CatalogPage() {
       </section>
 
       {error ? <p className="form-error">{error}</p> : null}
+
+      {isAdmin ? (
+        <section className="import-panel">
+          <div>
+            <p className="eyebrow">Новый товар</p>
+            <h2>Добавить товар</h2>
+            <p>Код назначается системой. Цех и штрихкод можно указать позже.</p>
+          </div>
+          <form onSubmit={(event) => void createProduct(event)}>
+            <label>
+              Группа продукции
+              <select
+                value={newProductCategory}
+                onChange={(event) => setNewProductCategory(event.target.value)}
+              >
+                <option value="BASIC_CAKES">Торты Базовые</option>
+                <option value="PREMIUM_CAKES">Торты Премиум</option>
+                <option value="PIES_AND_PASTRIES">Пироги</option>
+                <option value="DESSERTS">Десерты</option>
+                <option value="DRY_BAKERY">Сухая выпечка</option>
+              </select>
+            </label>
+            <label>
+              Название товара
+              <input
+                value={newProductName}
+                onChange={(event) => setNewProductName(event.target.value)}
+                required
+              />
+            </label>
+            <button className="primary-button" disabled={busy} type="submit">
+              Добавить товар
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       {isAdmin ? (
         <section className="import-panel">
