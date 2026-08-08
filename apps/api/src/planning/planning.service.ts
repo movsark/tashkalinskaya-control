@@ -80,15 +80,16 @@ export class PlanningService {
       current.lines.push({ productId, quantity: row.quantity });
       grouped.set(key, current);
     }
-    for (const group of grouped.values())
-      await this.repository.saveTerritoryDailyNorm({
+    await this.repository.saveTerritoryDailyNorms(
+      [...grouped.values()].map((group) => ({
         actorEmployeeId,
         correlationId,
         dispatchDate: group.date,
         lines: group.lines,
         reason: "Импорт месячного плана",
         territoryId: group.territoryId,
-      });
+      })),
+    );
     return {
       dates: new Set(parsed.rows.map((row) => row.dispatchDate)).size,
       lines: parsed.rows.length,

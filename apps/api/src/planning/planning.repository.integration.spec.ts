@@ -26,6 +26,7 @@ const friday = addDays(weekStart, 4);
 const wednesday = addDays(weekStart, 2);
 const tuesday = addDays(weekStart, 1);
 const dailyNormDate = addDays(weekStart, 21);
+const monthlyImportDate = addDays(weekStart, 22);
 
 describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
   beforeAll(async () => {
@@ -158,6 +159,37 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       [territoryOneId, dailyNormDate, productId],
     );
     expect(history.rows[0]).toEqual({ current_count: "1", total_count: "2" });
+  });
+
+  it("rolls back the whole monthly import when any daily norm is invalid", async () => {
+    await expect(
+      repository.saveTerritoryDailyNorms([
+        {
+          actorEmployeeId: adminId,
+          correlationId,
+          dispatchDate: monthlyImportDate,
+          lines: [{ productId, quantity: 7 }],
+          reason: "Импорт месячного плана",
+          territoryId: territoryOneId,
+        },
+        {
+          actorEmployeeId: adminId,
+          correlationId,
+          dispatchDate: monthlyImportDate,
+          lines: [{ productId: randomUUID(), quantity: 9 }],
+          reason: "Импорт месячного плана",
+          territoryId: territoryNineId,
+        },
+      ]),
+    ).rejects.toThrow("Один из активных товаров не найден");
+
+    const saved = await database.query<{ count: string }>(
+      `select count(*)::text as count
+       from planning.territory_daily_norm
+       where dispatch_date = $1 and product_id = $2`,
+      [monthlyImportDate, productId],
+    );
+    expect(saved.rows[0]?.count).toBe("0");
   });
 
   it("creates and atomically approves a permanent driver request", async () => {

@@ -37,6 +37,8 @@ const maxEntries = 2_000;
 const maxUncompressedSize = 150 * 1024 * 1024;
 const dailySheetName = /^\d{2}\.\d{2}\s+/u;
 const territoryHeader = /^Территория\s+([1-9])\s+-.*?(\d{2}\.\d{2}\.\d{4})/iu;
+const territoryLabel = /^Территория\s+[1-9]\s*-/iu;
+const numericProductName = /^[+-]?\d+(?:[.,]\d+)?$/u;
 
 interface SheetDefinition {
   readonly name: string;
@@ -45,6 +47,13 @@ interface SheetDefinition {
 }
 
 type Row = ReadonlyMap<number, string | null>;
+type Header = { date: string; row: number; territory: number };
+
+interface PreparedSheet {
+  readonly definition: SheetDefinition;
+  readonly grid: ReadonlyMap<number, Row>;
+  readonly headers: readonly Header[];
+}
 
 export async function parseMonthlyPlan(
   buffer: Buffer,
@@ -95,46 +104,54 @@ export async function parseMonthlyPlan(
   if (sheets.length === 0) throw invalid("Не найдены листы с датами вывоза, например «01.08 Сб»");
   if (sheets.some((sheet) => sheet.state !== "visible"))
     throw invalid("Скрытые дневные листы не поддерживаются");
+  const prepared: PreparedSheet[] = sheets.map((definition) => {
+    const grid = rowsFromXml(required(texts, definition.path), shared);
+    return { definition, grid, headers: findHeaders(grid) };
+  });
+  const reference = prepared.find((sheet) => sheet.headers.length === 9);
+  if (reference === undefined)
+    throw invalid("Не найден дневной лист с полным набором из 9 территорий");
+  const canonicalNames = productNamesByOffset(reference);
   const rows: MonthlyPlanRow[] = [];
   const roundings: MonthlyPlanRounding[] = [];
-  for (const sheet of sheets) {
-    const grid = rowsFromXml(required(texts, sheet.path), shared);
-    const headers: Array<{ date: string; row: number; territory: number }> = [];
-    for (const [rowNumber, row] of grid) {
-      const match = (row.get(1) ?? "").trim().match(territoryHeader);
-      if (match?.[1] !== undefined && match[2] !== undefined) {
-        headers.push({ date: toIso(match[2]), row: rowNumber, territory: Number(match[1]) });
-      }
-    }
+  for (const sheet of prepared) {
+    let headers = [...sheet.headers];
+    let recoverNamesFromLayout = false;
     if (headers.length !== 9) {
-      const date = headers[0]?.date;
-      const starts = [1, 54, 107, 160, 213, 266, 319, 372, 425];
+      const first = headers.find((header) => header.territory === 1) ?? headers[0];
+      const date = first?.date;
+      const starts = [first?.row ?? 1, 54, 107, 160, 213, 266, 319, 372, 425];
       if (date !== undefined && headers.length >= 2) {
-        headers.length = 0;
-        starts.forEach((row, index) => headers.push({ date, row, territory: index + 1 }));
-      } else throw invalid(`На листе «${sheet.name}» ожидаются 9 территорий`);
+        headers = starts.map((row, index) => ({ date, row, territory: index + 1 }));
+        recoverNamesFromLayout = true;
+      } else throw invalid(`На листе «${sheet.definition.name}» ожидаются 9 территорий`);
     }
     for (let index = 0; index < headers.length; index += 1) {
       const header = headers[index];
       if (header === undefined) continue;
       const lastRow = headers[index + 1]?.row ?? Number.MAX_SAFE_INTEGER;
-      for (const [rowNumber, row] of grid) {
+      for (const [rowNumber, row] of sheet.grid) {
         if (rowNumber <= header.row || rowNumber >= lastRow) continue;
+        const offset = rowNumber - header.row;
         addProduct(
           rows,
           roundings,
-          sheet.name,
+          sheet.definition.name,
           header,
-          row.get(1) ?? null,
+          recoverNamesFromLayout
+            ? (canonicalNames.get(`1:${offset}`) ?? null)
+            : (row.get(1) ?? null),
           row.get(2) ?? null,
           `A${rowNumber}:B${rowNumber}`,
         );
         addProduct(
           rows,
           roundings,
-          sheet.name,
+          sheet.definition.name,
           header,
-          row.get(4) ?? null,
+          recoverNamesFromLayout
+            ? (canonicalNames.get(`4:${offset}`) ?? null)
+            : (row.get(4) ?? null),
           row.get(5) ?? null,
           `D${rowNumber}:E${rowNumber}`,
         );
@@ -143,7 +160,47 @@ export async function parseMonthlyPlan(
   }
   if (rows.length === 0)
     throw invalid("В дневных листах не найдено ни одной строки с плановым количеством");
+  assertNoDuplicateProducts(rows);
   return { rows, roundings };
+}
+
+function findHeaders(grid: ReadonlyMap<number, Row>): Header[] {
+  const headers: Header[] = [];
+  for (const [rowNumber, row] of grid) {
+    const match = (row.get(1) ?? "").trim().match(territoryHeader);
+    if (match?.[1] !== undefined && match[2] !== undefined) {
+      headers.push({ date: toIso(match[2]), row: rowNumber, territory: Number(match[1]) });
+    }
+  }
+  return headers;
+}
+
+function productNamesByOffset(sheet: PreparedSheet): ReadonlyMap<string, string | null> {
+  const first = sheet.headers.find((header) => header.territory === 1);
+  const second = sheet.headers.find((header) => header.territory === 2);
+  if (first === undefined || second === undefined)
+    throw invalid(`На листе «${sheet.definition.name}» не найден эталон структуры товаров`);
+  const names = new Map<string, string | null>();
+  for (const [rowNumber, row] of sheet.grid) {
+    if (rowNumber <= first.row || rowNumber >= second.row) continue;
+    const offset = rowNumber - first.row;
+    names.set(`1:${offset}`, row.get(1) ?? null);
+    names.set(`4:${offset}`, row.get(4) ?? null);
+  }
+  return names;
+}
+
+function assertNoDuplicateProducts(rows: readonly MonthlyPlanRow[]): void {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.dispatchDate}:${row.territoryNumber}:${row.productName}`;
+    if (seen.has(key)) {
+      throw invalid(
+        `На листе «${row.sheetName}» товар «${row.productName}» повторяется в территории ${row.territoryNumber}`,
+      );
+    }
+    seen.add(key);
+  }
 }
 
 function addProduct(
@@ -159,6 +216,8 @@ function addProduct(
   const quantity = rawQuantity === null ? Number.NaN : Number(rawQuantity.replace(",", "."));
   if (
     productName === "" ||
+    territoryLabel.test(productName) ||
+    numericProductName.test(productName) ||
     ["ИТОГО", "Торты Базовые", "Торты Премиум", "Пироги", "Десерты", "Сухая выпечка"].includes(
       productName,
     ) ||
