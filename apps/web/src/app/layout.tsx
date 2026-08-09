@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { AppNavigation } from "../components/app-navigation";
 import { ConnectionStatus } from "../components/connection-status";
+import { DateInputEnhancer } from "../components/date-input-enhancer";
 import { PwaRegistration } from "../components/pwa-registration";
 import "./globals.css";
 
@@ -51,6 +52,7 @@ export default function RootLayout({
     <html lang="ru">
       <body>
         <PwaRegistration />
+        <DateInputEnhancer />
         {children}
         <ConnectionStatus />
         <AppNavigation />

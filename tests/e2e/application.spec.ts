@@ -1098,6 +1098,14 @@ test.describe("B20 browser and HTTP regression", () => {
       version: 1,
     }));
     await page.setViewportSize({ height: 844, width: 390 });
+    await page.addInitScript(() => {
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        configurable: true,
+        value(this: HTMLInputElement) {
+          this.dataset.pickerOpened = "true";
+        },
+      });
+    });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
         csrfToken: "csrf-admin-plan-ui",
@@ -1298,6 +1306,10 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning/plan");
     await expect(page.getByRole("heading", { level: 1, name: "План вывоза" })).toBeVisible();
+    const dispatchDateInput = page.getByLabel("Дата вывоза");
+    await expect(dispatchDateInput).toHaveCSS("min-height", "64px");
+    await page.getByText("Дата вывоза", { exact: true }).click();
+    await expect(dispatchDateInput).toHaveAttribute("data-picker-opened", "true");
     await expect(page.getByRole("heading", { name: "Общий объём вывоза" })).toBeVisible();
     await expect(
       page.locator(".dispatch-overview .planning-section-heading").getByText("63 шт.", {
