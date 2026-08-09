@@ -20,16 +20,19 @@ const workshopId = randomUUID();
 const otherWorkshopId = randomUUID();
 const productId = randomUUID();
 const otherWorkshopProductId = randomUUID();
+const claimProductId = randomUUID();
 const planRunId = randomUUID();
 const snapshotId = randomUUID();
 const planId = randomUUID();
 const planLineId = randomUUID();
 const offset = Number.parseInt(adminId.slice(0, 8), 16) % 40_000;
 const productionDate = isoDate(new Date(Date.UTC(2300, 0, 1 + offset)));
+const claimProductionDate = addDays(productionDate, 2);
 
 const admin = actor(adminId, "ADMIN", "FACTORY", null);
 const manager = actor(managerId, "WORKSHOP_MANAGER", "WORKSHOP", workshopId);
 const chef = actor(chefId, "CONFECTIONER", "WORKSHOP", workshopId);
+const absentChef = actor(absentChefId, "CONFECTIONER", "WORKSHOP", workshopId);
 const warehouse = actor(warehouseId, "WAREHOUSE_KEEPER", "WAREHOUSE", randomUUID());
 const outsider = actor(outsiderId, "WORKSHOP_MANAGER", "WORKSHOP", otherWorkshopId);
 
@@ -107,6 +110,15 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
         `B11-O-${adminId.slice(0, 6).toUpperCase()}`,
         otherWorkshopId,
       ],
+    );
+    await database.query(
+      `insert into catalog.product (
+         id, product_code, name, category_id, unit_code, primary_workshop_id
+       ) values (
+         $1,$2,'Торт для само-назначения B11',
+         '11000000-0000-4000-8000-000000000001','PCS',null
+       )`,
+      [claimProductId, `B11-C-${adminId.slice(0, 6).toUpperCase()}`],
     );
     await database.query(
       `insert into production.product_profile (
@@ -218,6 +230,85 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
           workshopId: otherWorkshopId,
         }),
       ]),
+    );
+  });
+
+  it("lets one confectioner claim norm demand and report it in partial batches", async () => {
+    await database.query(
+      `insert into planning.territory_daily_norm (
+         id, territory_id, dispatch_date, product_id, quantity, version,
+         reason, created_by, correlation_id
+       ) values (
+         $1, '12000000-0000-4000-8000-000000000001', $2, $3, 13, 1,
+         'Проверка само-назначения кондитера', $4, $5
+       )`,
+      [randomUUID(), addDays(claimProductionDate, 1), claimProductId, adminId, randomUUID()],
+    );
+
+    const claimed = await repository.claimNormDemand({
+      actor: chef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(claimed).toMatchObject({
+      planId: null,
+      planLineId: null,
+      sourceKind: "DAILY_NORM_CLAIM",
+      status: "IN_PROGRESS",
+      targetQuantity: 13,
+      workshopId,
+    });
+    expect(claimed.assignments).toEqual([
+      expect.objectContaining({ employeeId: chefId, isLead: true }),
+    ]);
+
+    const repeated = await repository.claimNormDemand({
+      actor: chef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(repeated.id).toBe(claimed.id);
+    await expect(
+      repository.claimNormDemand({
+        actor: absentChef,
+        correlationId: randomUUID(),
+        productId: claimProductId,
+        productionDate: claimProductionDate,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await repository.submitBatch({
+      actor: chef,
+      comment: null,
+      correlationId: randomUUID(),
+      idempotencyKey: `B11-CLAIM-BATCH-${randomUUID()}`,
+      producedAt: new Date(),
+      quantity: 5,
+      reasonId: null,
+      replacementForBatchId: null,
+      taskId: claimed.id,
+      taskVersion: claimed.version,
+    });
+    const workspace = await repository.workspace(claimProductionDate, workshopId, chef);
+    expect(workspace.tasks).toContainEqual(
+      expect.objectContaining({
+        id: claimed.id,
+        declaredQuantity: 5,
+        remainingToDeclare: 8,
+      }),
+    );
+    expect(workspace.normDemand.lines).toContainEqual(
+      expect.objectContaining({
+        productId: claimProductId,
+        work: expect.objectContaining({
+          claimedByEmployeeId: chefId,
+          declaredQuantity: 5,
+          remainingQuantity: 8,
+          taskId: claimed.id,
+        }),
+      }),
     );
   });
 

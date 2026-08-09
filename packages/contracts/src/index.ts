@@ -745,8 +745,8 @@ export interface ProductionTaskView {
   readonly defects: readonly ProductionDefectView[];
   readonly id: string;
   readonly overproductionQuantity: number;
-  readonly planId: string;
-  readonly planLineId: string;
+  readonly planId: string | null;
+  readonly planLineId: string | null;
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
@@ -755,6 +755,7 @@ export interface ProductionTaskView {
   readonly rejectedQuantity: number;
   readonly remainingToDeclare: number;
   readonly shortfallQuantity: number;
+  readonly sourceKind: "DAILY_NORM_CLAIM" | "PUBLISHED_PLAN";
   readonly sourceTransferId: string | null;
   readonly status:
     | "ASSIGNED"
@@ -793,6 +794,16 @@ export interface ProductionNormDemandLineView {
   readonly productId: string;
   readonly productName: string;
   readonly quantity: number;
+  readonly work: {
+    readonly claimedByEmployeeId: string;
+    readonly claimedByName: string;
+    readonly declaredQuantity: number;
+    readonly remainingQuantity: number;
+    readonly status: ProductionTaskView["status"];
+    readonly targetQuantity: number;
+    readonly taskId: string;
+    readonly version: number;
+  } | null;
   readonly workshopId: string | null;
   readonly workshopName: string | null;
 }

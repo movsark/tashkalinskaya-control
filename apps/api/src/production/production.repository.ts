@@ -37,14 +37,15 @@ interface TaskRow {
   readonly correction_of_task_id: string | null;
   readonly declared_quantity: number;
   readonly id: string;
-  readonly plan_id: string;
-  readonly plan_line_id: string;
+  readonly plan_id: string | null;
+  readonly plan_line_id: string | null;
   readonly product_code_snapshot: string;
   readonly product_id: string;
   readonly product_name_snapshot: string;
   readonly production_date: string;
   readonly production_window: ProductionTaskView["productionWindow"];
   readonly rejected_quantity: number;
+  readonly source_kind: ProductionTaskView["sourceKind"];
   readonly source_transfer_id: string | null;
   readonly status: ProductionTaskView["status"];
   readonly target_quantity: number;
@@ -214,11 +215,12 @@ export class ProductionRepository {
       for (const line of lines.rows) {
         const existingResult = await client.query<{
           id: string;
-          plan_id: string;
+          plan_id: string | null;
+          source_kind: ProductionTaskView["sourceKind"];
           status: ProductionTaskView["status"];
           target_quantity: number;
         }>(
-          `select id, plan_id, target_quantity, status
+          `select id, plan_id, source_kind, target_quantity, status
            from production.task
            where production_date = $1 and product_id = $2
              and correction_of_task_id is null and status <> 'CANCELLED_BY_ADMIN'
@@ -270,13 +272,15 @@ export class ProductionRepository {
           [existing.id],
         );
         const canRetarget =
-          ["CREATED", "ASSIGNED"].includes(existing.status) && batches.rows[0]?.count === "0";
+          existing.plan_id !== null &&
+          ["CREATED", "ASSIGNED"].includes(existing.status) &&
+          batches.rows[0]?.count === "0";
         if (canRetarget) {
           await insertAdjustment(client, command, {
             newPlanId: planId,
             newPlanLineId: line.plan_line_id,
             newTarget: line.quantity,
-            oldPlanId: existing.plan_id,
+            oldPlanId: existing.plan_id!,
             oldTarget: existing.target_quantity,
             taskId: existing.id,
           });
@@ -338,6 +342,26 @@ export class ProductionRepository {
             },
           );
         } else {
+          if (existing.plan_id === null) {
+            await audit(
+              client,
+              command,
+              "PRODUCTION_DAILY_CLAIM_PLAN_RECONCILIATION_REQUIRED",
+              "PRODUCTION_TASK",
+              existing.id,
+              {
+                newPlanId: planId,
+                newTargetQuantity: line.quantity,
+                oldSourceKind: existing.source_kind,
+                oldTargetQuantity: existing.target_quantity,
+              },
+            );
+            await outbox(client, "production.task.target-decrease-review", existing.id, {
+              newTargetQuantity: line.quantity,
+              oldTargetQuantity: existing.target_quantity,
+            });
+            continue;
+          }
           await insertAdjustment(client, command, {
             newPlanId: planId,
             newPlanLineId: line.plan_line_id,
@@ -353,6 +377,158 @@ export class ProductionRepository {
         }
       }
       return loadWorkspace(client, command.productionDate, null, command.actor);
+    });
+  }
+
+  claimNormDemand(command: {
+    actor: ProductionActor;
+    correlationId: string;
+    productId: string;
+    productionDate: string;
+  }): Promise<ProductionTaskView> {
+    assertAnyRole(command.actor, ["CONFECTIONER"]);
+    return this.database.transaction(async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `production:claim:${command.productionDate}:${command.productId}`,
+      ]);
+
+      const workshopScopeIds = command.actor.roles
+        .filter(
+          (role) =>
+            role.roleCode === "CONFECTIONER" &&
+            role.scopeType === "WORKSHOP" &&
+            role.scopeId !== null,
+        )
+        .map((role) => role.scopeId!);
+      if (workshopScopeIds.length === 0) {
+        throw new ForbiddenException("У кондитера не указан доступный цех");
+      }
+
+      const demand = await loadNormDemandProduct(client, command.productionDate, command.productId);
+      if (demand === undefined || demand.quantity <= 0) {
+        throw new NotFoundException("Товар отсутствует в плане производства на сегодня");
+      }
+      if (demand.workshop_id !== null && !workshopScopeIds.includes(demand.workshop_id)) {
+        throw new ForbiddenException("Товар закреплён за другим цехом");
+      }
+      if (demand.workshop_id === null && workshopScopeIds.length !== 1) {
+        throw new ConflictException({
+          code: "PRODUCTION_WORKSHOP_REQUIRED",
+          message: "Сначала назначьте товару цех или оставьте кондитеру один доступный цех",
+        });
+      }
+      const workshopId = demand.workshop_id ?? workshopScopeIds[0]!;
+      const workshop = await client.query<{ name: string }>(
+        `select name from identity.department where id = $1 and status = 'ACTIVE'`,
+        [workshopId],
+      );
+      const workshopName = workshop.rows[0]?.name;
+      if (workshopName === undefined) throw new ConflictException("Цех недоступен");
+
+      const existingResult = await client.query<
+        LockedTask & { source_kind: ProductionTaskView["sourceKind"] }
+      >(
+        `select id, production_date::text, production_window, workshop_id,
+                target_quantity, status, version, source_kind
+         from production.task
+         where production_date = $1 and product_id = $2
+           and correction_of_task_id is null and status <> 'CANCELLED_BY_ADMIN'
+         order by case source_kind when 'DAILY_NORM_CLAIM' then 0 else 1 end, created_at
+         limit 1 for update`,
+        [command.productionDate, command.productId],
+      );
+      const existing = existingResult.rows[0];
+      if (existing !== undefined) {
+        const lead = await client.query<{ employee_id: string; employee_name: string }>(
+          `select a.employee_id, e.full_name as employee_name
+           from production.task_assignment a
+           join identity.employee e on e.id = a.employee_id
+           where a.task_id = $1 and a.ended_at is null and a.is_lead
+           limit 1`,
+          [existing.id],
+        );
+        const claimedBy = lead.rows[0];
+        if (claimedBy?.employee_id === command.actor.employeeId)
+          return loadTask(client, existing.id);
+        if (claimedBy !== undefined) {
+          throw new ConflictException({
+            code: "PRODUCTION_ALREADY_CLAIMED",
+            message: `Позиция уже в работе у сотрудника «${claimedBy.employee_name}»`,
+          });
+        }
+        if (existing.workshop_id !== workshopId) {
+          throw new ForbiddenException("Задание относится к другому цеху");
+        }
+        if (!["CREATED", "ASSIGNED"].includes(existing.status)) {
+          throw new ConflictException("Работа по позиции уже начата другим способом");
+        }
+        await client.query(
+          `insert into production.task_assignment (
+             id, task_id, employee_id, is_lead, assigned_by, reason, correlation_id
+           ) values ($1,$2,$3,true,$3,'Кондитер взял позицию в работу',$4)`,
+          [randomUUID(), existing.id, command.actor.employeeId, command.correlationId],
+        );
+        await client.query(
+          `update production.task
+           set status = 'IN_PROGRESS', started_at = coalesce(started_at, now()), version = version + 1
+           where id = $1`,
+          [existing.id],
+        );
+        await audit(
+          client,
+          command,
+          "PRODUCTION_TASK_SELF_CLAIMED",
+          "PRODUCTION_TASK",
+          existing.id,
+          { productId: command.productId, targetQuantity: existing.target_quantity, workshopId },
+        );
+        await outbox(client, "production.task.self-claimed", existing.id, {
+          employeeId: command.actor.employeeId,
+          productId: command.productId,
+          workshopId,
+        });
+        return loadTask(client, existing.id);
+      }
+
+      const taskId = randomUUID();
+      await client.query(
+        `insert into production.task (
+           id, source_kind, plan_id, plan_line_id, production_date, product_id,
+           product_code_snapshot, product_name_snapshot, workshop_id,
+           workshop_name_snapshot, production_window, target_quantity, status,
+           created_by, correlation_id, started_at
+         ) values ($1,'DAILY_NORM_CLAIM',null,null,$2,$3,$4,$5,$6,$7,$8,$9,'IN_PROGRESS',$10,$11,now())`,
+        [
+          taskId,
+          command.productionDate,
+          command.productId,
+          demand.product_code,
+          demand.product_name,
+          workshopId,
+          workshopName,
+          demand.production_window,
+          demand.quantity,
+          command.actor.employeeId,
+          command.correlationId,
+        ],
+      );
+      await client.query(
+        `insert into production.task_assignment (
+           id, task_id, employee_id, is_lead, assigned_by, reason, correlation_id
+         ) values ($1,$2,$3,true,$3,'Кондитер взял позицию в работу',$4)`,
+        [randomUUID(), taskId, command.actor.employeeId, command.correlationId],
+      );
+      await audit(client, command, "PRODUCTION_TASK_SELF_CLAIMED", "PRODUCTION_TASK", taskId, {
+        productId: command.productId,
+        targetQuantity: demand.quantity,
+        workshopId,
+      });
+      await outbox(client, "production.task.self-claimed", taskId, {
+        employeeId: command.actor.employeeId,
+        productId: command.productId,
+        workshopId,
+      });
+      return loadTask(client, taskId);
     });
   }
 
@@ -1020,7 +1196,7 @@ const taskSelect = `
   select t.id, t.plan_id, t.plan_line_id, t.correction_of_task_id,
          t.production_date::text, t.product_id, t.product_code_snapshot,
          t.product_name_snapshot, t.workshop_id, t.workshop_name_snapshot,
-         t.source_transfer_id, t.production_window, t.target_quantity,
+         t.source_kind, t.source_transfer_id, t.production_window, t.target_quantity,
          t.status, t.version,
          coalesce((select sum(b.quantity)::integer from production.batch b
                    where b.task_id = t.id and b.status in (
@@ -1068,6 +1244,73 @@ const defectSelect = `
   join production.reason r on r.id = d.reason_id
   join identity.employee e on e.id = d.reported_by
 `;
+
+interface NormDemandProductRow {
+  readonly product_code: string;
+  readonly product_name: string;
+  readonly production_window: "DAY" | "NIGHT";
+  readonly quantity: number;
+  readonly workshop_id: string | null;
+}
+
+interface NormDemandWorkRow {
+  readonly claimed_by_employee_id: string;
+  readonly claimed_by_name: string;
+  readonly declared_quantity: number;
+  readonly product_id: string;
+  readonly status: ProductionTaskView["status"];
+  readonly target_quantity: number;
+  readonly task_id: string;
+  readonly version: number;
+}
+
+async function loadNormDemandProduct(
+  client: PoolClient,
+  productionDate: string,
+  productId: string,
+): Promise<NormDemandProductRow | undefined> {
+  const result = await client.query<NormDemandProductRow>(
+    `with expanded_links as (
+       select l.production_date, l.dispatch_date, t.id as territory_id,
+              v.version_number, (l.territory_id is not null) as specific
+       from planning.production_dispatch_link l
+       join planning.calendar_version v on v.id = l.calendar_version_id
+       join logistics.territory t on t.status = 'ACTIVE'
+         and (l.territory_id is null or l.territory_id = t.id)
+     ), effective_links as (
+       select distinct on (dispatch_date, territory_id)
+              production_date, dispatch_date, territory_id
+       from expanded_links
+       order by dispatch_date, territory_id, specific desc, version_number desc
+     ), selected_scopes as (
+       select dispatch_date, territory_id
+       from effective_links
+       where production_date = $1
+       union all
+       select $1::date + 1, t.id
+       from logistics.territory t
+       where t.status = 'ACTIVE'
+         and not exists (select 1 from effective_links where production_date = $1)
+     ), selected_norms as (
+       select n.product_id, n.quantity
+       from selected_scopes s
+       cross join lateral planning.effective_territory_norms(
+         s.dispatch_date,
+         array[s.territory_id]
+       ) n
+     )
+     select p.product_code, p.name as product_name, p.primary_workshop_id as workshop_id,
+            coalesce(pp.production_window, 'DAY') as production_window,
+            sum(n.quantity)::integer as quantity
+     from selected_norms n
+     join catalog.product p on p.id = n.product_id and p.status = 'ACTIVE'
+     left join production.product_profile pp on pp.product_id = p.id
+     where p.id = $2
+     group by p.id, p.product_code, p.name, p.primary_workshop_id, pp.production_window`,
+    [productionDate, productId],
+  );
+  return result.rows[0];
+}
 
 async function loadWorkspace(
   client: PoolClient,
@@ -1260,10 +1503,34 @@ async function loadWorkspace(
      order by c.name, p.name, p.product_code`,
     [productionDate, normDemandWorkshopIds],
   );
+  const normDemandWork = await client.query<NormDemandWorkRow>(
+    `select distinct on (t.product_id)
+            t.product_id, t.id as task_id, t.target_quantity, t.status, t.version,
+            a.employee_id as claimed_by_employee_id, e.full_name as claimed_by_name,
+            coalesce((
+              select sum(b.quantity)::integer
+              from production.batch b
+              where b.task_id = t.id and b.status in (
+                'PENDING_OVERPRODUCTION','AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE'
+              )
+            ), 0) as declared_quantity
+     from production.task t
+     join production.task_assignment a
+       on a.task_id = t.id and a.ended_at is null and a.is_lead
+     join identity.employee e on e.id = a.employee_id
+     where t.production_date = $1
+       and t.correction_of_task_id is null
+       and t.status <> 'CANCELLED_BY_ADMIN'
+     order by t.product_id,
+              case t.source_kind when 'DAILY_NORM_CLAIM' then 0 else 1 end,
+              t.created_at desc`,
+    [productionDate],
+  );
   const transfers = await loadTransfers(client, selectedWorkshopIds);
   const assignmentMap = groupBy(assignments.rows, (row) => row.task_id);
   const batchMap = groupBy(batches.rows, (row) => row.task_id);
   const defectMap = groupBy(defects.rows, (row) => row.task_id);
+  const workMap = new Map(normDemandWork.rows.map((row) => [row.product_id, row]));
   return {
     availableTransferWorkshops: availableTransferWorkshops.rows,
     employees: employees.rows.map((row) => ({
@@ -1274,15 +1541,31 @@ async function loadWorkspace(
     })),
     normDemand: {
       dispatchDates: [...new Set(normDemand.rows.flatMap((row) => row.dispatch_dates))].sort(),
-      lines: normDemand.rows.map((row) => ({
-        productCode: row.product_code,
-        productGroup: row.product_group,
-        productId: row.product_id,
-        productName: row.product_name,
-        quantity: row.quantity,
-        workshopId: row.workshop_id,
-        workshopName: row.workshop_name,
-      })),
+      lines: normDemand.rows.map((row) => {
+        const work = workMap.get(row.product_id);
+        return {
+          productCode: row.product_code,
+          productGroup: row.product_group,
+          productId: row.product_id,
+          productName: row.product_name,
+          quantity: row.quantity,
+          work:
+            work === undefined
+              ? null
+              : {
+                  claimedByEmployeeId: work.claimed_by_employee_id,
+                  claimedByName: work.claimed_by_name,
+                  declaredQuantity: work.declared_quantity,
+                  remainingQuantity: Math.max(work.target_quantity - work.declared_quantity, 0),
+                  status: work.status,
+                  targetQuantity: work.target_quantity,
+                  taskId: work.task_id,
+                  version: work.version,
+                },
+          workshopId: row.workshop_id,
+          workshopName: row.workshop_name,
+        };
+      }),
       source: calendarState.rows[0]?.has_links ? "CALENDAR" : "NEXT_DAY_FALLBACK",
     },
     productionDate,
@@ -1357,6 +1640,7 @@ function mapTask(
     rejectedQuantity: row.rejected_quantity,
     remainingToDeclare: Math.max(row.target_quantity - row.declared_quantity, 0),
     shortfallQuantity: Math.max(row.target_quantity - row.accepted_quantity, 0),
+    sourceKind: row.source_kind,
     sourceTransferId: row.source_transfer_id,
     status: row.status,
     targetQuantity: row.target_quantity,

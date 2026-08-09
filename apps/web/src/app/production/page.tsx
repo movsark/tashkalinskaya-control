@@ -14,6 +14,7 @@ import { AppBrand } from "../../components/app-brand";
 import {
   ApiRequestError,
   assignProductionTask,
+  claimProductionProduct,
   closeProductionTask,
   createProductionTransfer,
   decideProductionDefect,
@@ -48,6 +49,7 @@ export default function ProductionPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [confectionerView, setConfectionerView] = useState<"PLAN" | "WORK">("PLAN");
 
   const roles = useMemo(
     () => new Set(session?.employee.roles.map((role) => role.roleCode) ?? []),
@@ -89,6 +91,13 @@ export default function ProductionPage() {
       if (rightIndex === -1) return -1;
       return leftIndex - rightIndex;
     });
+  }, [workspace]);
+  const confectionerWorkSummary = useMemo(() => {
+    const tasks = workspace?.tasks ?? [];
+    return {
+      positions: tasks.length,
+      quantity: tasks.reduce((sum, task) => sum + task.targetQuantity, 0),
+    };
   }, [workspace]);
 
   useEffect(() => {
@@ -234,65 +243,102 @@ export default function ProductionPage() {
       {message ? <p className="logistics-success production-notice">{message}</p> : null}
 
       {isConfectionerOnly ? (
-        <ProductionDemandBoard
-          date={date}
-          groups={normGroups}
-          isConfectioner
-          workspace={workspace}
-        />
+        <>
+          <nav aria-label="Разделы производства кондитера" className="production-confectioner-tabs">
+            <button
+              aria-selected={confectionerView === "PLAN"}
+              className={confectionerView === "PLAN" ? "is-active" : ""}
+              onClick={() => setConfectionerView("PLAN")}
+              role="tab"
+              type="button"
+            >
+              <span>План производства</span>
+              <small>
+                {workspace.normDemand.lines.length} поз. · {metrics.dispatchNorm} шт.
+              </small>
+            </button>
+            <button
+              aria-selected={confectionerView === "WORK"}
+              className={confectionerView === "WORK" ? "is-active" : ""}
+              onClick={() => setConfectionerView("WORK")}
+              role="tab"
+              type="button"
+            >
+              <span>В работе</span>
+              <small>
+                {confectionerWorkSummary.positions} поз. · {confectionerWorkSummary.quantity} шт.
+              </small>
+            </button>
+          </nav>
+          {confectionerView === "PLAN" ? (
+            <ProductionDemandBoard
+              busy={busy}
+              date={date}
+              groups={normGroups}
+              isConfectioner
+              onAction={run}
+              onClaimed={() => setConfectionerView("WORK")}
+              onReload={reload}
+              session={session!}
+              workspace={workspace}
+            />
+          ) : (
+            <ConfectionerWorkBoard
+              busy={busy}
+              onAction={run}
+              onReload={reload}
+              session={session!}
+              tasks={workspace.tasks}
+            />
+          )}
+        </>
       ) : null}
 
-      <section className="production-metrics" aria-label="Сводка производства">
-        <Metric
-          label={isConfectionerOnly ? "План производства на сегодня" : "План производства"}
-          value={isConfectionerOnly ? metrics.dispatchNorm : metrics.plan}
-        />
-        <Metric
-          label={isConfectionerOnly ? "Мои назначенные задания" : "На вывоз завтра"}
-          value={isConfectionerOnly ? metrics.plan : metrics.dispatchNorm}
-        />
-        <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
-        <Metric label="Принято складом" value={metrics.accepted} tone="green" />
-      </section>
+      {!isConfectionerOnly ? (
+        <section className="production-metrics" aria-label="Сводка производства">
+          <Metric label="План производства" value={metrics.plan} />
+          <Metric label="На вывоз завтра" value={metrics.dispatchNorm} />
+          <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
+          <Metric label="Принято складом" value={metrics.accepted} tone="green" />
+        </section>
+      ) : null}
 
       {!isConfectionerOnly ? (
         <ProductionDemandBoard date={date} groups={normGroups} workspace={workspace} />
       ) : null}
 
-      <section className="production-board">
-        <div className="production-section-heading">
-          <div>
-            <p className="eyebrow">Оперативная доска</p>
-            <h2>
-              {isConfectionerOnly ? "Мои задания" : "Задания"} на {dateLabel(date)}
-            </h2>
+      {!isConfectionerOnly ? (
+        <section className="production-board">
+          <div className="production-section-heading">
+            <div>
+              <p className="eyebrow">Оперативная доска</p>
+              <h2>Задания на {dateLabel(date)}</h2>
+            </div>
+            <span>{workspace.tasks.length} заданий</span>
           </div>
-          <span>{workspace.tasks.length} заданий</span>
-        </div>
-        {workspace.tasks.length === 0 ? (
-          <p className="logistics-empty">
-            {isConfectionerOnly
-              ? "План производства на сегодня показан выше. Ответственный цеха ещё не распределил вам личные задания."
-              : "Заданий пока нет. Администратор создаёт их из утверждённого плана."}
-          </p>
-        ) : (
-          <div className="production-task-grid">
-            {workspace.tasks.map((task) => (
-              <TaskCard
-                busy={busy}
-                canManage={canManage}
-                employees={workspace.employees}
-                key={task.id}
-                onAction={run}
-                onReload={reload}
-                reasons={workspace.reasons}
-                session={session!}
-                task={task}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+          {workspace.tasks.length === 0 ? (
+            <p className="logistics-empty">
+              Заданий пока нет. Администратор создаёт их из утверждённого плана.
+            </p>
+          ) : (
+            <div className="production-task-grid">
+              {workspace.tasks.map((task) => (
+                <TaskCard
+                  busy={busy}
+                  canManage={canManage}
+                  employees={workspace.employees}
+                  key={task.id}
+                  onAction={run}
+                  onReload={reload}
+                  reasons={workspace.reasons}
+                  session={session!}
+                  task={task}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {canManage ? (
         <details className="workspace-more">
@@ -338,23 +384,34 @@ function Metric({ label, tone = "", value }: { label: string; tone?: string; val
 }
 
 function ProductionDemandBoard({
+  busy = false,
   date,
   groups,
   isConfectioner = false,
+  onAction,
+  onClaimed,
+  onReload,
+  session,
   workspace,
 }: {
+  busy?: boolean;
   date: string;
   groups: [string, ProductionWorkspaceView["normDemand"]["lines"]][];
   isConfectioner?: boolean;
+  onAction?: (operation: () => Promise<void>) => Promise<void>;
+  onClaimed?: () => void;
+  onReload?: (message?: string) => Promise<void>;
+  session?: AuthenticatedUser;
   workspace: ProductionWorkspaceView;
 }) {
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const total = workspace.normDemand.lines.reduce((sum, line) => sum + line.quantity, 0);
   const dispatchDates =
     workspace.normDemand.dispatchDates.map(dateLabel).join(", ") || dateLabel(addDays(date, 1));
 
   return (
     <section
-      aria-label={isConfectioner ? "План производства на сегодня" : undefined}
+      aria-label={isConfectioner ? "План производства" : undefined}
       className={`production-board production-norm-demand${isConfectioner ? " is-confectioner-plan" : ""}`}
     >
       <div className="production-section-heading">
@@ -362,9 +419,7 @@ function ProductionDemandBoard({
           <p className="eyebrow">
             {isConfectioner ? "Сегодня нужно изготовить" : "Основание для расчёта"}
           </p>
-          <h2>
-            {isConfectioner ? "План производства на сегодня" : "Норма вывоза на следующий день"}
-          </h2>
+          <h2>{isConfectioner ? "План производства" : "Норма вывоза на следующий день"}</h2>
         </div>
         <span>
           {workspace.normDemand.lines.length} позиций · {total} шт.
@@ -372,7 +427,7 @@ function ProductionDemandBoard({
       </div>
       <p className="production-demand-caption">
         {isConfectioner
-          ? `Это общий план фабрики на сегодня для вывоза ${dispatchDates}. Личные задания ответственный цеха распределяет отдельно.`
+          ? `Это общий план фабрики на сегодня для вывоза ${dispatchDates}. Нажмите товар, чтобы взять его в работу.`
           : `Справочно, дата вывоза: ${dispatchDates}.`}
         {!isConfectioner && workspace.normDemand.source === "CALENDAR"
           ? " Даты взяты из производственного календаря."
@@ -381,9 +436,7 @@ function ProductionDemandBoard({
             : null}
       </p>
       {groups.length === 0 ? (
-        <p className="logistics-empty">
-          План производства на сегодня ещё не рассчитан или равен нулю.
-        </p>
+        <p className="logistics-empty">План производства ещё не рассчитан или равен нулю.</p>
       ) : (
         <div className="production-demand-groups">
           {groups.map(([group, lines]) => (
@@ -395,21 +448,224 @@ function ProductionDemandBoard({
                 </span>
               </header>
               <div>
-                {lines.map((line) => (
-                  <p key={line.productId}>
-                    <span>
-                      <b>{line.productName}</b>
-                      <small>{line.workshopName ?? "Цех ещё не назначен"}</small>
-                    </span>
-                    <strong>{line.quantity} шт.</strong>
-                  </p>
-                ))}
+                {lines.map((line) => {
+                  const expanded = expandedProductId === line.productId;
+                  const mine = line.work?.claimedByEmployeeId === session?.employee.id;
+                  const completed = line.work?.remainingQuantity === 0;
+                  return (
+                    <div
+                      className={`production-demand-product${line.work ? " is-claimed" : ""}${mine ? " is-mine" : ""}${completed ? " is-completed" : ""}`}
+                      key={line.productId}
+                    >
+                      <button
+                        aria-expanded={expanded}
+                        className="production-demand-product__trigger"
+                        onClick={() => setExpandedProductId(expanded ? null : line.productId)}
+                        type="button"
+                      >
+                        <span>
+                          <b>{line.productName}</b>
+                          <small>
+                            {line.work
+                              ? completed
+                                ? `Готово · ${line.work.claimedByName}`
+                                : mine
+                                  ? `У вас в работе · осталось ${line.work.remainingQuantity} шт.`
+                                  : `В работе · ${line.work.claimedByName}`
+                              : (line.workshopName ?? "Можно взять в работу")}
+                          </small>
+                        </span>
+                        <strong>{line.quantity} шт.</strong>
+                        <i aria-hidden="true">{expanded ? "−" : "+"}</i>
+                      </button>
+                      {expanded ? (
+                        <div className="production-demand-product__details">
+                          {line.work === null ? (
+                            isConfectioner && session && onAction && onReload ? (
+                              <button
+                                className="primary-button production-full-button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void onAction(async () => {
+                                    await claimProductionProduct(
+                                      date,
+                                      line.productId,
+                                      session.csrfToken,
+                                    );
+                                    await onReload(
+                                      `«${line.productName}» добавлен во вкладку «В работе».`,
+                                    );
+                                    onClaimed?.();
+                                  })
+                                }
+                                type="button"
+                              >
+                                Взять в работу
+                              </button>
+                            ) : (
+                              <p>Позиция пока свободна.</p>
+                            )
+                          ) : (
+                            <p>
+                              {completed
+                                ? `Всё количество передано. Ответственный: ${line.work.claimedByName}.`
+                                : mine
+                                  ? `Вы передали ${line.work.declaredQuantity} шт., осталось ${line.work.remainingQuantity} шт.`
+                                  : `Позицию уже выполняет ${line.work.claimedByName}. Осталось ${line.work.remainingQuantity} шт.`}
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </article>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function ConfectionerWorkBoard({
+  busy,
+  onAction,
+  onReload,
+  session,
+  tasks,
+}: {
+  busy: boolean;
+  onAction: (operation: () => Promise<void>) => Promise<void>;
+  onReload: (message?: string) => Promise<void>;
+  session: AuthenticatedUser;
+  tasks: readonly ProductionTaskView[];
+}) {
+  const total = tasks.reduce((sum, task) => sum + task.targetQuantity, 0);
+  const remaining = tasks.reduce((sum, task) => sum + task.remainingToDeclare, 0);
+
+  return (
+    <section aria-label="В работе" className="production-board production-confectioner-work">
+      <div className="production-section-heading">
+        <div>
+          <p className="eyebrow">Мои позиции</p>
+          <h2>В работе</h2>
+        </div>
+        <span>
+          {tasks.length} поз. · {total} шт.
+        </span>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="logistics-empty">
+          Пока ничего не взято. Откройте вкладку «План производства», нажмите товар и выберите
+          «Взять в работу».
+        </p>
+      ) : (
+        <>
+          <div className="production-confectioner-work__summary">
+            <span>Всего взято: {total} шт.</span>
+            <strong>Осталось произвести: {remaining} шт.</strong>
+          </div>
+          <div className="production-confectioner-work__list">
+            {tasks.map((task) => (
+              <ConfectionerWorkCard
+                busy={busy}
+                key={task.id}
+                onAction={onAction}
+                onReload={onReload}
+                session={session}
+                task={task}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ConfectionerWorkCard({
+  busy,
+  onAction,
+  onReload,
+  session,
+  task,
+}: {
+  busy: boolean;
+  onAction: (operation: () => Promise<void>) => Promise<void>;
+  onReload: (message?: string) => Promise<void>;
+  session: AuthenticatedUser;
+  task: ProductionTaskView;
+}) {
+  const [quantity, setQuantity] = useState(String(Math.max(task.remainingToDeclare, 1)));
+  const numericQuantity = Number(quantity);
+
+  useEffect(() => {
+    setQuantity(String(Math.max(task.remainingToDeclare, 1)));
+  }, [task.id, task.remainingToDeclare]);
+
+  return (
+    <article className={task.remainingToDeclare === 0 ? "is-completed" : ""}>
+      <header>
+        <div>
+          <span>{task.productCode}</span>
+          <h3>{task.productName}</h3>
+        </div>
+        <strong>{task.targetQuantity} шт.</strong>
+      </header>
+      <div className="production-confectioner-work__progress">
+        <span>Передано: {task.declaredQuantity} шт.</span>
+        <strong>Осталось: {task.remainingToDeclare} шт.</strong>
+      </div>
+      {task.remainingToDeclare === 0 ? (
+        <p className="production-confectioner-work__done">
+          Всё количество передано и ожидает дальнейшей проверки склада.
+        </p>
+      ) : (
+        <div className="production-confectioner-work__submit">
+          <label>
+            Сколько готово сейчас
+            <input
+              inputMode="numeric"
+              max={task.remainingToDeclare}
+              min="1"
+              onChange={(event) => setQuantity(event.target.value)}
+              type="number"
+              value={quantity}
+            />
+          </label>
+          <button
+            className="primary-button"
+            disabled={
+              busy ||
+              !Number.isInteger(numericQuantity) ||
+              numericQuantity < 1 ||
+              numericQuantity > task.remainingToDeclare
+            }
+            onClick={() =>
+              void onAction(async () => {
+                await submitProductionBatch(
+                  task.id,
+                  {
+                    idempotencyKey: crypto.randomUUID(),
+                    producedAt: new Date().toISOString(),
+                    quantity: numericQuantity,
+                    taskVersion: task.version,
+                  },
+                  session.csrfToken,
+                );
+                await onReload(
+                  `${numericQuantity} шт. «${task.productName}» передано. Остаток пересчитан.`,
+                );
+              })
+            }
+            type="button"
+          >
+            Передать готовое
+          </button>
+        </div>
+      )}
+    </article>
   );
 }
 

@@ -1193,6 +1193,18 @@ export async function assignProductionTask(
   });
 }
 
+export async function claimProductionProduct(
+  productionDate: string,
+  productId: string,
+  csrfToken: string,
+): Promise<ProductionTaskView> {
+  return request(`/production/days/${productionDate}/products/${productId}/claim`, {
+    body: JSON.stringify({}),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function startProductionTask(
   taskId: string,
   version: number,

@@ -1358,12 +1358,17 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a confectioner sees today's production plan and separate personal tasks", async ({
+  test("a confectioner claims today's product and reports a partial ready quantity", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     const workshopId = "20000000-0000-4000-8000-000000000180";
+    const confectionerId = "20000000-0000-4000-8000-000000000182";
+    const taskId = "20000000-0000-4000-8000-000000000187";
     let requestedProductionDate = "";
+    let claimed = false;
+    let declaredQuantity = 0;
+    let taskVersion = 1;
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
         csrfToken: "csrf-confectioner-production",
@@ -1373,7 +1378,7 @@ test.describe("B20 browser and HTTP regression", () => {
           departmentId: workshopId,
           employmentStatus: "ACTIVE",
           fullName: "Кондитер производства",
-          id: "20000000-0000-4000-8000-000000000182",
+          id: confectionerId,
           login: "confectioner-production",
           personnelNumber: "E2E-CONFECTIONER",
           roles: [
@@ -1403,6 +1408,18 @@ test.describe("B20 browser and HTTP regression", () => {
               productId: "20000000-0000-4000-8000-000000000184",
               productName: "Торт тестовый",
               quantity: 12,
+              work: claimed
+                ? {
+                    claimedByEmployeeId: confectionerId,
+                    claimedByName: "Кондитер производства",
+                    declaredQuantity,
+                    remainingQuantity: 12 - declaredQuantity,
+                    status: "IN_PROGRESS",
+                    targetQuantity: 12,
+                    taskId,
+                    version: taskVersion,
+                  }
+                : null,
               workshopId,
               workshopName: "Кондитерский цех",
             },
@@ -1412,6 +1429,7 @@ test.describe("B20 browser and HTTP regression", () => {
               productId: "20000000-0000-4000-8000-000000000185",
               productName: "СВ Печенье тестовое",
               quantity: 7,
+              work: null,
               workshopId: "20000000-0000-4000-8000-000000000186",
               workshopName: "Цех сухой выпечки",
             },
@@ -1421,11 +1439,62 @@ test.describe("B20 browser and HTTP regression", () => {
         productionDate: "2026-08-09",
         reasons: [],
         serverTime: "2026-08-09T10:00:00.000Z",
-        tasks: [],
+        tasks: claimed
+          ? [
+              {
+                acceptedQuantity: 0,
+                assignments: [
+                  {
+                    assignedAt: "2026-08-09T10:00:00.000Z",
+                    employeeId: confectionerId,
+                    employeeName: "Кондитер производства",
+                    id: "20000000-0000-4000-8000-000000000188",
+                    isLead: true,
+                  },
+                ],
+                awaitingWarehouseQuantity: declaredQuantity,
+                batches: [],
+                confirmedDefectQuantity: 0,
+                correctionOfTaskId: null,
+                declaredQuantity,
+                defects: [],
+                id: taskId,
+                overproductionQuantity: 0,
+                planId: null,
+                planLineId: null,
+                productCode: "TB-001",
+                productId: "20000000-0000-4000-8000-000000000184",
+                productName: "Торт тестовый",
+                productionDate: "2026-08-09",
+                productionWindow: "DAY",
+                rejectedQuantity: 0,
+                remainingToDeclare: 12 - declaredQuantity,
+                shortfallQuantity: 12,
+                sourceKind: "DAILY_NORM_CLAIM",
+                sourceTransferId: null,
+                status: "IN_PROGRESS",
+                targetQuantity: 12,
+                version: taskVersion,
+                withdrawnQuantity: 0,
+                workshopId,
+                workshopName: "Кондитерский цех",
+              },
+            ]
+          : [],
         transfers: [],
         workshopId: null,
         workshops: [{ id: workshopId, name: "Кондитерский цех" }],
       });
+    });
+    await page.route("**/api/v1/production/days/*/products/*/claim", (route) => {
+      claimed = true;
+      return json(route, { id: taskId });
+    });
+    await page.route("**/api/v1/production/tasks/*/batches", async (route) => {
+      const body = route.request().postDataJSON() as { quantity: number };
+      declaredQuantity += body.quantity;
+      taskVersion += 1;
+      return json(route, { id: "20000000-0000-4000-8000-000000000189" });
     });
     await page.route("**/api/v1/health/live", (route) =>
       json(route, {
@@ -1440,21 +1509,27 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
     await expect(page.getByLabel("Производственная дата")).toHaveCount(0);
-    await expect(page.getByLabel("План производства на сегодня")).toBeVisible();
-    await expect(
-      page.getByText("План производства на сегодня", { exact: true }).first(),
-    ).toBeVisible();
-    await expect(page.getByText("Мои назначенные задания", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Мои задания на/ })).toBeVisible();
-    await expect(
-      page.getByText(
-        "План производства на сегодня показан выше. Ответственный цеха ещё не распределил вам личные задания.",
-        { exact: true },
-      ),
-    ).toBeVisible();
+    await expect(page.getByLabel("План производства")).toBeVisible();
+    await expect(page.getByText("План производства", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /План производства/ })).toContainText(
+      "2 поз. · 19 шт.",
+    );
+    await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("0 поз. · 0 шт.");
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
-    await expect(page.getByText("19 шт.", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: /Торт тестовый/ }).click();
+    await page.getByRole("button", { name: "Взять в работу" }).click();
+    await expect(page.getByLabel("В работе")).toBeVisible();
+    await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("1 поз. · 12 шт.");
+    await expect(page.getByText("Осталось: 12 шт.", { exact: true })).toBeVisible();
+
+    await page.getByLabel("Сколько готово сейчас").fill("10");
+    await page.getByRole("button", { name: "Передать готовое" }).click();
+    await expect(page.getByText("Осталось: 2 шт.", { exact: true })).toBeVisible();
+
+    await page.getByRole("tab", { name: /План производства/ }).click();
+    await expect(page.getByText("У вас в работе · осталось 2 шт.", { exact: true })).toBeVisible();
     expect(requestedProductionDate).toBe(moscowToday());
   });
 
