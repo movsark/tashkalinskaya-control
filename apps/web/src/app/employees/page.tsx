@@ -38,6 +38,7 @@ import {
   updateEmployeeStatus,
   updateEmployeeProfile,
 } from "../../lib/api";
+import { saveDeviceId } from "../../lib/device-identity";
 
 const roleLabels: Record<RoleCode, string> = {
   ACCOUNTANT: "Бухгалтер по табелю",
@@ -102,6 +103,7 @@ export default function EmployeesPage() {
     async function load() {
       try {
         const current = await getSession();
+        saveDeviceId(current.deviceId, current.employee.login);
         const [list, options] = await Promise.all([
           listEmployees(),
           current.employee.roles.some((role) => role.roleCode === "ADMIN")
@@ -413,6 +415,12 @@ function CreateInvitationPanel({
             </select>
           </label>
         ) : null}
+        {selectedRole.roleCode === "DRIVER" ? (
+          <small>
+            Территория при регистрации не закрепляется. Постоянный маршрут или замена на день
+            назначаются отдельно в разделе «Территории и водители».
+          </small>
+        ) : null}
         {error ? <p className="form-error">{error}</p> : null}
         <div className="form-actions">
           <button className="secondary-button" onClick={onCancel} type="button">
@@ -439,10 +447,12 @@ function InvitationResult({
   readonly onClose: () => void;
 }) {
   const [qrImage, setQrImage] = useState("");
+  const [registrationUrl, setRegistrationUrl] = useState("");
 
   useEffect(() => {
-    const registrationUrl = `${window.location.origin}/register#code=${encodeURIComponent(invitation.invitationCode)}`;
-    void QRCode.toDataURL(registrationUrl, {
+    const url = `${window.location.origin}/register#code=${encodeURIComponent(invitation.invitationCode)}`;
+    setRegistrationUrl(url);
+    void QRCode.toDataURL(url, {
       color: { dark: "#173c34", light: "#fffdf8" },
       errorCorrectionLevel: "M",
       margin: 2,
@@ -465,6 +475,11 @@ function InvitationResult({
       <div className="invitation-result__qr">
         {qrImage ? <img alt="QR для регистрации сотрудника" src={qrImage} /> : <span>QR…</span>}
       </div>
+      {registrationUrl ? (
+        <Link className="secondary-button" href={registrationUrl}>
+          Открыть регистрацию на этом телефоне для теста
+        </Link>
+      ) : null}
       <button className="secondary-button" onClick={onClose}>
         Закрыть
       </button>

@@ -44,7 +44,7 @@ export default function ActivatePage() {
         password,
         platformFamily: detectPlatform(),
       });
-      saveDeviceId(session.deviceId);
+      saveDeviceId(session.deviceId, loginValue);
       router.push(
         session.employee.roles.some((role) => role.roleCode === "ADMIN") ? "/employees" : "/",
       );

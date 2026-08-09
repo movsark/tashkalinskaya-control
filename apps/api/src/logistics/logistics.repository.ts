@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  DriverTerritoryRequestView,
   DriverLogisticsDayView,
   DriverProfileView,
   LoadingGroupView,
@@ -98,6 +99,22 @@ interface RunRow {
   readonly version: number;
 }
 
+interface DriverTerritoryRequestRow {
+  readonly created_at: Date;
+  readonly decision_comment: string | null;
+  readonly dispatch_date: string;
+  readonly driver_name: string;
+  readonly id: string;
+  readonly reason: string;
+  readonly requester_employee_id: string;
+  readonly status: DriverTerritoryRequestView["status"];
+  readonly territory_id: string;
+  readonly territory_name: string;
+  readonly territory_number: number;
+  readonly territory_run_id: string | null;
+  readonly version: number;
+}
+
 const runSelect = `
   select
     r.id, r.dispatch_date::text, r.territory_id, t.territory_number,
@@ -111,6 +128,15 @@ const runSelect = `
   join logistics.territory t on t.id = r.territory_id
   left join identity.employee e on e.id = r.driver_employee_id
   left join logistics.vehicle v on v.id = r.vehicle_id
+`;
+
+const driverRequestSelect = `
+  select q.id, q.dispatch_date::text, q.territory_id, t.territory_number,
+    t.name as territory_name, q.requester_employee_id, e.full_name as driver_name,
+    q.status, q.reason, q.territory_run_id, q.decision_comment, q.version, q.created_at
+  from logistics.driver_territory_request q
+  join logistics.territory t on t.id = q.territory_id
+  join identity.employee e on e.id = q.requester_employee_id
 `;
 
 @Injectable()
@@ -697,11 +723,225 @@ export class LogisticsRepository {
     return this.getDay(command.dispatchDate);
   }
 
+  async createDriverTerritoryRequest(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    dispatchDate: string;
+    reason: string;
+    requestId: string;
+    territoryId: string;
+  }): Promise<DriverTerritoryRequestView> {
+    await this.database.transaction(async (client) => {
+      const references = await client.query<{ driver_ok: boolean; territory_ok: boolean }>(
+        `select
+           exists (
+             select 1 from logistics.driver_profile d
+             join identity.employee e on e.id = d.employee_id
+             where d.employee_id = $1 and d.status = 'ACTIVE'
+               and e.employment_status = 'ACTIVE'
+               and (d.can_drive_from is null or d.can_drive_from <= $3::date)
+               and (d.can_drive_to is null or d.can_drive_to >= $3::date)
+           ) as driver_ok,
+           exists (
+             select 1 from logistics.territory t where t.id = $2 and t.status = 'ACTIVE'
+           ) as territory_ok`,
+        [command.actorEmployeeId, command.territoryId, command.dispatchDate],
+      );
+      const checks = references.rows[0];
+      if (checks === undefined || !checks.driver_ok || !checks.territory_ok) {
+        throw new NotFoundException("Активный водитель или территория не найдены");
+      }
+      await client.query(
+        `insert into logistics.driver_territory_request (
+           id, dispatch_date, territory_id, requester_employee_id, reason
+         ) values ($1, $2, $3, $4, $5)`,
+        [
+          command.requestId,
+          command.dispatchDate,
+          command.territoryId,
+          command.actorEmployeeId,
+          command.reason,
+        ],
+      );
+      await insertAudit(
+        client,
+        { ...command, activeRole: "DRIVER" },
+        "DRIVER_TERRITORY_REQUESTED",
+        "DRIVER_TERRITORY_REQUEST",
+        command.requestId,
+        { dispatchDate: command.dispatchDate, territoryId: command.territoryId },
+      );
+      await insertOutbox(client, "logistics.driver-territory.requested", command.requestId, {
+        dispatchDate: command.dispatchDate,
+        requesterEmployeeId: command.actorEmployeeId,
+        territoryId: command.territoryId,
+      });
+    });
+    return this.getDriverTerritoryRequest(command.requestId);
+  }
+
+  async decideDriverTerritoryRequest(command: {
+    actorEmployeeId: string;
+    comment: string;
+    correlationId: string;
+    decision: "APPROVED" | "REJECTED";
+    requestId: string;
+    version: number;
+  }): Promise<DriverTerritoryRequestView> {
+    await this.database.transaction(async (client) => {
+      const requested = await client.query<DriverTerritoryRequestRow>(
+        `${driverRequestSelect} where q.id = $1 for update of q`,
+        [command.requestId],
+      );
+      const request = requested.rows[0];
+      if (
+        request === undefined ||
+        request.status !== "SUBMITTED" ||
+        request.version !== command.version
+      ) {
+        throw new ConflictException("Запрос уже рассмотрен или изменён");
+      }
+
+      let runId: string | null = null;
+      if (command.decision === "APPROVED") {
+        const runs = await client.query<RunRow>(
+          `${runSelect}
+           where r.dispatch_date = $1 and r.territory_id = $2
+             and r.status in ('DRAFT', 'SCHEDULED')
+           order by r.run_no limit 1 for update of r`,
+          [request.dispatch_date, request.territory_id],
+        );
+        const run = runs.rows[0];
+        if (run === undefined) {
+          throw new ConflictException({
+            code: "LOGISTICS_RUN_REQUIRED",
+            message: "Сначала создайте график рейсов на эту дату",
+          });
+        }
+        const driver = await client.query(
+          `select 1 from logistics.driver_profile d
+           join identity.employee e on e.id = d.employee_id
+           where d.employee_id = $1 and d.status = 'ACTIVE' and e.employment_status = 'ACTIVE'
+             and (d.can_drive_from is null or d.can_drive_from <= $2::date)
+             and (d.can_drive_to is null or d.can_drive_to >= $2::date)`,
+          [request.requester_employee_id, request.dispatch_date],
+        );
+        if (driver.rowCount === 0) throw new NotFoundException("Водитель уже неактивен");
+
+        if (run.planned_start_at !== null && run.planned_end_at !== null) {
+          const conflict = await client.query(
+            `select 1
+             from logistics.territory_run other
+             cross join logistics.configuration config
+             where other.id <> $1 and other.status <> 'CANCELLED'
+               and other.driver_employee_id = $2
+               and other.planned_start_at is not null and other.planned_end_at is not null
+               and tstzrange(
+                 other.planned_start_at - make_interval(mins => config.run_turnaround_buffer_minutes),
+                 other.planned_end_at + make_interval(mins => config.run_turnaround_buffer_minutes),
+                 '[)'
+               ) && tstzrange($3::timestamptz, $4::timestamptz, '[)')
+             limit 1`,
+            [run.id, request.requester_employee_id, run.planned_start_at, run.planned_end_at],
+          );
+          if (conflict.rowCount !== 0) {
+            throw new ConflictException({
+              code: "LOGISTICS_TURNAROUND_CONFLICT",
+              message: "У водителя уже есть пересекающийся рейс",
+            });
+          }
+        }
+
+        const oldAssignment = assignmentSnapshot(run);
+        const newAssignment = {
+          ...oldAssignment,
+          driverEmployeeId: request.requester_employee_id,
+        };
+        await client.query(
+          `update logistics.territory_run
+           set driver_employee_id = $2,
+               driver_name_snapshot = (select full_name from identity.employee where id = $2),
+               reason_code = 'DRIVER_REQUEST_APPROVED', comment = $3,
+               updated_by = $4, correlation_id = $5, updated_at = now(), version = version + 1
+           where id = $1`,
+          [
+            run.id,
+            request.requester_employee_id,
+            command.comment,
+            command.actorEmployeeId,
+            command.correlationId,
+          ],
+        );
+        await client.query(
+          `insert into logistics.run_assignment_change (
+             id, territory_run_id, old_assignment, new_assignment, reason_code,
+             comment, changed_by, correlation_id
+           ) values ($1, $2, $3, $4, 'DRIVER_REQUEST_APPROVED', $5, $6, $7)`,
+          [
+            randomUUID(),
+            run.id,
+            oldAssignment,
+            newAssignment,
+            command.comment,
+            command.actorEmployeeId,
+            command.correlationId,
+          ],
+        );
+        runId = run.id;
+        await insertAudit(client, command, "TERRITORY_RUN_ASSIGNED", "TERRITORY_RUN", run.id, {
+          newAssignment,
+          oldAssignment,
+          requestId: command.requestId,
+        });
+        if (run.status === "SCHEDULED") {
+          await insertOutbox(client, "logistics.run.assignment-changed", run.id, {
+            dispatchDate: request.dispatch_date,
+            newAssignment,
+            oldAssignment,
+            runId: run.id,
+          });
+        }
+      }
+
+      await client.query(
+        `update logistics.driver_territory_request
+         set status = $2, territory_run_id = $3, decided_by = $4,
+             decision_comment = $5, decided_at = now(), updated_at = now(), version = version + 1
+         where id = $1`,
+        [command.requestId, command.decision, runId, command.actorEmployeeId, command.comment],
+      );
+      await insertAudit(
+        client,
+        command,
+        `DRIVER_TERRITORY_REQUEST_${command.decision}`,
+        "DRIVER_TERRITORY_REQUEST",
+        command.requestId,
+        { territoryRunId: runId },
+      );
+      await insertOutbox(client, "logistics.driver-territory.decided", command.requestId, {
+        decision: command.decision,
+        requesterEmployeeId: request.requester_employee_id,
+        territoryRunId: runId,
+      });
+    });
+    return this.getDriverTerritoryRequest(command.requestId);
+  }
+
+  private async getDriverTerritoryRequest(requestId: string): Promise<DriverTerritoryRequestView> {
+    const result = await this.database.query<DriverTerritoryRequestRow>(
+      `${driverRequestSelect} where q.id = $1`,
+      [requestId],
+    );
+    const request = result.rows[0];
+    if (request === undefined) throw new NotFoundException("Запрос водителя не найден");
+    return mapDriverTerritoryRequest(request);
+  }
+
   async getDriverDay(
     dispatchDate: string,
     driverEmployeeId: string,
   ): Promise<DriverLogisticsDayView> {
-    const [runs, normTotal] = await Promise.all([
+    const [runs, normTotal, territories, requests, availableTerritories] = await Promise.all([
       this.database.query<RunRow>(
         `${runSelect}
          where r.dispatch_date = $1 and r.driver_employee_id = $2
@@ -721,10 +961,36 @@ export class LogisticsRepository {
            )`,
         [dispatchDate, driverEmployeeId],
       ),
+      this.database.query<TerritoryRow>(
+        `select id, territory_number, name, description, sort_order, status, version
+         from logistics.territory where status = 'ACTIVE' order by sort_order, territory_number`,
+      ),
+      this.database.query<DriverTerritoryRequestRow>(
+        `${driverRequestSelect}
+         where q.dispatch_date = $1 and q.requester_employee_id = $2
+         order by q.created_at desc`,
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<{ territory_id: string }>(
+        `select distinct territory_id from (
+           select r.territory_id
+           from logistics.territory_run r
+           where r.dispatch_date = $1 and r.driver_employee_id = $2 and r.status <> 'CANCELLED'
+           union
+           select a.territory_id
+           from logistics.territory_default_assignment a
+           where a.driver_employee_id = $2 and a.valid_from <= $1
+             and (a.valid_to is null or a.valid_to >= $1)
+         ) allowed`,
+        [dispatchDate, driverEmployeeId],
+      ),
     ]);
     return {
+      availableTerritoryIds: availableTerritories.rows.map((row) => row.territory_id),
       dispatchDate,
+      requests: requests.rows.map(mapDriverTerritoryRequest),
       runs: runs.rows.map(mapRun),
+      territories: territories.rows.map(mapTerritory),
       totalNormQuantity: normTotal.rows[0]?.total_norm_quantity ?? 0,
     };
   }
@@ -891,7 +1157,7 @@ export class LogisticsRepository {
   }
 
   async getDay(dispatchDate: string): Promise<LogisticsDayView> {
-    const [groups, runs, driverNormTotals] = await Promise.all([
+    const [groups, runs, driverNormTotals, driverRequests] = await Promise.all([
       this.database.query<GroupRow>(
         `
           select id, dispatch_date::text, group_no, planned_start_at, planned_end_at,
@@ -931,6 +1197,10 @@ export class LogisticsRepository {
          order by max(dt.driver_name), dt.driver_employee_id`,
         [dispatchDate],
       ),
+      this.database.query<DriverTerritoryRequestRow>(
+        `${driverRequestSelect} where q.dispatch_date = $1 order by q.created_at desc`,
+        [dispatchDate],
+      ),
     ]);
     const items = runs.rows.map(mapRun);
     return {
@@ -941,6 +1211,7 @@ export class LogisticsRepository {
         territoryCount: row.territory_count,
         totalNormQuantity: row.total_norm_quantity,
       })),
+      driverRequests: driverRequests.rows.map(mapDriverTerritoryRequest),
       groups: groups.rows.map(mapGroup),
       runs: items,
       summary: {
@@ -1136,6 +1407,24 @@ function mapRun(row: RunRow): TerritoryRunView {
     territoryNumber: row.territory_number,
     vehicleId: row.vehicle_id,
     vehicleName: row.vehicle_name,
+    version: row.version,
+  };
+}
+
+function mapDriverTerritoryRequest(row: DriverTerritoryRequestRow): DriverTerritoryRequestView {
+  return {
+    createdAt: row.created_at.toISOString(),
+    decisionComment: row.decision_comment,
+    dispatchDate: row.dispatch_date,
+    driverName: row.driver_name,
+    id: row.id,
+    reason: row.reason,
+    requesterEmployeeId: row.requester_employee_id,
+    status: row.status,
+    territoryId: row.territory_id,
+    territoryName: row.territory_name,
+    territoryNumber: row.territory_number,
+    territoryRunId: row.territory_run_id,
     version: row.version,
   };
 }

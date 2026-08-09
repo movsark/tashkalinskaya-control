@@ -266,7 +266,7 @@ const roleScopes: Record<RoleInputDto["roleCode"], ReadonlyArray<RoleInputDto["s
   ADMIN: ["FACTORY"],
   ATTENDANCE_ONLY: ["FACTORY"],
   CONFECTIONER: ["WORKSHOP"],
-  DRIVER: ["TERRITORY"],
+  DRIVER: ["FACTORY"],
   MANAGER: ["FACTORY"],
   STORE_SELLER: ["STORE"],
   WAREHOUSE_KEEPER: ["FACTORY", "WAREHOUSE"],

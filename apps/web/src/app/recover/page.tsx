@@ -78,7 +78,7 @@ export default function RecoverPage() {
         phone,
         platformFamily: detectPlatform(),
       });
-      saveDeviceId(result.deviceId);
+      saveDeviceId(result.deviceId, result.login);
       router.push(`/login?login=${encodeURIComponent(result.login)}&recovered=1`);
     } catch (caught) {
       setError(messageOf(caught));
@@ -107,7 +107,7 @@ export default function RecoverPage() {
         platformFamily: detectPlatform(),
         recoveryCode,
       });
-      saveDeviceId(session.deviceId);
+      saveDeviceId(session.deviceId, loginValue);
       router.push(
         session.employee.roles.some((role) => role.roleCode === "ADMIN") ? "/employees" : "/",
       );

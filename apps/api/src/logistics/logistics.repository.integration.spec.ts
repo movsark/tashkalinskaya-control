@@ -134,6 +134,42 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     expect(audits.rows[0]?.count).toBe("1");
   });
 
+  it("lets a driver request another territory and assigns only that day's run after approval", async () => {
+    const request = await repository.createDriverTerritoryRequest({
+      actorEmployeeId: driverEmployeeId,
+      correlationId: randomUUID(),
+      dispatchDate,
+      reason: "Подменяю отсутствующего водителя",
+      requestId: randomUUID(),
+      territoryId: territoryTwoId,
+    });
+    expect(request).toMatchObject({
+      requesterEmployeeId: driverEmployeeId,
+      status: "SUBMITTED",
+      territoryNumber: 2,
+    });
+
+    const decided = await repository.decideDriverTerritoryRequest({
+      actorEmployeeId,
+      comment: "Замена подтверждена администратором",
+      correlationId: randomUUID(),
+      decision: "APPROVED",
+      requestId: request.id,
+      version: request.version,
+    });
+    expect(decided).toMatchObject({ status: "APPROVED", territoryRunId: expect.any(String) });
+
+    const day = await repository.getDay(dispatchDate);
+    expect(day.driverRequests).toContainEqual(decided);
+    expect(day.runs.find((run) => run.territoryId === territoryTwoId)).toMatchObject({
+      driverEmployeeId,
+      reasonCode: "DRIVER_REQUEST_APPROVED",
+    });
+    expect(day.runs.find((run) => run.territoryId === territoryOneId)).toMatchObject({
+      driverEmployeeId,
+    });
+  });
+
   it("assigns and publishes a grouped run atomically", async () => {
     const start = `${dispatchDate}T05:00:00.000Z`;
     const end = `${dispatchDate}T06:00:00.000Z`;
@@ -292,7 +328,7 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     expect(adminDay.driverNormTotals).toContainEqual({
       driverEmployeeId,
       driverName: "Водитель B08",
-      territoryCount: 1,
+      territoryCount: 2,
       totalNormQuantity: 23,
     });
     const run = driverDay.runs[0]!;

@@ -396,9 +396,30 @@ export interface TerritoryRunView {
 }
 
 export interface DriverLogisticsDayView {
+  readonly availableTerritoryIds: readonly string[];
   readonly dispatchDate: string;
+  readonly requests: readonly DriverTerritoryRequestView[];
   readonly runs: readonly TerritoryRunView[];
+  readonly territories: readonly TerritoryView[];
   readonly totalNormQuantity: number;
+}
+
+export type DriverTerritoryRequestStatus = "APPROVED" | "REJECTED" | "SUBMITTED";
+
+export interface DriverTerritoryRequestView {
+  readonly createdAt: string;
+  readonly decisionComment: string | null;
+  readonly dispatchDate: string;
+  readonly driverName: string;
+  readonly id: string;
+  readonly reason: string;
+  readonly requesterEmployeeId: string;
+  readonly status: DriverTerritoryRequestStatus;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly territoryRunId: string | null;
+  readonly version: number;
 }
 
 export interface DriverNormTotalView {
@@ -429,6 +450,7 @@ export interface LogisticsSetupView {
 export interface LogisticsDayView {
   readonly dispatchDate: string;
   readonly driverNormTotals: readonly DriverNormTotalView[];
+  readonly driverRequests: readonly DriverTerritoryRequestView[];
   readonly groups: readonly LoadingGroupView[];
   readonly runs: readonly TerritoryRunView[];
   readonly summary: {

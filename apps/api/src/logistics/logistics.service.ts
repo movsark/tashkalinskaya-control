@@ -4,9 +4,11 @@ import { BadRequestException, ConflictException, Injectable } from "@nestjs/comm
 
 import type {
   CreateExtraRunDto,
+  CreateDriverTerritoryRequestDto,
   CreateDefaultAssignmentDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
+  DecideDriverTerritoryRequestDto,
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
@@ -254,6 +256,42 @@ export class LogisticsService {
         idempotencyKey: dto.idempotencyKey,
         reasonCode: dto.reasonCode.trim().toUpperCase(),
         territoryId: dto.territoryId,
+      }),
+    );
+  }
+
+  createDriverTerritoryRequest(
+    dto: CreateDriverTerritoryRequestDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    assertDate(dto.dispatchDate);
+    return this.withConflictMapping(() =>
+      this.repository.createDriverTerritoryRequest({
+        actorEmployeeId,
+        correlationId,
+        dispatchDate: dto.dispatchDate,
+        reason: dto.reason.trim(),
+        requestId: randomUUID(),
+        territoryId: dto.territoryId,
+      }),
+    );
+  }
+
+  decideDriverTerritoryRequest(
+    requestId: string,
+    dto: DecideDriverTerritoryRequestDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    return this.withConflictMapping(() =>
+      this.repository.decideDriverTerritoryRequest({
+        actorEmployeeId,
+        comment: dto.comment.trim(),
+        correlationId,
+        decision: dto.decision,
+        requestId,
+        version: dto.version,
       }),
     );
   }

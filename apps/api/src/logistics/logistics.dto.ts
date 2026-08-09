@@ -211,3 +211,28 @@ export class CreateExtraRunDto {
   @Length(8, 100)
   idempotencyKey!: string;
 }
+
+export class CreateDriverTerritoryRequestDto {
+  @IsDateString()
+  dispatchDate!: string;
+
+  @IsUUID()
+  territoryId!: string;
+
+  @IsString()
+  @Length(2, 500)
+  reason!: string;
+}
+
+export class DecideDriverTerritoryRequestDto {
+  @IsIn(["APPROVED", "REJECTED"])
+  decision!: "APPROVED" | "REJECTED";
+
+  @IsString()
+  @Length(2, 500)
+  comment!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}

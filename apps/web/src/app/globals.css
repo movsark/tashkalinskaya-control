@@ -7916,6 +7916,66 @@ a {
   color: var(--muted);
 }
 
+.driver-territory-request,
+.logistics-driver-requests {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.driver-territory-request form {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.4fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.driver-territory-request label,
+.logistics-driver-requests article {
+  display: grid;
+  gap: 6px;
+}
+
+.driver-territory-request__history,
+.logistics-driver-requests__list {
+  display: grid;
+  gap: 10px;
+}
+
+.driver-territory-request__history article,
+.logistics-driver-requests article {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--sand);
+}
+
+.driver-territory-request__history article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+}
+
+.driver-territory-request__history small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.logistics-driver-requests article {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto;
+  align-items: end;
+}
+
+@media (max-width: 760px) {
+  .driver-territory-request form,
+  .logistics-driver-requests article {
+    grid-template-columns: 1fr;
+  }
+}
+
 .simple-workspace .driver-return-priority {
   padding: 16px;
   color: var(--ink);

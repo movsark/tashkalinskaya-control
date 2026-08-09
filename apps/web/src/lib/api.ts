@@ -17,6 +17,7 @@ import type {
   EmployeeAttendanceAssignmentView,
   EmployeeSummary,
   DriverLogisticsDayView,
+  DriverTerritoryRequestView,
   GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
@@ -720,6 +721,29 @@ export async function getLogisticsDay(dispatchDate: string): Promise<LogisticsDa
 
 export async function getDriverLogisticsDay(dispatchDate: string): Promise<DriverLogisticsDayView> {
   return request(`/logistics/me/days/${dispatchDate}`);
+}
+
+export async function createDriverTerritoryRequest(
+  input: { dispatchDate: string; reason: string; territoryId: string },
+  csrfToken: string,
+): Promise<DriverTerritoryRequestView> {
+  return request("/logistics/me/territory-requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function decideDriverTerritoryRequest(
+  requestId: string,
+  input: { comment: string; decision: "APPROVED" | "REJECTED"; version: number },
+  csrfToken: string,
+): Promise<DriverTerritoryRequestView> {
+  return request(`/logistics/territory-requests/${requestId}/decision`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function getWarehouseLogisticsDay(

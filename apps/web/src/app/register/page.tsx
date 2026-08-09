@@ -8,7 +8,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { AppBrand } from "../../components/app-brand";
 import { homeRouteFor } from "../../lib/home-route";
 import { previewEmployeeRegistration, registerEmployee } from "../../lib/api";
-import { detectPlatform, ensureDeviceId } from "../../lib/device-identity";
+import { detectPlatform, ensureDeviceId, saveDeviceId } from "../../lib/device-identity";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -51,7 +51,7 @@ export default function RegisterPage() {
     setSubmitting(true);
     try {
       const session = await registerEmployee({
-        deviceId: ensureDeviceId(),
+        deviceId: ensureDeviceId(loginValue),
         firstName,
         invitationCode,
         lastName,
@@ -60,6 +60,7 @@ export default function RegisterPage() {
         ...(patronymic.trim() === "" ? {} : { patronymic }),
         platformFamily: detectPlatform(),
       });
+      saveDeviceId(session.deviceId, loginValue);
       router.replace(homeRouteFor(session.employee.roles.map((role) => role.roleCode)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось завершить регистрацию");
