@@ -142,13 +142,34 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
   });
 
   it("shows tomorrow territory norms in today's production workspace", async () => {
+    const requestId = randomUUID();
+    const dispatchDate = addDays(productionDate, 1);
     await database.query(
       `insert into planning.territory_daily_norm (
          id, territory_id, dispatch_date, product_id, quantity, version,
          reason, created_by, correlation_id
        ) values ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
                  'Проверка плана на сегодня', $4, $5)`,
-      [randomUUID(), addDays(productionDate, 1), productId, adminId, randomUUID()],
+      [randomUUID(), dispatchDate, productId, adminId, randomUUID()],
+    );
+    await database.query(
+      `insert into planning.norm_change_request (
+         id, request_kind, territory_id, dispatch_date, status,
+         requester_employee_id, decided_by, decided_at, correlation_id
+       ) values (
+         $1, 'ONE_OFF', '12000000-0000-4000-8000-000000000001', $2, 'APPROVED',
+         $3, $3, now(), $4
+       )`,
+      [requestId, dispatchDate, adminId, randomUUID()],
+    );
+    await database.query(
+      `insert into planning.one_off_norm_override (
+         id, territory_id, dispatch_date, product_id, quantity,
+         request_id, approved_by
+       ) values (
+         $1, '12000000-0000-4000-8000-000000000001', $2, $3, 5, $4, $5
+       )`,
+      [randomUUID(), dispatchDate, productId, requestId, adminId],
     );
 
     const workspace = await repository.workspace(productionDate, workshopId, manager);
@@ -158,7 +179,7 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
       source: "NEXT_DAY_FALLBACK",
     });
     expect(workspace.normDemand.lines).toContainEqual(
-      expect.objectContaining({ productId, quantity: 7, workshopId }),
+      expect.objectContaining({ productId, quantity: 5, workshopId }),
     );
   });
 

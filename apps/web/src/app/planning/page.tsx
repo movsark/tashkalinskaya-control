@@ -974,9 +974,6 @@ function longDate(value: string) {
     year: "numeric",
   }).format(new Date(`${value}T00:00:00Z`));
 }
-function shortWeekday(weekday: number) {
-  return ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][weekday - 1];
-}
 function weekdayGenitive(weekday: number) {
   return ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"][
     weekday - 1

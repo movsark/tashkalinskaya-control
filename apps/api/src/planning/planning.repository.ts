@@ -198,8 +198,7 @@ export class PlanningRepository {
       ]),
       this.database.query<{ product_id: string; quantity: number; version: number }>(
         `select product_id, quantity, version
-         from planning.territory_daily_norm
-         where territory_id = $1 and dispatch_date = $2 and is_current
+         from planning.effective_territory_norms($2::date, array[$1::uuid])
          order by product_id`,
         [territoryId, dispatchDate],
       ),

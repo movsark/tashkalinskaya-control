@@ -1008,15 +1008,18 @@ export class LogisticsRepository {
           [dispatchDate, driverEmployeeId],
         ),
         this.database.query<{ total_norm_quantity: number }>(
-          `select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
-         from planning.territory_daily_norm n
-         where n.dispatch_date = $1 and n.is_current
-           and n.territory_id in (
+          `with driver_territories as (
              select distinct r.territory_id
              from logistics.territory_run r
              where r.dispatch_date = $1 and r.driver_employee_id = $2
                and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
-           )`,
+           )
+           select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
+           from driver_territories dt
+           cross join lateral planning.effective_territory_norms(
+             $1::date,
+             array[dt.territory_id]
+           ) n`,
           [dispatchDate, driverEmployeeId],
         ),
         this.database.query<TerritoryRow>(
@@ -1263,8 +1266,10 @@ export class LogisticsRepository {
                 count(distinct dt.territory_id)::integer as territory_count,
                 coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
          from driver_territories dt
-         left join planning.territory_daily_norm n
-           on n.territory_id = dt.territory_id and n.dispatch_date = $1 and n.is_current
+         left join lateral planning.effective_territory_norms(
+           $1::date,
+           array[dt.territory_id]
+         ) n on true
          group by dt.driver_employee_id
          order by max(dt.driver_name), dt.driver_employee_id`,
         [dispatchDate],

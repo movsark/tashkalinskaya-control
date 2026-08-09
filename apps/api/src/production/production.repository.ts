@@ -1229,21 +1229,22 @@ async function loadWorkspace(
               production_date, dispatch_date, territory_id
        from expanded_links
        order by dispatch_date, territory_id, specific desc, version_number desc
+     ), selected_scopes as (
+       select dispatch_date, territory_id
+       from effective_links
+       where production_date = $1
+       union all
+       select $1::date + 1, t.id
+       from logistics.territory t
+       where t.status = 'ACTIVE'
+         and not exists (select 1 from effective_links where production_date = $1)
      ), selected_norms as (
-       select n.dispatch_date, n.product_id, n.quantity
-       from planning.territory_daily_norm n
-       join logistics.territory t on t.id = n.territory_id and t.status = 'ACTIVE'
-       where n.is_current and (
-         (exists (select 1 from effective_links where production_date = $1)
-          and exists (
-            select 1 from effective_links l
-            where l.production_date = $1 and l.dispatch_date = n.dispatch_date
-              and l.territory_id = n.territory_id
-          ))
-         or
-         (not exists (select 1 from effective_links where production_date = $1)
-          and n.dispatch_date = $1::date + 1)
-       )
+       select s.dispatch_date, n.product_id, n.quantity
+       from selected_scopes s
+       cross join lateral planning.effective_territory_norms(
+         s.dispatch_date,
+         array[s.territory_id]
+       ) n
      )
      select array_agg(distinct n.dispatch_date::text order by n.dispatch_date::text) as dispatch_dates,
             p.id as product_id, p.product_code, p.name as product_name,

@@ -314,6 +314,7 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
   });
 
   it("shows only the driver's published runs and verifies attendance before loading", async () => {
+    const normRequestId = randomUUID();
     await database.query(
       `insert into planning.territory_daily_norm (
          id, territory_id, dispatch_date, product_id, quantity, version,
@@ -321,15 +322,29 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
        ) values ($1, $2, $3, $4, 23, 1, 'Проверка общей нормы водителя', $5, $6)`,
       [randomUUID(), territoryOneId, dispatchDate, productId, actorEmployeeId, randomUUID()],
     );
+    await database.query(
+      `insert into planning.norm_change_request (
+         id, request_kind, territory_id, dispatch_date, status,
+         requester_employee_id, decided_by, decided_at, correlation_id
+       ) values ($1, 'ONE_OFF', $2, $3, 'APPROVED', $4, $4, now(), $5)`,
+      [normRequestId, territoryOneId, dispatchDate, driverEmployeeId, randomUUID()],
+    );
+    await database.query(
+      `insert into planning.one_off_norm_override (
+         id, territory_id, dispatch_date, product_id, quantity,
+         request_id, approved_by
+       ) values ($1, $2, $3, $4, 19, $5, $6)`,
+      [randomUUID(), territoryOneId, dispatchDate, productId, normRequestId, actorEmployeeId],
+    );
     const driverDay = await repository.getDriverDay(dispatchDate, driverEmployeeId);
     expect(driverDay.runs).toHaveLength(1);
-    expect(driverDay.totalNormQuantity).toBe(23);
+    expect(driverDay.totalNormQuantity).toBe(19);
     const adminDay = await repository.getDay(dispatchDate);
     expect(adminDay.driverNormTotals).toContainEqual({
       driverEmployeeId,
       driverName: "Водитель B08",
       territoryCount: 2,
-      totalNormQuantity: 23,
+      totalNormQuantity: 19,
     });
     const run = driverDay.runs[0]!;
 

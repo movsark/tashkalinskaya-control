@@ -324,6 +324,11 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         quantity: 14,
       })),
     );
+    for (const dispatchDate of sameWeekdayDates(weekStart, effectiveUntil, 1)) {
+      expect(
+        (await repository.getTerritoryDailyNorm(territoryOneId, dispatchDate)).lines,
+      ).toContainEqual(expect.objectContaining({ productId, quantity: 14 }));
+    }
   });
 
   it("approves one-off and monthly requests for a driver's home territory", async () => {
@@ -400,6 +405,15 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         validFrom: recurringHomeRequestDate,
       }),
     );
+    for (const dispatchDate of sameWeekdayDates(
+      recurringHomeRequestDate,
+      monthEnd(recurringHomeRequestDate),
+      1,
+    )) {
+      expect(
+        (await repository.getTerritoryDailyNorm(homeTerritoryId, dispatchDate)).lines,
+      ).toContainEqual(expect.objectContaining({ productId, quantity: 3 }));
+    }
   });
 
   it("prevents approval of a request that the driver has replaced", async () => {
