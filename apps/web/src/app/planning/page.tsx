@@ -331,12 +331,18 @@ export default function PlanningPage() {
                 request={request}
                 onDecision={(decision, comment) =>
                   action(async () => {
-                    await decideNormChangeRequest(
+                    const decided = await decideNormChangeRequest(
                       request.id,
                       { comment, decision, version: request.version },
                       session.csrfToken,
                     );
-                    await reload(decision === "APPROVE" ? "Запрос утвержден." : "Запрос отклонен.");
+                    await reload(
+                      decided.status === "STALE"
+                        ? "Запрос устарел: норма или назначение уже изменились. Водителю нужно отправить новый запрос."
+                        : decision === "APPROVE"
+                          ? "Запрос утвержден, норма обновлена."
+                          : "Запрос отклонен.",
+                    );
                   })
                 }
               />

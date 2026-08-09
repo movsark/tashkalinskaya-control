@@ -1065,18 +1065,26 @@ async function isRequestStale(
     return true;
   }
   if (request.request_kind !== "ONE_OFF") {
-    const assignment = await client.query(
-      `select 1 from logistics.territory_default_assignment
-       where id = $1 and territory_id = $2 and driver_employee_id = $3
-         and valid_from <= $4 and (valid_to is null or valid_to >= $4)`,
-      [
-        request.base_assignment_id,
-        request.territory_id,
-        request.requester_employee_id,
-        referenceDate,
-      ],
+    if (request.base_assignment_id !== null) {
+      const assignment = await client.query(
+        `select 1 from logistics.territory_default_assignment
+         where id = $1 and territory_id = $2 and driver_employee_id = $3
+           and valid_from <= $4 and (valid_to is null or valid_to >= $4)`,
+        [
+          request.base_assignment_id,
+          request.territory_id,
+          request.requester_employee_id,
+          referenceDate,
+        ],
+      );
+      return assignment.rowCount === 0;
+    }
+    const home = await client.query(
+      `select 1 from logistics.driver_profile
+       where employee_id = $1 and home_territory_id = $2 and status = 'ACTIVE'`,
+      [request.requester_employee_id, request.territory_id],
     );
-    return assignment.rowCount === 0;
+    return home.rowCount === 0;
   }
   if (request.base_run_id !== null) {
     const run = await client.query(
@@ -1091,7 +1099,7 @@ async function isRequestStale(
       ],
     );
     if (run.rowCount === 0) return true;
-  } else {
+  } else if (request.base_assignment_id !== null) {
     const assignment = await client.query(
       `select 1 from logistics.territory_default_assignment
        where id = $1 and territory_id = $2 and driver_employee_id = $3
@@ -1104,6 +1112,13 @@ async function isRequestStale(
       ],
     );
     if (assignment.rowCount === 0) return true;
+  } else {
+    const home = await client.query(
+      `select 1 from logistics.driver_profile
+       where employee_id = $1 and home_territory_id = $2 and status = 'ACTIVE'`,
+      [request.requester_employee_id, request.territory_id],
+    );
+    if (home.rowCount === 0) return true;
   }
   const calendar = await client.query<{ id: string }>(
     `select l.id from planning.production_dispatch_link l
