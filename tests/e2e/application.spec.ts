@@ -997,6 +997,14 @@ test.describe("B20 browser and HTTP regression", () => {
       .getByRole("button", { name: "Изменить" })
       .click();
     await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.locator("form.driver-inline-request").evaluate((form) => {
+          const bounds = form.getBoundingClientRect();
+          return bounds.top >= 0 && bounds.top < window.innerHeight;
+        }),
+      )
+      .toBe(true);
     await page.getByLabel("Как изменить").selectOption("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toHaveValue("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toContainText(/Каждый понедельник до/);
