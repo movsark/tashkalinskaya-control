@@ -1591,7 +1591,17 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: /Торт тестовый/ }).click();
+    const sharedProduct = page.getByRole("button", { name: /Торт тестовый/ });
+    await expect(sharedProduct).toContainText("План12 шт.");
+    await expect(sharedProduct).toContainText("Произведено4 шт.");
+    await expect(sharedProduct).toContainText("Осталось8 шт.");
+
+    const freeProduct = page.getByRole("button", { name: /СВ Печенье тестовое/ });
+    await expect(freeProduct).toContainText("План7 шт.");
+    await expect(freeProduct).toContainText("Произведено0 шт.");
+    await expect(freeProduct).toContainText("Осталось7 шт.");
+
+    await sharedProduct.click();
     await expect(page.getByText("Кондитер смены произвёл 4 шт.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Присоединиться к работе" }).click();
     await expect(page.getByLabel("В работе")).toBeVisible();
@@ -1609,9 +1619,9 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBeVisible();
 
     await page.getByRole("tab", { name: /План производства/ }).click();
-    await expect(
-      page.getByText("Вы в работе · вместе 2 · осталось 2 шт.", { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByText("Вы в работе · вместе 2", { exact: true })).toBeVisible();
+    await expect(sharedProduct).toContainText("Произведено10 шт.");
+    await expect(sharedProduct).toContainText("Осталось2 шт.");
     expect(requestedProductionDate).toBe(moscowToday());
   });
 

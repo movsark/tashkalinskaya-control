@@ -467,6 +467,8 @@ function ProductionDemandBoard({
                       (participant) => participant.employeeId === session?.employee.id,
                     ) ?? false;
                   const completed = line.work?.remainingQuantity === 0;
+                  const producedQuantity = line.work?.declaredQuantity ?? 0;
+                  const remainingQuantity = line.work?.remainingQuantity ?? line.quantity;
                   const participantNames = participants
                     .map((participant) => participant.employeeName)
                     .join(", ");
@@ -488,13 +490,29 @@ function ProductionDemandBoard({
                               ? completed
                                 ? `Готово · ${participants.length} исполн.`
                                 : mine
-                                  ? `Вы в работе · вместе ${participants.length} · осталось ${line.work.remainingQuantity} шт.`
+                                  ? `Вы в работе · вместе ${participants.length}`
                                   : `В работе · ${participantNames}`
                               : (line.workshopName ?? "Можно взять в работу")}
                           </small>
                         </span>
-                        <strong>{line.quantity} шт.</strong>
                         <i aria-hidden="true">{expanded ? "−" : "+"}</i>
+                        <span
+                          aria-label={`План ${line.quantity} штук, произведено ${producedQuantity} штук, осталось ${remainingQuantity} штук`}
+                          className="production-demand-product__numbers"
+                        >
+                          <span className="is-plan">
+                            <small>План</small>
+                            <strong>{line.quantity} шт.</strong>
+                          </span>
+                          <span className="is-produced">
+                            <small>Произведено</small>
+                            <strong>{producedQuantity} шт.</strong>
+                          </span>
+                          <span className="is-remaining">
+                            <small>Осталось</small>
+                            <strong>{remainingQuantity} шт.</strong>
+                          </span>
+                        </span>
                       </button>
                       {expanded ? (
                         <div className="production-demand-product__details">

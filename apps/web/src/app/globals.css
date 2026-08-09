@@ -4807,13 +4807,13 @@ select:focus {
 }
 
 .production-demand-product__trigger {
-  align-items: center;
+  align-items: start;
   background: transparent;
   border: 0;
   color: inherit;
-  display: flex;
+  display: grid;
   gap: 14px;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) auto;
   margin: 0;
   min-height: 68px;
   padding: 12px 16px;
@@ -4823,7 +4823,6 @@ select:focus {
 
 .production-demand-product__trigger > span {
   display: grid;
-  flex: 1;
   gap: 3px;
   min-width: 0;
 }
@@ -4839,6 +4838,63 @@ select:focus {
   font-style: normal;
   height: 30px;
   justify-content: center;
+}
+
+.production-demand-product__numbers {
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.production-demand-product__numbers > span {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.production-demand-product__numbers > span.is-plan {
+  background: #f0f2ef;
+  border-color: #dfe3de;
+}
+
+.production-demand-product__numbers > span.is-produced {
+  background: #e3f3e9;
+  border-color: #b9dbc5;
+}
+
+.production-demand-product__numbers > span.is-remaining {
+  background: #fff1d4;
+  border-color: #edcf91;
+}
+
+.production-demand-product__numbers small {
+  color: #626a64;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.production-demand-product__numbers strong {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.production-demand-product__numbers .is-produced strong {
+  color: #17633b;
+}
+
+.production-demand-product__numbers .is-remaining strong {
+  color: #8a5200;
 }
 
 .production-demand-groups b {
