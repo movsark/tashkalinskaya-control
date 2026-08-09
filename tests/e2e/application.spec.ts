@@ -1028,6 +1028,11 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByLabel("Как изменить").selectOption("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toHaveValue("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toContainText(/Каждый понедельник до/);
+    const quantityInput = page.locator(".driver-quantity-stepper input");
+    await page.getByRole("button", { name: "Увеличить количество" }).click();
+    await expect(quantityInput).toHaveValue("11");
+    await page.getByRole("button", { name: "Уменьшить количество" }).click();
+    await expect(quantityInput).toHaveValue("10");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

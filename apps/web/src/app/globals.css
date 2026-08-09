@@ -3483,6 +3483,71 @@ select:focus {
   background: #f3f8f5;
 }
 
+.driver-inline-request label {
+  gap: 8px;
+}
+
+.driver-request-field {
+  display: grid;
+  gap: 8px;
+}
+
+.driver-inline-request label > small,
+.driver-request-field > small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.driver-inline-request select {
+  min-height: 54px;
+  padding-right: 42px;
+  border: 2px solid rgba(20, 75, 63, 0.42);
+  border-radius: 14px;
+  color: var(--forest);
+  background-color: #fff;
+  box-shadow: 0 3px 10px rgba(20, 75, 63, 0.08);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.driver-quantity-stepper {
+  display: grid;
+  overflow: hidden;
+  min-height: 54px;
+  border: 2px solid rgba(20, 75, 63, 0.42);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(20, 75, 63, 0.08);
+  grid-template-columns: 54px minmax(0, 1fr) 54px;
+}
+
+.driver-quantity-stepper button {
+  border: 0;
+  color: var(--forest);
+  background: #e9f2ee;
+  cursor: pointer;
+  font-size: 1.45rem;
+  font-weight: 900;
+}
+
+.driver-quantity-stepper input {
+  min-height: 50px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid rgba(20, 75, 63, 0.18);
+  border-left: 1px solid rgba(20, 75, 63, 0.18);
+  border-radius: 0;
+  text-align: center;
+  box-shadow: none;
+  font-size: 1.15rem;
+  font-weight: 850;
+}
+
+.driver-quantity-stepper input:focus {
+  box-shadow: inset 0 0 0 2px var(--forest);
+}
+
 .driver-inline-request__actions {
   display: flex;
   gap: 10px;

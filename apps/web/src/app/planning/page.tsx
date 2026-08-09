@@ -652,6 +652,7 @@ function DriverRequestForm({
   const [comment, setComment] = useState("");
   const weekday = isoWeekday(date);
   const effectiveUntil = monthEnd(date);
+  const quantityInputId = `driver-quantity-${norm.id}`;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -693,17 +694,37 @@ function DriverRequestForm({
             Каждый {weekdayGenitive(weekday)} до {shortDate(effectiveUntil)}
           </option>
         </select>
+        <small>Нажмите, чтобы выбрать период изменения</small>
       </label>
-      <label>
-        Новое количество
-        <input
-          min="0"
-          required
-          type="number"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-        />
-      </label>
+      <div className="driver-request-field">
+        <label htmlFor={quantityInputId}>Новое количество</label>
+        <div className="driver-quantity-stepper">
+          <button
+            aria-label="Уменьшить количество"
+            onClick={() => setQuantity(String(Math.max(0, Number(quantity || 0) - 1)))}
+            type="button"
+          >
+            −
+          </button>
+          <input
+            aria-label="Новое количество"
+            id={quantityInputId}
+            min="0"
+            required
+            type="number"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+          />
+          <button
+            aria-label="Увеличить количество"
+            onClick={() => setQuantity(String(Number(quantity || 0) + 1))}
+            type="button"
+          >
+            +
+          </button>
+        </div>
+        <small>Нажмите «−» или «+», либо введите число</small>
+      </div>
       <label>
         Комментарий администратору
         <textarea value={comment} onChange={(event) => setComment(event.target.value)} />
