@@ -154,16 +154,40 @@ export class PlanningService {
       if (
         dto.dispatchWeekday === undefined ||
         dto.effectiveFrom === undefined ||
+        dto.effectiveUntil !== undefined ||
         dto.dispatchDate !== undefined
       ) {
         throw new BadRequestException("Для постоянной нормы нужны день недели и дата начала");
       }
       assertDate(dto.effectiveFrom);
+    } else if (dto.kind === "MONTH_WEEKDAY") {
+      if (
+        dto.dispatchWeekday === undefined ||
+        dto.effectiveFrom === undefined ||
+        dto.effectiveUntil === undefined ||
+        dto.dispatchDate !== undefined
+      ) {
+        throw new BadRequestException("Для изменения до конца месяца нужны день недели и период");
+      }
+      assertDate(dto.effectiveFrom);
+      assertDate(dto.effectiveUntil);
+      if (dto.dispatchWeekday === 5) {
+        throw new BadRequestException("Пятница — выходной день вывоза");
+      }
+      if (
+        isoWeekday(dto.effectiveFrom) !== dto.dispatchWeekday ||
+        dto.effectiveUntil !== monthEnd(dto.effectiveFrom)
+      ) {
+        throw new BadRequestException(
+          "Период должен начинаться выбранным днём и заканчиваться концом месяца",
+        );
+      }
     } else {
       if (
         dto.dispatchDate === undefined ||
         dto.dispatchWeekday !== undefined ||
-        dto.effectiveFrom !== undefined
+        dto.effectiveFrom !== undefined ||
+        dto.effectiveUntil !== undefined
       ) {
         throw new BadRequestException("Для разовой нормы нужна только дата вывоза");
       }
@@ -177,6 +201,7 @@ export class PlanningService {
       dispatchDate: dto.dispatchDate ?? null,
       dispatchWeekday: dto.dispatchWeekday ?? null,
       effectiveFrom: dto.effectiveFrom ?? null,
+      effectiveUntil: dto.effectiveUntil ?? null,
       kind: dto.kind,
       lines: dto.lines,
       territoryId: dto.territoryId,
@@ -300,6 +325,12 @@ function assertDate(value: string): void {
 function isoWeekday(value: string): number {
   const day = new Date(`${value}T00:00:00Z`).getUTCDay();
   return day === 0 ? 7 : day;
+}
+
+function monthEnd(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + 1, 0);
+  return date.toISOString().slice(0, 10);
 }
 
 function cleanOptional(value: string | undefined): string | null {

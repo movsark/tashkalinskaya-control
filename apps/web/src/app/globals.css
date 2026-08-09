@@ -3220,6 +3220,136 @@ select:focus {
   background: #fff;
 }
 
+.driver-week-navigation {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  text-align: center;
+}
+
+.driver-week-navigation button,
+.driver-weekday-switcher button,
+.driver-selected-norm__lines button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--forest);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 780;
+}
+
+.driver-weekday-switcher {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.driver-weekday-switcher button {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 5px;
+  text-align: center;
+}
+
+.driver-weekday-switcher button strong,
+.driver-weekday-switcher button small,
+.driver-weekday-switcher button span {
+  display: block;
+}
+
+.driver-weekday-switcher button small,
+.driver-weekday-switcher button span {
+  font-size: 0.7rem;
+}
+
+.driver-weekday-switcher button span {
+  color: var(--muted);
+}
+
+.driver-weekday-switcher button.is-active {
+  border-color: var(--forest);
+  color: #fff;
+  background: var(--forest);
+}
+
+.driver-weekday-switcher button.is-active span {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.driver-weekday-switcher button:disabled {
+  border-color: rgba(183, 95, 42, 0.22);
+  color: #9b5b36;
+  background: #fff4ec;
+  cursor: not-allowed;
+}
+
+.driver-selected-norm {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--sand);
+}
+
+.driver-selected-norm > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+}
+
+.driver-selected-norm > header h3,
+.driver-selected-norm > header p {
+  margin: 0;
+}
+
+.driver-selected-norm > header > strong {
+  color: var(--forest);
+  font-size: 1.25rem;
+}
+
+.driver-selected-norm__lines {
+  display: grid;
+  background: #fff;
+}
+
+.driver-selected-norm__lines > div {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.driver-selected-norm__lines > p {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--muted);
+}
+
+.driver-selected-norm__lines button {
+  min-height: 38px;
+  padding: 7px 11px;
+}
+
+.driver-inline-request {
+  max-width: none;
+  padding: 16px;
+  border: 1px solid rgba(20, 75, 63, 0.22);
+  border-radius: 17px;
+  background: #f3f8f5;
+}
+
+.driver-inline-request__actions {
+  display: flex;
+  gap: 10px;
+}
+
 .planning-day {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -5310,6 +5440,33 @@ select:focus {
   .planning-day > summary > span {
     max-width: 46%;
     text-align: right;
+  }
+
+  .driver-week-navigation button {
+    padding: 7px 8px;
+    font-size: 0.75rem;
+  }
+
+  .driver-weekday-switcher {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    grid-auto-columns: 72px;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    scrollbar-width: thin;
+  }
+
+  .driver-selected-norm__lines > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .driver-selected-norm__lines button {
+    grid-column: 1 / -1;
+  }
+
+  .driver-inline-request__actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .planning-plan-meta {

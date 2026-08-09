@@ -5,6 +5,7 @@ import type {
   NormChangeRequestView,
   PlanningSetupView,
   TerritoryNormWeekView,
+  WeeklyNormView,
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,7 +30,9 @@ export default function PlanningPage() {
   const [week, setWeek] = useState<TerritoryNormWeekView | null>(null);
   const [requests, setRequests] = useState<readonly NormChangeRequestView[]>([]);
   const [territoryId, setTerritoryId] = useState("");
-  const [weekStart, setWeekStart] = useState(currentMonday());
+  const [weekStart, setWeekStart] = useState(() => initialDriverSelection().weekStart);
+  const [selectedDate, setSelectedDate] = useState(() => initialDriverSelection().date);
+  const [editingNorm, setEditingNorm] = useState<WeeklyNormView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -65,6 +68,9 @@ export default function PlanningPage() {
   const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
   const decidedRequests = requests.filter((request) => request.status !== "SUBMITTED");
   const weekTotal = week?.norms.reduce((sum, norm) => sum + norm.quantity, 0) ?? 0;
+  const days = weekDays(weekStart);
+  const selectedDay = days.find((day) => day.date === selectedDate) ?? days[0]!;
+  const selectedNorms = week?.norms.filter((norm) => norm.weekday === selectedDay.weekday) ?? [];
 
   useEffect(() => {
     async function load() {
@@ -164,14 +170,19 @@ export default function PlanningPage() {
               <strong>{selectedTerritory ? `Территория ${selectedTerritory.number}` : "—"}</strong>
             </div>
           )}
-          <label>
-            Неделя
-            <input
-              type="date"
-              value={weekStart}
-              onChange={(event) => setWeekStart(event.target.value)}
-            />
-          </label>
+          {isDriver ? null : (
+            <label>
+              Неделя
+              <input
+                type="date"
+                value={weekStart}
+                onChange={(event) => {
+                  setWeekStart(event.target.value);
+                  setSelectedDate(event.target.value);
+                }}
+              />
+            </label>
+          )}
         </div>
       </section>
 
@@ -235,64 +246,87 @@ export default function PlanningPage() {
           </div>
           <span>Нажмите день, чтобы увидеть товары</span>
         </div>
-        {weekDays(weekStart).map((day) => {
-          const norms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
-          const links = week?.calendar.filter((link) => link.dispatchDate === day.date) ?? [];
-          const total = norms.reduce((sum, norm) => sum + norm.quantity, 0);
-          return (
-            <details
-              className={`planning-day ${day.weekday === 5 ? "is-closed" : ""}`}
-              key={day.date}
-            >
-              <summary>
+        {isDriver ? (
+          <>
+            <div className="driver-week-navigation">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextStart = addDays(weekStart, -7);
+                  setWeekStart(nextStart);
+                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setEditingNorm(null);
+                }}
+              >
+                ← Неделя
+              </button>
+              <strong>{weekRangeLabel(weekStart)}</strong>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextStart = addDays(weekStart, 7);
+                  setWeekStart(nextStart);
+                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setEditingNorm(null);
+                }}
+              >
+                Неделя →
+              </button>
+            </div>
+            <nav className="driver-weekday-switcher" aria-label="Быстрый выбор дня">
+              {days.map((day) => {
+                const dayNorms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
+                const total = dayNorms.reduce((sum, norm) => sum + norm.quantity, 0);
+                const closed = day.weekday === 5;
+                return (
+                  <button
+                    aria-pressed={day.date === selectedDay.date}
+                    className={day.date === selectedDay.date ? "is-active" : ""}
+                    disabled={closed}
+                    key={day.date}
+                    onClick={() => {
+                      setSelectedDate(day.date);
+                      setEditingNorm(null);
+                    }}
+                    type="button"
+                  >
+                    <strong>{shortWeekday(day.weekday)}</strong>
+                    <small>{shortDate(day.date)}</small>
+                    <span>{closed ? "выходной" : `${total} шт.`}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <article className="driver-selected-norm">
+              <header>
                 <div>
-                  <strong>{day.label}</strong>
-                  <small>{shortDate(day.date)}</small>
+                  <p className="eyebrow">{selectedDay.label}</p>
+                  <h3>{longDate(selectedDay.date)}</h3>
                 </div>
-                <span>
-                  {day.weekday === 5 ? "Вывоз закрыт" : `${norms.length} тов. · ${total} шт.`}
-                </span>
-              </summary>
-              <div className="planning-day-content">
-                {links.length ? (
-                  links.map((link) => (
-                    <p className="planning-calendar-note" key={link.id}>
-                      Производство {shortDate(link.productionDate)} · изменить до{" "}
-                      {timeLabel(link.cutoffAt)}
-                    </p>
+                <strong>{selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.</strong>
+              </header>
+              <div className="driver-selected-norm__lines">
+                {selectedNorms.length ? (
+                  selectedNorms.map((norm) => (
+                    <div key={norm.id}>
+                      <span>{norm.productName}</span>
+                      <strong>{norm.quantity} шт.</strong>
+                      <button type="button" onClick={() => setEditingNorm(norm)}>
+                        Изменить
+                      </button>
+                    </div>
                   ))
                 ) : (
-                  <p className="planning-calendar-note">
-                    {day.weekday === 5
-                      ? "Вывоз закрыт. Исключение может добавить администратор."
-                      : "Календарная связь пока не опубликована."}
-                  </p>
+                  <p>На этот день норма не задана.</p>
                 )}
-                <div className="planning-norm-list">
-                  {norms.length ? (
-                    norms.map((norm) => (
-                      <div key={norm.id}>
-                        <span>{norm.productName}</span>
-                        <strong>{norm.quantity} шт.</strong>
-                      </div>
-                    ))
-                  ) : (
-                    <p>Норма не задана.</p>
-                  )}
-                </div>
               </div>
-            </details>
-          );
-        })}
-      </section>
-
-      <section className="planning-actions">
-        {session && setup && isDriver ? (
-          <details className="workspace-more">
-            <summary>Предложить изменение нормы</summary>
-            <div className="workspace-more__content">
+            </article>
+            {session && editingNorm ? (
               <DriverRequestForm
                 busy={busy}
+                date={selectedDay.date}
+                norm={editingNorm}
+                onCancel={() => setEditingNorm(null)}
                 onSubmit={(input) =>
                   action(async () => {
                     const created = await createNormChangeRequest(input, session.csrfToken);
@@ -301,15 +335,67 @@ export default function PlanningPage() {
                         ? "Изменять уже поздно: запрос сохранён как просроченный."
                         : "Запрос отправлен администратору.",
                     );
+                    setEditingNorm(null);
                   })
                 }
-                products={setup.products}
                 territoryId={territoryId}
               />
-            </div>
-          </details>
-        ) : null}
+            ) : null}
+          </>
+        ) : (
+          days.map((day) => {
+            const norms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
+            const links = week?.calendar.filter((link) => link.dispatchDate === day.date) ?? [];
+            const total = norms.reduce((sum, norm) => sum + norm.quantity, 0);
+            return (
+              <details
+                className={`planning-day ${day.weekday === 5 ? "is-closed" : ""}`}
+                key={day.date}
+              >
+                <summary>
+                  <div>
+                    <strong>{day.label}</strong>
+                    <small>{shortDate(day.date)}</small>
+                  </div>
+                  <span>
+                    {day.weekday === 5 ? "Вывоз закрыт" : `${norms.length} тов. · ${total} шт.`}
+                  </span>
+                </summary>
+                <div className="planning-day-content">
+                  {links.length ? (
+                    links.map((link) => (
+                      <p className="planning-calendar-note" key={link.id}>
+                        Производство {shortDate(link.productionDate)} · изменить до{" "}
+                        {timeLabel(link.cutoffAt)}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="planning-calendar-note">
+                      {day.weekday === 5
+                        ? "Вывоз закрыт. Исключение может добавить администратор."
+                        : "Календарная связь пока не опубликована."}
+                    </p>
+                  )}
+                  <div className="planning-norm-list">
+                    {norms.length ? (
+                      norms.map((norm) => (
+                        <div key={norm.id}>
+                          <span>{norm.productName}</span>
+                          <strong>{norm.quantity} шт.</strong>
+                        </div>
+                      ))
+                    ) : (
+                      <p>Норма не задана.</p>
+                    )}
+                  </div>
+                </div>
+              </details>
+            );
+          })
+        )}
+      </section>
 
+      <section className="planning-actions">
         {session && setup && isAdmin ? (
           <details className="workspace-more">
             <summary>Добавить праздник или внеплановый вывоз</summary>
@@ -352,78 +438,55 @@ export default function PlanningPage() {
 
 function DriverRequestForm({
   busy,
+  date,
+  norm,
+  onCancel,
   onSubmit,
-  products,
   territoryId,
 }: {
   busy: boolean;
+  date: string;
+  norm: WeeklyNormView;
+  onCancel: () => void;
   onSubmit: (input: Parameters<typeof createNormChangeRequest>[0]) => Promise<void>;
-  products: PlanningSetupView["products"];
   territoryId: string;
 }) {
-  const [kind, setKind] = useState<"ONE_OFF" | "PERMANENT">("PERMANENT");
-  const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("0");
-  const [date, setDate] = useState(addDays(currentMonday(), 7));
-  const [weekday, setWeekday] = useState("1");
+  const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">("ONE_OFF");
+  const [quantity, setQuantity] = useState(String(norm.quantity));
   const [comment, setComment] = useState("");
+  const weekday = isoWeekday(date);
+  const effectiveUntil = monthEnd(date);
   return (
     <form
-      className="logistics-form planning-form"
+      className="logistics-form planning-form driver-inline-request"
       onSubmit={(event) => {
         event.preventDefault();
         const common = {
           ...(comment === "" ? {} : { comment }),
           kind,
-          lines: [{ productId, quantity: Number(quantity) }],
+          lines: [{ productId: norm.productId, quantity: Number(quantity) }],
           territoryId,
         };
         void onSubmit(
-          kind === "PERMANENT"
-            ? { ...common, dispatchWeekday: Number(weekday), effectiveFrom: date }
+          kind === "MONTH_WEEKDAY"
+            ? { ...common, dispatchWeekday: weekday, effectiveFrom: date, effectiveUntil }
             : { ...common, dispatchDate: date },
         );
       }}
     >
-      <p className="eyebrow">Водитель</p>
-      <h2>Предложить изменение</h2>
+      <p className="eyebrow">Запрос администратору</p>
+      <h2>{norm.productName}</h2>
+      <p>
+        Сейчас {norm.quantity} шт. · выбранная дата {longDate(date)}
+      </p>
       <label>
-        Тип
+        Как изменить
         <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
-          <option value="PERMANENT">Постоянное</option>
-          <option value="ONE_OFF">Разовое</option>
+          <option value="ONE_OFF">Только на {shortDate(date)}</option>
+          <option value="MONTH_WEEKDAY">
+            Каждый {weekdayGenitive(weekday)} до {shortDate(effectiveUntil)}
+          </option>
         </select>
-      </label>
-      <label>
-        Товар
-        <select required value={productId} onChange={(event) => setProductId(event.target.value)}>
-          <option value="">Выберите товар</option>
-          {products.map((product) => (
-            <option key={product.id} value={product.id}>
-              {product.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {products.length === 0 ? (
-        <small>Товары появятся после их отдельного заполнения перед пилотом.</small>
-      ) : null}
-      {kind === "PERMANENT" ? (
-        <label>
-          День вывоза
-          <select value={weekday} onChange={(event) => setWeekday(event.target.value)}>
-            {weekdayOptions()}
-          </select>
-        </label>
-      ) : null}
-      <label>
-        {kind === "PERMANENT" ? "Действует с" : "Дата вывоза"}
-        <input
-          required
-          type="date"
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-        />
       </label>
       <label>
         Новое количество
@@ -436,12 +499,17 @@ function DriverRequestForm({
         />
       </label>
       <label>
-        Комментарий
+        Комментарий администратору
         <textarea value={comment} onChange={(event) => setComment(event.target.value)} />
       </label>
-      <button className="primary-button" disabled={busy || productId === "" || territoryId === ""}>
-        Отправить запрос
-      </button>
+      <div className="driver-inline-request__actions">
+        <button className="primary-button" disabled={busy || territoryId === ""}>
+          Отправить запрос
+        </button>
+        <button className="secondary-button" disabled={busy} onClick={onCancel} type="button">
+          Отмена
+        </button>
+      </div>
     </form>
   );
 }
@@ -554,7 +622,11 @@ function RequestCard({
         </span>
         <h3>
           Территория {request.territoryNumber} ·{" "}
-          {request.kind === "PERMANENT" ? "постоянно" : shortDate(request.dispatchDate!)}
+          {request.kind === "PERMANENT"
+            ? "постоянно"
+            : request.kind === "MONTH_WEEKDAY"
+              ? `каждый ${weekdayGenitive(request.dispatchWeekday!)} до ${shortDate(request.effectiveUntil!)}`
+              : shortDate(request.dispatchDate!)}
         </h3>
         <p>{request.requesterName}</p>
       </div>
@@ -602,18 +674,16 @@ function currentMonday(): string {
   return now.toISOString().slice(0, 10);
 }
 
+function initialDriverSelection(): { date: string; weekStart: string } {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+  let date = addDays(today, 1);
+  if (isoWeekday(date) === 5) date = addDays(date, 1);
+  return { date, weekStart: addDays(date, 1 - isoWeekday(date)) };
+}
+
 function weekDays(start: string) {
   return ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"].map(
     (label, index) => ({ date: addDays(start, index), label, weekday: index + 1 }),
-  );
-}
-function weekdayOptions() {
-  return ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"].map(
-    (label, index) => (
-      <option key={label} value={index + 1}>
-        {label}
-      </option>
-    ),
   );
 }
 function addDays(value: string, days: number) {
@@ -621,10 +691,37 @@ function addDays(value: string, days: number) {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
+function isoWeekday(value: string) {
+  const day = new Date(`${value}T00:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+function monthEnd(value: string) {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + 1, 0);
+  return date.toISOString().slice(0, 10);
+}
 function shortDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(
     new Date(`${value}T00:00:00Z`),
   );
+}
+function longDate(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+function shortWeekday(weekday: number) {
+  return ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][weekday - 1];
+}
+function weekdayGenitive(weekday: number) {
+  return ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"][
+    weekday - 1
+  ];
+}
+function weekRangeLabel(start: string) {
+  return `${shortDate(start)}–${shortDate(addDays(start, 6))}`;
 }
 function timeLabel(value: string) {
   return new Intl.DateTimeFormat("ru-RU", {

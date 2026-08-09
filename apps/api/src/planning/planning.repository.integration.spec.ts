@@ -201,6 +201,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: null,
       dispatchWeekday: 1,
       effectiveFrom: weekStart,
+      effectiveUntil: null,
       kind: "PERMANENT",
       lines: [{ productId, quantity: 10 }],
       territoryId: territoryOneId,
@@ -222,6 +223,44 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     );
   });
 
+  it("applies one approved weekday request only through the selected month", async () => {
+    const effectiveUntil = monthEnd(weekStart);
+    const request = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Каждый понедельник до конца месяца",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: weekStart,
+      effectiveUntil,
+      kind: "MONTH_WEEKDAY",
+      lines: [{ productId, quantity: 14 }],
+      territoryId: territoryOneId,
+    });
+    await repository.decideRequest({
+      actorEmployeeId: adminId,
+      comment: "Согласовано до конца месяца",
+      correlationId: randomUUID(),
+      decision: "APPROVE",
+      requestId: request.id,
+      version: request.version,
+    });
+
+    const overrides = await database.query<{ dispatch_date: string; quantity: number }>(
+      `select dispatch_date::text, quantity
+       from planning.one_off_norm_override
+       where request_id = $1 and is_current order by dispatch_date`,
+      [request.id],
+    );
+    expect(overrides.rows).toEqual(
+      sameWeekdayDates(weekStart, effectiveUntil, 1).map((dispatchDate) => ({
+        dispatch_date: dispatchDate,
+        quantity: 14,
+      })),
+    );
+  });
+
   it("marks an older request stale after the base norm changes", async () => {
     const first = await repository.createRequest({
       activeRole: "DRIVER",
@@ -231,6 +270,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: null,
       dispatchWeekday: 1,
       effectiveFrom: addDays(weekStart, 7),
+      effectiveUntil: null,
       kind: "PERMANENT",
       lines: [{ productId, quantity: 12 }],
       territoryId: territoryOneId,
@@ -243,6 +283,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: null,
       dispatchWeekday: 1,
       effectiveFrom: addDays(weekStart, 7),
+      effectiveUntil: null,
       kind: "PERMANENT",
       lines: [{ productId, quantity: 11 }],
       territoryId: territoryOneId,
@@ -275,6 +316,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: friday,
       dispatchWeekday: null,
       effectiveFrom: null,
+      effectiveUntil: null,
       kind: "ONE_OFF",
       lines: [{ productId, quantity: 8 }],
       territoryId: territoryNineId,
@@ -298,6 +340,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: friday,
       dispatchWeekday: null,
       effectiveFrom: null,
+      effectiveUntil: null,
       kind: "ONE_OFF",
       lines: [{ productId, quantity: 9 }],
       territoryId: territoryNineId,
@@ -326,6 +369,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         dispatchDate: friday,
         dispatchWeekday: null,
         effectiveFrom: null,
+        effectiveUntil: null,
         kind: "ONE_OFF",
         lines: [{ productId, quantity: 9 }],
         territoryId: territoryNineId,
@@ -354,6 +398,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       dispatchDate: lateDate,
       dispatchWeekday: null,
       effectiveFrom: null,
+      effectiveUntil: null,
       kind: "ONE_OFF",
       lines: [{ productId, quantity: 15 }],
       territoryId: territoryNineId,
@@ -469,6 +514,23 @@ function addDays(value: string, days: number): string {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function monthEnd(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + 1, 0);
+  return date.toISOString().slice(0, 10);
+}
+
+function sameWeekdayDates(from: string, until: string, weekday: number): string[] {
+  const dates: string[] = [];
+  let current = from;
+  while (current <= until) {
+    const day = new Date(`${current}T00:00:00Z`).getUTCDay() || 7;
+    if (day === weekday) dates.push(current);
+    current = addDays(current, 1);
+  }
+  return dates;
 }
 
 function nextMonday(value: Date): string {

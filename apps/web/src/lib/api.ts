@@ -944,7 +944,8 @@ export async function createNormChangeRequest(
     dispatchDate?: string;
     dispatchWeekday?: number;
     effectiveFrom?: string;
-    kind: "ONE_OFF" | "PERMANENT";
+    effectiveUntil?: string;
+    kind: "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
     lines: ReadonlyArray<{ productId: string; quantity: number }>;
     territoryId: string;
   },

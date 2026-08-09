@@ -82,4 +82,38 @@ describe("PlanningService calendar invariants", () => {
       ),
     ).toThrow("Один товар указан несколько раз");
   });
+
+  it("accepts a weekday request that ends at the selected month boundary", () => {
+    const planning = service();
+    planning.createRequest(
+      {
+        dispatchWeekday: 2,
+        effectiveFrom: "2035-01-02",
+        effectiveUntil: "2035-01-31",
+        kind: "MONTH_WEEKDAY",
+        lines: [{ productId: "21000000-0000-4000-8000-000000000001", quantity: 12 }],
+        territoryId: "12000000-0000-4000-8000-000000000001",
+      },
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+    );
+    expect(planning as never).toBeDefined();
+  });
+
+  it("rejects Friday as a recurring driver request", () => {
+    expect(() =>
+      service().createRequest(
+        {
+          dispatchWeekday: 5,
+          effectiveFrom: "2035-01-05",
+          effectiveUntil: "2035-01-31",
+          kind: "MONTH_WEEKDAY",
+          lines: [{ productId: "21000000-0000-4000-8000-000000000001", quantity: 12 }],
+          territoryId: "12000000-0000-4000-8000-000000000001",
+        },
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+      ),
+    ).toThrow("Пятница — выходной день вывоза");
+  });
 });
