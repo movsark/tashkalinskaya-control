@@ -1278,6 +1278,93 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
+  test("a confectioner sees the full factory need for today only", async ({ page }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    const workshopId = "20000000-0000-4000-8000-000000000180";
+    let requestedProductionDate = "";
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-confectioner-production",
+        deviceId: "20000000-0000-4000-8000-000000000181",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: workshopId,
+          employmentStatus: "ACTIVE",
+          fullName: "Кондитер производства",
+          id: "20000000-0000-4000-8000-000000000182",
+          login: "confectioner-production",
+          personnelNumber: "E2E-CONFECTIONER",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000183",
+              roleCode: "CONFECTIONER",
+              scopeId: workshopId,
+              scopeType: "WORKSHOP",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-09T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/production/workspace?*", (route) => {
+      requestedProductionDate = new URL(route.request().url()).searchParams.get("date") ?? "";
+      return json(route, {
+        availableTransferWorkshops: [],
+        employees: [],
+        normDemand: {
+          dispatchDates: ["2026-08-10"],
+          lines: [
+            {
+              productCode: "TB-001",
+              productGroup: "Торты Базовые",
+              productId: "20000000-0000-4000-8000-000000000184",
+              productName: "Торт тестовый",
+              quantity: 12,
+              workshopId,
+              workshopName: "Кондитерский цех",
+            },
+            {
+              productCode: "SV-001",
+              productGroup: "Сухая выпечка",
+              productId: "20000000-0000-4000-8000-000000000185",
+              productName: "СВ Печенье тестовое",
+              quantity: 7,
+              workshopId: "20000000-0000-4000-8000-000000000186",
+              workshopName: "Цех сухой выпечки",
+            },
+          ],
+          source: "NEXT_DAY_FALLBACK",
+        },
+        productionDate: "2026-08-09",
+        reasons: [],
+        serverTime: "2026-08-09T10:00:00.000Z",
+        tasks: [],
+        transfers: [],
+        workshopId: null,
+        workshops: [{ id: workshopId, name: "Кондитерский цех" }],
+      });
+    });
+    await page.route("**/api/v1/health/live", (route) =>
+      json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-09T10:00:00.000Z",
+        version: "test",
+      }),
+    );
+
+    await page.goto("/production");
+
+    await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
+    await expect(page.getByLabel("Производственная дата")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Что нужно произвести сегодня" })).toBeVisible();
+    await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await expect(page.getByText("19 шт.", { exact: true })).toBeVisible();
+    expect(requestedProductionDate).toBe(moscowToday());
+  });
+
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, { code: "AUTHENTICATION_REQUIRED", message: "Требуется вход" }, 401),
@@ -1542,4 +1629,13 @@ async function mockReportsApi(
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ body: JSON.stringify(body), contentType: "application/json", status });
+}
+
+function moscowToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).format(new Date());
 }

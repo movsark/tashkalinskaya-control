@@ -1106,6 +1106,7 @@ async function loadWorkspace(
     requestedWorkshopId !== null ? [requestedWorkshopId] : privileged ? null : workshopScopeIds;
   const confectionerOnly =
     hasRole(actor, "CONFECTIONER") && !hasRole(actor, "WORKSHOP_MANAGER") && !privileged;
+  const normDemandWorkshopIds = confectionerOnly ? null : selectedWorkshopIds;
   const taskResult = await client.query<TaskRow>(
     `${taskSelect}
      where t.production_date = $1
@@ -1257,7 +1258,7 @@ async function loadWorkspace(
      where ($2::uuid[] is null or p.primary_workshop_id = any($2::uuid[]))
      group by p.id, p.product_code, p.name, c.name, p.primary_workshop_id, w.name
      order by c.name, p.name, p.product_code`,
-    [productionDate, selectedWorkshopIds],
+    [productionDate, normDemandWorkshopIds],
   );
   const transfers = await loadTransfers(client, selectedWorkshopIds);
   const assignmentMap = groupBy(assignments.rows, (row) => row.task_id);

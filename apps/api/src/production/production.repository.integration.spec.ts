@@ -19,6 +19,7 @@ const outsiderId = randomUUID();
 const workshopId = randomUUID();
 const otherWorkshopId = randomUUID();
 const productId = randomUUID();
+const otherWorkshopProductId = randomUUID();
 const planRunId = randomUUID();
 const snapshotId = randomUUID();
 const planId = randomUUID();
@@ -93,9 +94,19 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
     await database.query(
       `insert into catalog.product (
          id, product_code, name, category_id, unit_code, primary_workshop_id
-       ) values ($1,$2,'Ночной торт B11',
-         '11000000-0000-4000-8000-000000000001','PCS',$3)`,
-      [productId, `B11-${adminId.slice(0, 8).toUpperCase()}`, workshopId],
+       ) values
+         ($1,$2,'Ночной торт B11',
+          '11000000-0000-4000-8000-000000000001','PCS',$3),
+         ($4,$5,'Торт другого цеха B11',
+          '11000000-0000-4000-8000-000000000001','PCS',$6)`,
+      [
+        productId,
+        `B11-${adminId.slice(0, 8).toUpperCase()}`,
+        workshopId,
+        otherWorkshopProductId,
+        `B11-O-${adminId.slice(0, 6).toUpperCase()}`,
+        otherWorkshopId,
+      ],
     );
     await database.query(
       `insert into production.product_profile (
@@ -148,9 +159,21 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
       `insert into planning.territory_daily_norm (
          id, territory_id, dispatch_date, product_id, quantity, version,
          reason, created_by, correlation_id
-       ) values ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
-                 'Проверка плана на сегодня', $4, $5)`,
-      [randomUUID(), dispatchDate, productId, adminId, randomUUID()],
+       ) values
+         ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
+          'Проверка плана на сегодня', $4, $5),
+         ($6, '12000000-0000-4000-8000-000000000001', $2, $7, 4, 1,
+          'Проверка полной нормы кондитера', $4, $8)`,
+      [
+        randomUUID(),
+        dispatchDate,
+        productId,
+        adminId,
+        randomUUID(),
+        randomUUID(),
+        otherWorkshopProductId,
+        randomUUID(),
+      ],
     );
     await database.query(
       `insert into planning.norm_change_request (
@@ -180,6 +203,21 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
     });
     expect(workspace.normDemand.lines).toContainEqual(
       expect.objectContaining({ productId, quantity: 5, workshopId }),
+    );
+    expect(workspace.normDemand.lines).not.toContainEqual(
+      expect.objectContaining({ productId: otherWorkshopProductId }),
+    );
+
+    const confectionerWorkspace = await repository.workspace(productionDate, workshopId, chef);
+    expect(confectionerWorkspace.normDemand.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId, quantity: 5, workshopId }),
+        expect.objectContaining({
+          productId: otherWorkshopProductId,
+          quantity: 4,
+          workshopId: otherWorkshopId,
+        }),
+      ]),
     );
   });
 

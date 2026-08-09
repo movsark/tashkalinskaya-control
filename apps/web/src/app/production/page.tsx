@@ -48,6 +48,12 @@ export default function ProductionPage() {
   const isAdmin = roles.has("ADMIN");
   const canManage = isAdmin || roles.has("WORKSHOP_MANAGER");
   const canSeeWarehouse = isAdmin || roles.has("MANAGER") || roles.has("WAREHOUSE_KEEPER");
+  const isConfectionerOnly =
+    roles.has("CONFECTIONER") &&
+    !isAdmin &&
+    !roles.has("MANAGER") &&
+    !roles.has("WAREHOUSE_KEEPER") &&
+    !roles.has("WORKSHOP_MANAGER");
   const metrics = useMemo(() => {
     const tasks = workspace?.tasks ?? [];
     const normQuantity =
@@ -156,47 +162,55 @@ export default function ProductionPage() {
           <h1>Производство</h1>
           <p>План, выпуск и проблемы по каждому заданию.</p>
         </div>
-        <div className="production-filters">
-          <label>
-            Производственная дата
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => void changeFilters(event.target.value, workshopId)}
-            />
-          </label>
-          <label>
-            Цех
-            <select
-              value={workshopId}
-              onChange={(event) => void changeFilters(date, event.target.value)}
-            >
-              {workspace.workshops.length > 1 || roles.has("ADMIN") || roles.has("MANAGER") ? (
-                <option value="">Все доступные цехи</option>
-              ) : null}
-              {workspace.workshops.map((workshop) => (
-                <option key={workshop.id} value={workshop.id}>
-                  {workshop.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {isAdmin ? (
-            <button
-              className="primary-button"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await generateProductionTasks(date, session!.csrfToken);
-                  await reload("Задания синхронизированы с актуальной версией плана.");
-                })
-              }
-              type="button"
-            >
-              Создать задания из плана
-            </button>
-          ) : null}
-        </div>
+        {isConfectionerOnly ? (
+          <div className="production-today-card" aria-label="Производственный день">
+            <span>Сегодня</span>
+            <strong>{dateLabel(date)}</strong>
+            <small>Производим для вывоза завтра</small>
+          </div>
+        ) : (
+          <div className="production-filters">
+            <label>
+              Производственная дата
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => void changeFilters(event.target.value, workshopId)}
+              />
+            </label>
+            <label>
+              Цех
+              <select
+                value={workshopId}
+                onChange={(event) => void changeFilters(date, event.target.value)}
+              >
+                {workspace.workshops.length > 1 || roles.has("ADMIN") || roles.has("MANAGER") ? (
+                  <option value="">Все доступные цехи</option>
+                ) : null}
+                {workspace.workshops.map((workshop) => (
+                  <option key={workshop.id} value={workshop.id}>
+                    {workshop.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isAdmin ? (
+              <button
+                className="primary-button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await generateProductionTasks(date, session!.csrfToken);
+                    await reload("Задания синхронизированы с актуальной версией плана.");
+                  })
+                }
+                type="button"
+              >
+                Создать задания из плана
+              </button>
+            ) : null}
+          </div>
+        )}
       </section>
 
       {error ? <p className="form-error production-notice">{error}</p> : null}

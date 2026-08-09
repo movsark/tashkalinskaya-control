@@ -4466,6 +4466,37 @@ select:focus {
   padding: 14px;
 }
 
+.production-today-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  display: grid;
+  gap: 5px;
+  min-width: min(100%, 280px);
+  padding: 16px 18px;
+}
+
+.production-today-card span,
+.production-today-card small {
+  color: var(--muted);
+}
+
+.production-today-card span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.production-today-card strong {
+  color: var(--forest);
+  font-size: 1.08rem;
+}
+
+.production-today-card small {
+  font-size: 0.82rem;
+}
+
 .production-filters label,
 .production-form-grid label {
   color: var(--muted);
