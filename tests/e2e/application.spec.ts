@@ -179,6 +179,108 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(menu.getByRole("link", { exact: true, name: "Моя погрузка" })).toHaveCount(0);
   });
 
+  test("a warehouse keeper sees a pickup reminder for produced batches", async ({ page }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-warehouse-token",
+          deviceId: "20000000-0000-4000-8000-000000000030",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Тестовый Кладовщик",
+            id: "20000000-0000-4000-8000-000000000031",
+            login: "warehouse-e2e",
+            personnelNumber: "E2E-WAREHOUSE",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000032",
+                roleCode: "WAREHOUSE_KEEPER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/warehouse/workspace")) {
+        return json(route, {
+          balances: [],
+          discrepancies: [],
+          queue: [
+            {
+              batchId: "20000000-0000-4000-8000-000000000033",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              productCode: "TV-015",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 10,
+              submittedAt: "2026-08-10T07:00:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
+            {
+              batchId: "20000000-0000-4000-8000-000000000036",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              productCode: "TV-015",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 4,
+              submittedAt: "2026-08-10T07:05:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
+          ],
+          reasons: [],
+          serverTime: "2026-08-10T07:06:00.000Z",
+          warehouseName: "Склад готовой продукции",
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) {
+        return json(route, notificationWorkspace());
+      }
+      if (path.endsWith("/health/live")) {
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T07:06:00.000Z",
+          version: "test",
+        });
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/warehouse");
+    const reminder = page.getByRole("status");
+    await expect(
+      reminder.getByRole("heading", { name: "Нужно забрать готовую продукцию" }),
+    ).toBeVisible();
+    await expect(reminder).toContainText("2 партии · 14 шт.");
+    await expect(reminder).toContainText("при необходимости — в холодильную камеру");
+    await expect(page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" })).toHaveCount(2);
+    await expect(page.getByText("Забрать из цеха", { exact: true })).toHaveCount(3);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("a bound personal device signs in with login and password only", async ({ page }) => {
     const deviceId = "20000000-0000-4000-8000-000000000010";
     let loginRequest: unknown = null;

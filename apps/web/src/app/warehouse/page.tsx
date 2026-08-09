@@ -35,12 +35,24 @@ export default function WarehousePage() {
   const canReceive = isAdmin || roles.has("WAREHOUSE_KEEPER");
   const canExplain = isAdmin || roles.has("WORKSHOP_MANAGER");
   useEffect(() => {
+    let active = true;
+    let refreshTimer: number | undefined;
     void (async () => {
       try {
         const s = await getSession();
+        const workspace = await getWarehouseWorkspace();
+        if (!active) return;
         setSession(s);
-        setData(await getWarehouseWorkspace());
+        setData(workspace);
+        refreshTimer = window.setInterval(() => {
+          void getWarehouseWorkspace()
+            .then((next) => {
+              if (active) setData(next);
+            })
+            .catch(() => undefined);
+        }, 10_000);
       } catch (e) {
+        if (!active) return;
         if (e instanceof ApiRequestError && e.status === 401) {
           router.replace("/login");
           return;
@@ -48,6 +60,10 @@ export default function WarehousePage() {
         setError(textOf(e));
       }
     })();
+    return () => {
+      active = false;
+      if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+    };
   }, [router]);
   async function reload(next?: string) {
     setData(await getWarehouseWorkspace());
@@ -76,7 +92,8 @@ export default function WarehousePage() {
     );
   const free = data.balances.reduce((sum, item) => sum + item.freeQuantity, 0),
     onHand = data.balances.reduce((sum, item) => sum + item.onHandQuantity, 0),
-    open = data.discrepancies.filter((item) => !item.status.startsWith("RESOLVED")).length;
+    open = data.discrepancies.filter((item) => !item.status.startsWith("RESOLVED")).length,
+    pickupQuantity = data.queue.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <main className="workspace-layout warehouse-page simple-workspace">
       <header className="workspace-header">
@@ -111,6 +128,21 @@ export default function WarehousePage() {
         <Metric label="Физически на складе" value={onHand} unit="шт." />
         <Metric label="Открытые расхождения" value={open} />
       </section>
+      {data.queue.length ? (
+        <section aria-live="polite" className="warehouse-pickup-reminder" role="status">
+          <div>
+            <p className="eyebrow">Забрать из цеха</p>
+            <h2>Нужно забрать готовую продукцию</h2>
+            <p>
+              Перенесите партии в нужную зону хранения, при необходимости — в холодильную камеру,
+              затем подтвердите фактически принятое количество.
+            </p>
+          </div>
+          <strong>
+            {formatBatchCount(data.queue.length)} · {pickupQuantity} шт.
+          </strong>
+        </section>
+      ) : null}
       <section className="warehouse-panel">
         <Heading eyebrow="Очередь" title="Партии из цехов" count={data.queue.length} />
         {data.queue.length ? (
@@ -245,7 +277,7 @@ function ReceiptCard({
             Производство {item.productionDate} · заявлено {item.quantity} шт.
           </small>
         </div>
-        <b>{item.isNight ? "Ночная партия" : "Дневная партия"}</b>
+        <b>{item.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
       </header>
       {!claimed && canReceive ? (
         <button
@@ -580,4 +612,13 @@ function Heading({ count, eyebrow, title }: { count?: number; eyebrow: string; t
 }
 function textOf(value: unknown) {
   return value instanceof Error ? value.message : "Не удалось выполнить операцию";
+}
+
+function formatBatchCount(count: number): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return `${count} партий`;
+  if (last === 1) return `${count} партия`;
+  if (last >= 2 && last <= 4) return `${count} партии`;
+  return `${count} партий`;
 }

@@ -5569,6 +5569,51 @@ select:focus {
   box-shadow: 0 18px 60px rgb(39 56 44 / 7%);
 }
 
+.warehouse-pickup-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 22px 24px;
+  border: 2px solid #d39a44;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #fff8e8, #fffdf8);
+  box-shadow: 0 18px 48px rgb(133 91 30 / 12%);
+}
+
+.warehouse-pickup-reminder .eyebrow {
+  margin-bottom: 7px;
+  color: #8b5a17;
+}
+
+.warehouse-pickup-reminder h2,
+.warehouse-pickup-reminder p {
+  margin: 0;
+}
+
+.warehouse-pickup-reminder h2 {
+  color: #47330f;
+  font-size: clamp(22px, 3vw, 30px);
+}
+
+.warehouse-pickup-reminder p:last-child {
+  max-width: 720px;
+  margin-top: 8px;
+  color: #6d5a37;
+  line-height: 1.5;
+}
+
+.warehouse-pickup-reminder > strong {
+  flex: none;
+  padding: 12px 16px;
+  border-radius: 999px;
+  color: #fff;
+  background: #8b5a17;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
 .warehouse-heading {
   display: flex;
   align-items: center;
@@ -6464,6 +6509,7 @@ select:focus {
   }
 
   .warehouse-hero,
+  .warehouse-pickup-reminder,
   .warehouse-discrepancies article {
     align-items: stretch;
     display: flex;
@@ -6472,6 +6518,10 @@ select:focus {
 
   .warehouse-live {
     min-width: 0;
+  }
+
+  .warehouse-pickup-reminder > strong {
+    align-self: flex-start;
   }
 
   .warehouse-metrics,
