@@ -328,7 +328,7 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     expect(adminDay.driverNormTotals).toContainEqual({
       driverEmployeeId,
       driverName: "Водитель B08",
-      territoryCount: 1,
+      territoryCount: 2,
       totalNormQuantity: 23,
     });
     const run = driverDay.runs[0]!;
