@@ -30,7 +30,7 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const deviceId = readDeviceId();
+      const deviceId = readDeviceId(loginValue);
       if (deviceId === null) {
         setError("Это устройство ещё не привязано. Используйте первичную активацию доступа.");
         return;
@@ -40,7 +40,7 @@ export default function LoginPage() {
         login: loginValue,
         password,
       });
-      saveDeviceId(session.deviceId);
+      saveDeviceId(session.deviceId, loginValue);
       const roles = session.employee.roles.map((role) => role.roleCode);
       const requested = new URLSearchParams(window.location.search).get("returnTo");
       const safeReturnTo =

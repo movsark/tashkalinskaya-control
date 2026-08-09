@@ -652,7 +652,16 @@ test.describe("B20 browser and HTTP regression", () => {
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
     page,
   }) => {
+    let territoryRequest: unknown = null;
     await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/health/live", (route) =>
+      json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-04T06:15:00.000Z",
+        version: "test",
+      }),
+    );
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
         csrfToken: "csrf-driver-simple-ui",
@@ -680,7 +689,9 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
+        availableTerritoryIds: ["20000000-0000-4000-8000-000000000075"],
         dispatchDate: "2026-08-04",
+        requests: [],
         runs: [
           {
             attendanceVerified: true,
@@ -703,6 +714,17 @@ test.describe("B20 browser and HTTP regression", () => {
             territoryNumber: 3,
             vehicleId: "20000000-0000-4000-8000-000000000076",
             vehicleName: "Газель 03",
+            version: 1,
+          },
+        ],
+        territories: [
+          {
+            description: null,
+            id: "20000000-0000-4000-8000-000000000075",
+            name: "Территория 3",
+            number: 3,
+            sortOrder: 3,
+            status: "ACTIVE",
             version: 1,
           },
         ],
@@ -765,6 +787,24 @@ test.describe("B20 browser and HTTP regression", () => {
         ],
       }),
     );
+    await page.route("**/api/v1/logistics/me/territory-requests", async (route) => {
+      territoryRequest = route.request().postDataJSON();
+      await json(route, {
+        createdAt: "2026-08-04T04:00:00.000Z",
+        decisionComment: null,
+        dispatchDate: "2026-08-04",
+        driverName: "Водитель теста",
+        id: "20000000-0000-4000-8000-000000000081",
+        reason: "Заменяю водителя",
+        requesterEmployeeId: "20000000-0000-4000-8000-000000000071",
+        status: "SUBMITTED",
+        territoryId: "20000000-0000-4000-8000-000000000075",
+        territoryName: "Территория 3",
+        territoryNumber: 3,
+        territoryRunId: null,
+        version: 1,
+      });
+    });
 
     await page.goto("/");
     await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
@@ -780,6 +820,20 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
+    await expect(page.getByText("Запросить другую территорию")).toBeVisible();
+    await page.getByLabel("Дата вывоза").fill("2026-08-04");
+    await page
+      .locator(".driver-territory-request select")
+      .selectOption("20000000-0000-4000-8000-000000000075", { force: true });
+    await page.locator(".driver-territory-request input").fill("Заменяю водителя");
+    await page.getByRole("button", { name: "Отправить запрос" }).click();
+    await expect
+      .poll(() => territoryRequest)
+      .toEqual({
+        dispatchDate: "2026-08-04",
+        reason: "Заменяю водителя",
+        territoryId: "20000000-0000-4000-8000-000000000075",
+      });
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
     await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
@@ -816,13 +870,23 @@ test.describe("B20 browser and HTTP regression", () => {
             {
               id: "20000000-0000-4000-8000-000000000094",
               roleCode: "DRIVER",
-              scopeId: territoryId,
-              scopeType: "TERRITORY",
+              scopeId: null,
+              scopeType: "FACTORY",
             },
           ],
           version: 1,
         },
         sessionExpiresAt: "2027-08-04T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/days/*", (route) =>
+      json(route, {
+        availableTerritoryIds: [territoryId],
+        dispatchDate: "2026-08-10",
+        requests: [],
+        runs: [],
+        territories: [],
+        totalNormQuantity: 0,
       }),
     );
     await page.route("**/api/v1/planning/setup", (route) =>

@@ -18,6 +18,7 @@ import {
   createExtraTerritoryRun,
   createLoadingGroup,
   createVehicle,
+  decideDriverTerritoryRequest,
   generateLogisticsDay,
   getLogisticsDay,
   getLogisticsSetup,
@@ -49,6 +50,7 @@ export default function LogisticsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [requestComments, setRequestComments] = useState<Record<string, string>>({});
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -226,6 +228,78 @@ export default function LogisticsPage() {
                 </small>
               </article>
             ))}
+          </div>
+        </section>
+      ) : null}
+
+      {isAdmin && day?.driverRequests.some((request) => request.status === "SUBMITTED") ? (
+        <section className="logistics-driver-requests">
+          <div>
+            <p className="eyebrow">Запросы водителей на {dispatchDate}</p>
+            <h2>Временная территория</h2>
+            <p>Подтверждение меняет только водителя выбранного рейса на эту дату.</p>
+          </div>
+          <div className="logistics-driver-requests__list">
+            {day.driverRequests
+              .filter((request) => request.status === "SUBMITTED")
+              .map((request) => {
+                const comment = requestComments[request.id] ?? "";
+                return (
+                  <article key={request.id}>
+                    <div>
+                      <strong>{request.driverName}</strong>
+                      <span>Территория {request.territoryNumber}</span>
+                      <small>{request.reason}</small>
+                    </div>
+                    <input
+                      aria-label={`Комментарий к запросу ${request.driverName}`}
+                      minLength={2}
+                      onChange={(event) =>
+                        setRequestComments((current) => ({
+                          ...current,
+                          [request.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Комментарий администратора"
+                      value={comment}
+                    />
+                    <div className="form-actions">
+                      <button
+                        className="primary-button primary-button--compact"
+                        disabled={busy || comment.trim().length < 2}
+                        onClick={() =>
+                          void runAction(async () => {
+                            await decideDriverTerritoryRequest(
+                              request.id,
+                              { comment, decision: "APPROVED", version: request.version },
+                              session!.csrfToken,
+                            );
+                            await reload("Запрос подтверждён, водитель назначен на рейс.");
+                          })
+                        }
+                      >
+                        Подтвердить
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={busy || comment.trim().length < 2}
+                        onClick={() =>
+                          void runAction(async () => {
+                            await decideDriverTerritoryRequest(
+                              request.id,
+                              { comment, decision: "REJECTED", version: request.version },
+                              session!.csrfToken,
+                            );
+                            await reload("Запрос отклонён.");
+                          })
+                        }
+                      >
+                        Отклонить
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
           </div>
         </section>
       ) : null}

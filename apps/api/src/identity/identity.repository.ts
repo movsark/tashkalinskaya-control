@@ -874,6 +874,15 @@ export class IdentityRepository {
         `,
         [randomUUID(), input.employeeId, input.invitationId],
       );
+      if (selected.role_code === "DRIVER") {
+        await client.query(
+          `insert into logistics.driver_profile (employee_id, status)
+           values ($1, 'ACTIVE')
+           on conflict (employee_id) do update set status = 'ACTIVE', archived_at = null,
+             updated_at = now(), version = logistics.driver_profile.version + 1`,
+          [input.employeeId],
+        );
+      }
       await client.query(
         `
           insert into identity.personal_device (
@@ -2126,7 +2135,7 @@ const invitationScopeByRole: Record<RoleCode, ScopeType> = {
   ADMIN: "FACTORY",
   ATTENDANCE_ONLY: "FACTORY",
   CONFECTIONER: "WORKSHOP",
-  DRIVER: "TERRITORY",
+  DRIVER: "FACTORY",
   MANAGER: "FACTORY",
   STORE_SELLER: "STORE",
   WAREHOUSE_KEEPER: "FACTORY",

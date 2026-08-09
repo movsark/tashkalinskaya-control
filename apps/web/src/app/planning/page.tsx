@@ -17,6 +17,7 @@ import {
   createNormChangeRequest,
   createPlanningCalendarLink,
   decideNormChangeRequest,
+  getDriverLogisticsDay,
   getPlanningSetup,
   getSession,
   getTerritoryNormWeek,
@@ -36,6 +37,7 @@ export default function PlanningPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [driverTerritoryIds, setDriverTerritoryIds] = useState<readonly string[]>([]);
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -59,11 +61,12 @@ export default function PlanningPage() {
     const allowed = roles
       .filter((role) => role.roleCode === "DRIVER" && role.scopeType === "TERRITORY")
       .map((role) => role.scopeId);
+    const driverAllowed = new Set([...allowed, ...driverTerritoryIds]);
     return setup.territories.filter(
       (territory) =>
-        territory.status === "ACTIVE" && (canViewAll || allowed.includes(territory.id)),
+        territory.status === "ACTIVE" && (canViewAll || driverAllowed.has(territory.id)),
     );
-  }, [session, setup]);
+  }, [driverTerritoryIds, session, setup]);
   const selectedTerritory = availableTerritories.find((item) => item.id === territoryId);
   const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
   const decidedRequests = requests.filter((request) => request.status !== "SUBMITTED");
@@ -83,11 +86,16 @@ export default function PlanningPage() {
         const privileged = currentSession.employee.roles.some((role) =>
           ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role.roleCode),
         );
+        const driverDay = currentSession.employee.roles.some((role) => role.roleCode === "DRIVER")
+          ? await getDriverLogisticsDay(selectedDate)
+          : null;
+        const effectiveAllowed = [...allowed, ...(driverDay?.availableTerritoryIds ?? [])];
         const firstTerritory = currentSetup.territories.find(
-          (territory) => privileged || allowed.includes(territory.id),
+          (territory) => privileged || effectiveAllowed.includes(territory.id),
         );
         setSession(currentSession);
         setSetup(currentSetup);
+        setDriverTerritoryIds(driverDay?.availableTerritoryIds ?? []);
         setTerritoryId((current) => current || firstTerritory?.id || "");
         if (currentSession.employee.roles.some((role) => role.roleCode === "ADMIN")) {
           setRequests(await listNormChangeRequests());
@@ -102,6 +110,20 @@ export default function PlanningPage() {
     }
     void load();
   }, [router]);
+
+  useEffect(() => {
+    if (!isDriver || session === null) return;
+    void getDriverLogisticsDay(selectedDate)
+      .then((day) => {
+        setDriverTerritoryIds(day.availableTerritoryIds);
+        setTerritoryId((current) =>
+          day.availableTerritoryIds.includes(current)
+            ? current
+            : (day.availableTerritoryIds[0] ?? ""),
+        );
+      })
+      .catch((caught) => setError(messageOf(caught)));
+  }, [isDriver, selectedDate, session]);
 
   useEffect(() => {
     if (territoryId === "") return;

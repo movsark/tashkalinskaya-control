@@ -36,9 +36,9 @@ function createInvitationService() {
       id: "10000000-0000-4000-8000-000000000020",
       roleCode: "DRIVER",
       roleDisplayName: "Водитель",
-      scopeDisplayName: "Территория 9",
-      scopeId: "10000000-0000-4000-8000-000000000021",
-      scopeType: "TERRITORY",
+      scopeDisplayName: null,
+      scopeId: null,
+      scopeType: "FACTORY",
     }),
   };
   const crypto = {
@@ -166,15 +166,14 @@ describe("EmployeesService role boundaries", () => {
     });
   });
 
-  it("issues a one-time invitation for the administrator-selected scoped role", async () => {
+  it("issues a driver invitation without a permanent territory", async () => {
     const { repository, service } = createInvitationService();
 
     const result = await service.createInvitation(
       {
         role: {
           roleCode: "DRIVER",
-          scopeId: "10000000-0000-4000-8000-000000000021",
-          scopeType: "TERRITORY",
+          scopeType: "FACTORY",
         },
       },
       "10000000-0000-4000-8000-000000000022",
@@ -184,13 +183,13 @@ describe("EmployeesService role boundaries", () => {
     expect(result).toMatchObject({
       invitationCode: "one-time-invitation-code",
       roleDisplayName: "Водитель",
-      scopeDisplayName: "Территория 9",
+      scopeDisplayName: null,
     });
     expect(repository.createEmployeeInvitation).toHaveBeenCalledWith(
       expect.objectContaining({
         roleCode: "DRIVER",
-        scopeId: "10000000-0000-4000-8000-000000000021",
-        scopeType: "TERRITORY",
+        scopeId: null,
+        scopeType: "FACTORY",
         tokenHash: "invitation-hash",
       }),
     );

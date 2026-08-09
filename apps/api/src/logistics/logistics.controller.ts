@@ -16,9 +16,11 @@ import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identi
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   CreateDefaultAssignmentDto,
+  CreateDriverTerritoryRequestDto,
   CreateExtraRunDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
+  DecideDriverTerritoryRequestDto,
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
@@ -119,6 +121,34 @@ export class LogisticsController {
   @RequireRoles("DRIVER")
   driverDay(@Param("dispatchDate") dispatchDate: string, @Req() request: AuthenticatedRequest) {
     return this.logistics.driverDay(dispatchDate, requireActorId(request));
+  }
+
+  @Post("me/territory-requests")
+  @RequireRoles("DRIVER")
+  createDriverTerritoryRequest(
+    @Body() dto: CreateDriverTerritoryRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.logistics.createDriverTerritoryRequest(
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("territory-requests/:requestId/decision")
+  @RequireRoles("ADMIN")
+  decideDriverTerritoryRequest(
+    @Param("requestId", ParseUUIDPipe) requestId: string,
+    @Body() dto: DecideDriverTerritoryRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.logistics.decideDriverTerritoryRequest(
+      requestId,
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
   }
 
   @Get("warehouse/days/:dispatchDate")

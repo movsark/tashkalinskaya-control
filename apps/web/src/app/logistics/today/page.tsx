@@ -13,6 +13,7 @@ import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
   confirmLoadingByDriver,
+  createDriverTerritoryRequest,
   getDriverLogisticsDay,
   getLoadingDriverDay,
   getSession,
@@ -35,6 +36,8 @@ export default function DriverLogisticsPage() {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [requestedTerritoryId, setRequestedTerritoryId] = useState("");
+  const [requestReason, setRequestReason] = useState("");
 
   async function reload(date = dispatchDate) {
     const [nextRoutes, nextLoading] = await Promise.all([
@@ -133,6 +136,83 @@ export default function DriverLogisticsPage() {
       </section>
       {error ? <p className="form-error loading-message">{error}</p> : null}
       {success ? <p className="logistics-success loading-message">{success}</p> : null}
+
+      <section className="driver-territory-request">
+        <div>
+          <p className="eyebrow">Замена на день</p>
+          <h2>Запросить другую территорию</h2>
+          <p>
+            Постоянная территория не изменится. Назначение начнёт действовать только после
+            подтверждения администратора.
+          </p>
+        </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void command(
+              "territory-request",
+              async () => {
+                await createDriverTerritoryRequest(
+                  {
+                    dispatchDate,
+                    reason: requestReason,
+                    territoryId: requestedTerritoryId,
+                  },
+                  csrf(),
+                );
+                setRequestedTerritoryId("");
+                setRequestReason("");
+              },
+              "Запрос отправлен администратору",
+            );
+          }}
+        >
+          <label>
+            Территория
+            <select
+              onChange={(event) => setRequestedTerritoryId(event.target.value)}
+              required
+              value={requestedTerritoryId}
+            >
+              <option value="">Выберите территорию</option>
+              {routes?.territories.map((territory) => (
+                <option key={territory.id} value={territory.id}>
+                  Территория {territory.number} · {territory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Причина
+            <input
+              minLength={2}
+              onChange={(event) => setRequestReason(event.target.value)}
+              placeholder="Например: заменяю заболевшего водителя"
+              required
+              value={requestReason}
+            />
+          </label>
+          <button
+            className="primary-button"
+            disabled={busyId === "territory-request"}
+            type="submit"
+          >
+            {busyId === "territory-request" ? "Отправляем…" : "Отправить запрос"}
+          </button>
+        </form>
+        {routes?.requests.length ? (
+          <div className="driver-territory-request__history">
+            {routes.requests.map((request) => (
+              <article key={request.id}>
+                <strong>Территория {request.territoryNumber}</strong>
+                <span>{driverRequestStatus(request.status)}</span>
+                <small>{request.reason}</small>
+                {request.decisionComment ? <small>{request.decisionComment}</small> : null}
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       {loading?.priorityReturns.length ? (
         <section className="driver-return-priority">
@@ -422,6 +502,12 @@ function sessionStatus(value: string): string {
       } as Record<string, string>
     )[value] ?? value
   );
+}
+
+function driverRequestStatus(status: "APPROVED" | "REJECTED" | "SUBMITTED"): string {
+  if (status === "APPROVED") return "Подтверждено";
+  if (status === "REJECTED") return "Отклонено";
+  return "Ожидает администратора";
 }
 
 function timeLabel(value: string): string {
