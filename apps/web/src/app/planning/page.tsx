@@ -9,7 +9,7 @@ import type {
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
@@ -606,13 +606,23 @@ function DriverRequestForm({
   onSubmit: (input: Parameters<typeof createNormChangeRequest>[0]) => Promise<void>;
   territoryId: string;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">("ONE_OFF");
   const [quantity, setQuantity] = useState(String(norm.quantity));
   const [comment, setComment] = useState("");
   const weekday = isoWeekday(date);
   const effectiveUntil = monthEnd(date);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   return (
     <form
+      aria-live="polite"
       className="logistics-form planning-form driver-inline-request"
       onSubmit={(event) => {
         event.preventDefault();
@@ -628,6 +638,7 @@ function DriverRequestForm({
             : { ...common, dispatchDate: date },
         );
       }}
+      ref={formRef}
     >
       <p className="eyebrow">Запрос администратору</p>
       <h2>{norm.productName}</h2>
