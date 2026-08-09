@@ -3709,11 +3709,14 @@ select:focus {
 }
 
 .planning-decision {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.planning-decision input {
-  grid-column: 1 / -1;
+.planning-requester-comment {
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: #f3f7f5;
 }
 
 .planning-history .planning-request-card {
@@ -5746,10 +5749,6 @@ select:focus {
 
   .planning-decision {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .planning-decision input {
-    grid-column: 1 / -1;
   }
 
   .planning-demand-line dl {

@@ -1151,6 +1151,45 @@ test.describe("B20 browser and HTTP regression", () => {
         territoryId: territories[2].id,
       }),
     );
+    await page.route("**/api/v1/planning/requests", (route) =>
+      json(route, [
+        {
+          decisionComment: null,
+          dispatchDate: "2026-08-10",
+          dispatchWeekday: null,
+          effectiveFrom: null,
+          effectiveUntil: null,
+          id: "20000000-0000-4000-8000-000000000108",
+          kind: "ONE_OFF",
+          lines: [
+            {
+              baseQuantity: 7,
+              productCode: "SV-001",
+              productId: dryProductId,
+              productName: "СВ Печенье тестовое",
+              proposedQuantity: 9,
+            },
+          ],
+          requesterComment: "Нужно увеличить на две штуки",
+          requesterEmployeeId: "20000000-0000-4000-8000-000000000109",
+          requesterName: "Тестовый водитель",
+          status: "SUBMITTED",
+          submittedAt: "2026-08-09T19:00:00.000Z",
+          territoryId: territories[2].id,
+          territoryNumber: 3,
+          version: 1,
+        },
+      ]),
+    );
+    await page.route("**/api/v1/planning/weeks/*", (route) =>
+      json(route, {
+        calendar: [],
+        norms: [],
+        requests: [],
+        territoryId: territories[0].id,
+        weekStart: "2026-08-10",
+      }),
+    );
     await page.route("**/api/v1/planning/plans/*", (route) =>
       json(route, {
         attempts: 1,
@@ -1196,6 +1235,14 @@ test.describe("B20 browser and HTTP regression", () => {
         warnings: ["INVENTORY_NOT_CONFIRMED"],
       }),
     );
+
+    await page.goto("/planning");
+    await expect(page.locator(".planning-requester-comment")).toContainText(
+      "Комментарий водителя: Нужно увеличить на две штуки",
+    );
+    await expect(page.getByPlaceholder("Причина решения")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Утвердить", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Отклонить", exact: true })).toBeEnabled();
 
     await page.goto("/planning/plan");
     await expect(page.getByRole("heading", { level: 1, name: "План производства" })).toBeVisible();

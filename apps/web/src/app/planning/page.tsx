@@ -75,7 +75,11 @@ export default function PlanningPage() {
   }, [driverTerritoryIds, session, setup]);
   const selectedTerritory = availableTerritories.find((item) => item.id === territoryId);
   const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
-  const decidedRequests = requests.filter((request) => request.status !== "SUBMITTED");
+  const decidedRequests = requests.filter(
+    (request) =>
+      request.status !== "SUBMITTED" &&
+      !(request.status === "STALE" && request.decisionComment === "Заменён водителем"),
+  );
   const weekTotal = week?.norms.reduce((sum, norm) => sum + norm.quantity, 0) ?? 0;
   const days = weekDays(weekStart);
   const selectedDay = days.find((day) => day.date === selectedDate) ?? days[0]!;
@@ -866,7 +870,6 @@ function RequestCard({
   onDecision: (decision: "APPROVE" | "REJECT", comment: string) => Promise<void>;
   request: NormChangeRequestView;
 }) {
-  const [comment, setComment] = useState("");
   return (
     <article className="planning-request-card">
       <div>
@@ -890,24 +893,24 @@ function RequestCard({
           </span>
         ))}
       </div>
+      {request.requesterComment ? (
+        <p className="planning-requester-comment">
+          <strong>Комментарий водителя:</strong> {request.requesterComment}
+        </p>
+      ) : null}
       {request.status === "SUBMITTED" ? (
         <div className="planning-decision">
-          <input
-            placeholder="Причина решения"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-          />
           <button
             className="primary-button"
-            disabled={busy || comment.trim().length < 3}
-            onClick={() => void onDecision("APPROVE", comment)}
+            disabled={busy}
+            onClick={() => void onDecision("APPROVE", "Утверждено администратором")}
           >
             Утвердить
           </button>
           <button
             className="secondary-button"
-            disabled={busy || comment.trim().length < 3}
-            onClick={() => void onDecision("REJECT", comment)}
+            disabled={busy}
+            onClick={() => void onDecision("REJECT", "Отклонено администратором")}
           >
             Отклонить
           </button>
