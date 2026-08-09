@@ -794,7 +794,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a driver sees a compact weekly norm and opens change form only when needed", async ({
+  test("a driver switches weekdays and chooses one date or the rest of the month", async ({
     page,
   }) => {
     const territoryId = "20000000-0000-4000-8000-000000000090";
@@ -879,16 +879,15 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
-    const productInDay = page.locator(".planning-day-content").getByText("Торт тестовый", {
-      exact: true,
-    });
-    await expect(productInDay).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Предложить изменение" })).not.toBeVisible();
-
-    await page.locator(".planning-day > summary").filter({ hasText: "Понедельник" }).click();
-    await expect(productInDay).toBeVisible();
-    await page.getByText("Предложить изменение нормы", { exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Предложить изменение" })).toBeVisible();
+    await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
+    const friday = page.locator(".driver-weekday-switcher button").filter({ hasText: "Пт" });
+    await expect(friday).toBeDisabled();
+    await expect(friday).toContainText("выходной");
+    await page.getByRole("button", { name: "Изменить" }).click();
+    await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
+    await page.getByLabel("Как изменить").selectOption("MONTH_WEEKDAY");
+    await expect(page.getByLabel("Как изменить")).toHaveValue("MONTH_WEEKDAY");
+    await expect(page.getByLabel("Как изменить")).toContainText(/Каждый понедельник до/);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

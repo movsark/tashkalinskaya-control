@@ -439,7 +439,7 @@ export interface LogisticsDayView {
   };
 }
 
-export type NormRequestKind = "ONE_OFF" | "PERMANENT";
+export type NormRequestKind = "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
 export type NormRequestStatus = "APPROVED" | "MISSED_CUTOFF" | "REJECTED" | "STALE" | "SUBMITTED";
 
 export interface PlanningProductView {
@@ -465,7 +465,7 @@ export interface WeeklyNormView {
   readonly productId: string;
   readonly productName: string;
   readonly quantity: number;
-  readonly source: "ADMIN" | "DRIVER_REQUEST" | "IMPORT";
+  readonly source: "ADMIN" | "DAILY" | "DRIVER_REQUEST" | "IMPORT" | "ONE_OFF";
   readonly territoryId: string;
   readonly validFrom: string;
   readonly validUntil: string | null;
@@ -498,6 +498,7 @@ export interface NormChangeRequestView {
   readonly dispatchDate: string | null;
   readonly dispatchWeekday: number | null;
   readonly effectiveFrom: string | null;
+  readonly effectiveUntil: string | null;
   readonly id: string;
   readonly kind: NormRequestKind;
   readonly lines: readonly NormChangeRequestLineView[];

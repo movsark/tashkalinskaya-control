@@ -53,8 +53,8 @@ export class SaveTerritoryDailyNormDto {
 }
 
 export class CreateNormRequestDto {
-  @IsIn(["PERMANENT", "ONE_OFF"])
-  kind!: "PERMANENT" | "ONE_OFF";
+  @IsIn(["MONTH_WEEKDAY", "PERMANENT", "ONE_OFF"])
+  kind!: "MONTH_WEEKDAY" | "PERMANENT" | "ONE_OFF";
 
   @IsUUID()
   territoryId!: string;
@@ -72,6 +72,10 @@ export class CreateNormRequestDto {
   @IsOptional()
   @IsDateString()
   effectiveFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveUntil?: string;
 
   @IsArray()
   @ArrayMinSize(1)

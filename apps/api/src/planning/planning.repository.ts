@@ -56,6 +56,7 @@ interface RequestRow {
   readonly dispatch_date: string | null;
   readonly dispatch_weekday: number | null;
   readonly effective_from: string | null;
+  readonly effective_until: string | null;
   readonly id: string;
   readonly lines: Array<{
     baseQuantity: number;
@@ -88,6 +89,7 @@ const requestSelect = `
   select
     r.id, r.request_kind, r.territory_id, t.territory_number,
     r.dispatch_weekday, r.dispatch_date::text, r.effective_from::text,
+    r.effective_until::text,
     r.status, r.requester_employee_id, e.full_name as requester_name,
     r.requester_comment, r.decision_comment, r.submitted_at, r.version,
     coalesce(jsonb_agg(jsonb_build_object(
@@ -345,16 +347,55 @@ export class PlanningRepository {
     const [norms, calendar, requests] = await Promise.all([
       this.database.query<NormRow>(
         `
-          select distinct on (n.weekday, n.product_id)
-                 n.id, n.territory_id, n.weekday, n.product_id, p.product_code,
-                 p.name as product_name, n.quantity, n.valid_from::text,
-                 n.valid_until::text, n.source
-          from planning.weekly_norm n
-          join catalog.product p on p.id = n.product_id
-          where n.territory_id = $1
-            and n.valid_from <= $2::date + (n.weekday - 1)
-            and (n.valid_until is null or n.valid_until >= $2::date + (n.weekday - 1))
-          order by n.weekday, n.product_id, n.valid_from desc
+          with days as (
+            select day::date as dispatch_date,
+                   extract(isodow from day)::integer as weekday
+            from generate_series($2::date, $2::date + 6, interval '1 day') day
+          ), candidates as (
+            select d.dispatch_date, d.weekday, n.product_id
+            from days d
+            join planning.weekly_norm n on n.territory_id = $1 and n.weekday = d.weekday
+              and n.valid_from <= d.dispatch_date
+              and (n.valid_until is null or n.valid_until >= d.dispatch_date)
+            union
+            select d.dispatch_date, d.weekday, n.product_id
+            from days d
+            join planning.territory_daily_norm n on n.territory_id = $1
+              and n.dispatch_date = d.dispatch_date and n.is_current
+            union
+            select d.dispatch_date, d.weekday, n.product_id
+            from days d
+            join planning.one_off_norm_override n on n.territory_id = $1
+              and n.dispatch_date = d.dispatch_date and n.is_current
+          )
+          select coalesce(o.id, dn.id, wn.id) as id, $1::uuid as territory_id,
+                 c.weekday, c.product_id, p.product_code, p.name as product_name,
+                 coalesce(o.quantity, dn.quantity, wn.quantity, 0)::integer as quantity,
+                 c.dispatch_date::text as valid_from, c.dispatch_date::text as valid_until,
+                 case when o.id is not null then 'ONE_OFF'
+                      when dn.id is not null then 'DAILY'
+                      else wn.source end as source
+          from candidates c
+          join catalog.product p on p.id = c.product_id and p.status = 'ACTIVE'
+          left join lateral (
+            select id, quantity from planning.one_off_norm_override
+            where territory_id = $1 and dispatch_date = c.dispatch_date
+              and product_id = c.product_id and is_current limit 1
+          ) o on true
+          left join lateral (
+            select id, quantity from planning.territory_daily_norm
+            where territory_id = $1 and dispatch_date = c.dispatch_date
+              and product_id = c.product_id and is_current limit 1
+          ) dn on true
+          left join lateral (
+            select id, quantity, source from planning.weekly_norm
+            where territory_id = $1 and weekday = c.weekday and product_id = c.product_id
+              and valid_from <= c.dispatch_date
+              and (valid_until is null or valid_until >= c.dispatch_date)
+            order by valid_from desc limit 1
+          ) wn on true
+          where coalesce(o.quantity, dn.quantity, wn.quantity, 0) > 0
+          order by c.weekday, p.name, p.product_code
         `,
         [territoryId, weekStart],
       ),
@@ -505,7 +546,8 @@ export class PlanningRepository {
     dispatchDate: string | null;
     dispatchWeekday: number | null;
     effectiveFrom: string | null;
-    kind: "ONE_OFF" | "PERMANENT";
+    effectiveUntil: string | null;
+    kind: "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
     lines: ReadonlyArray<{ productId: string; quantity: number }>;
     territoryId: string;
   }): Promise<NormChangeRequestView> {
@@ -527,19 +569,12 @@ export class PlanningRepository {
 
       const referenceDate =
         command.kind === "ONE_OFF" ? command.dispatchDate! : command.effectiveFrom!;
-      const weekday =
-        command.kind === "ONE_OFF" ? isoWeekday(command.dispatchDate!) : command.dispatchWeekday!;
-      const base = await client.query<{ id: string; product_id: string; quantity: number }>(
-        `
-          select distinct on (product_id) id, product_id, quantity
-          from planning.weekly_norm
-          where territory_id = $1 and weekday = $2 and product_id = any($3::uuid[])
-            and valid_from <= $4 and (valid_until is null or valid_until >= $4)
-          order by product_id, valid_from desc
-        `,
-        [command.territoryId, weekday, productIds, referenceDate],
+      const baseByProduct = await loadEffectiveNormBases(
+        client,
+        command.territoryId,
+        referenceDate,
+        productIds,
       );
-      const baseByProduct = new Map(base.rows.map((row) => [row.product_id, row]));
       const cutoffState = await client.query<{ missed: boolean }>(
         `select ($1::timestamptz is not null and now() >= $1::timestamptz) as missed`,
         [authorization.cutoffAt],
@@ -548,10 +583,10 @@ export class PlanningRepository {
       await client.query(
         `insert into planning.norm_change_request (
            id, request_kind, territory_id, dispatch_weekday, dispatch_date,
-           effective_from, calendar_link_id, base_assignment_id, base_run_id, status,
+           effective_from, effective_until, calendar_link_id, base_assignment_id, base_run_id, status,
            requester_employee_id, requester_comment, decided_at, correlation_id
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                   case when $10 = 'MISSED_CUTOFF' then now() else null end, $13)`,
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                   case when $11 = 'MISSED_CUTOFF' then now() else null end, $14)`,
         [
           requestId,
           command.kind,
@@ -559,6 +594,7 @@ export class PlanningRepository {
           command.dispatchWeekday,
           command.dispatchDate,
           command.effectiveFrom,
+          command.effectiveUntil,
           authorization.calendarLinkId,
           authorization.assignmentId,
           authorization.runId,
@@ -572,13 +608,16 @@ export class PlanningRepository {
         const current = baseByProduct.get(line.productId);
         await client.query(
           `insert into planning.norm_change_request_line (
-             id, request_id, product_id, base_norm_id, base_quantity, proposed_quantity
-           ) values ($1, $2, $3, $4, $5, $6)`,
+             id, request_id, product_id, base_norm_id, base_daily_norm_id,
+             base_override_id, base_quantity, proposed_quantity
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             randomUUID(),
             requestId,
             line.productId,
-            current?.id ?? null,
+            current?.weeklyNormId ?? null,
+            current?.dailyNormId ?? null,
+            current?.overrideId ?? null,
             current?.quantity ?? 0,
             line.quantity,
           ],
@@ -618,14 +657,16 @@ export class PlanningRepository {
         dispatch_date: string | null;
         dispatch_weekday: number | null;
         effective_from: string | null;
-        request_kind: "ONE_OFF" | "PERMANENT";
+        effective_until: string | null;
+        request_kind: "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
         requester_employee_id: string;
         status: string;
         territory_id: string;
         version: number;
       }>(
         `select id, request_kind, territory_id, dispatch_weekday, dispatch_date::text,
-                effective_from::text, calendar_link_id, base_assignment_id, base_run_id,
+                effective_from::text, effective_until::text, calendar_link_id,
+                base_assignment_id, base_run_id,
                 requester_employee_id, status, version
          from planning.norm_change_request where id = $1 for update`,
         [command.requestId],
@@ -640,11 +681,13 @@ export class PlanningRepository {
         return;
       }
       const lines = await client.query<{
+        base_daily_norm_id: string | null;
         base_norm_id: string | null;
+        base_override_id: string | null;
         product_id: string;
         proposed_quantity: number;
       }>(
-        `select product_id, base_norm_id, proposed_quantity
+        `select product_id, base_norm_id, base_daily_norm_id, base_override_id, proposed_quantity
          from planning.norm_change_request_line where request_id = $1 order by product_id`,
         [command.requestId],
       );
@@ -691,43 +734,34 @@ export class PlanningRepository {
             );
           }
         }
-      } else {
+      } else if (request.request_kind === "ONE_OFF") {
         for (const line of lines.rows) {
-          await client.query(
-            `select id from planning.one_off_norm_override
-             where territory_id = $1 and dispatch_date = $2 and product_id = $3
-             for update`,
-            [request.territory_id, request.dispatch_date, line.product_id],
-          );
-          const previous = await client.query<{ next_version: number }>(
-            `select coalesce(max(version), 0) + 1 as next_version
-             from planning.one_off_norm_override
-             where territory_id = $1 and dispatch_date = $2 and product_id = $3`,
-            [request.territory_id, request.dispatch_date, line.product_id],
-          );
-          await client.query(
-            `update planning.one_off_norm_override
-             set is_current = false, superseded_at = now()
-             where territory_id = $1 and dispatch_date = $2 and product_id = $3
-               and is_current`,
-            [request.territory_id, request.dispatch_date, line.product_id],
-          );
-          await client.query(
-            `insert into planning.one_off_norm_override (
-               id, territory_id, dispatch_date, product_id, quantity,
-               request_id, approved_by, version
-             ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [
-              randomUUID(),
-              request.territory_id,
-              request.dispatch_date,
-              line.product_id,
-              line.proposed_quantity,
-              command.requestId,
-              command.actorEmployeeId,
-              previous.rows[0]!.next_version,
-            ],
-          );
+          await saveOneOffOverride(client, {
+            approvedBy: command.actorEmployeeId,
+            dispatchDate: request.dispatch_date!,
+            productId: line.product_id,
+            quantity: line.proposed_quantity,
+            requestId: command.requestId,
+            territoryId: request.territory_id,
+          });
+        }
+      } else {
+        const dates = sameWeekdayDates(
+          request.effective_from!,
+          request.effective_until!,
+          request.dispatch_weekday!,
+        );
+        for (const dispatchDate of dates) {
+          for (const line of lines.rows) {
+            await saveOneOffOverride(client, {
+              approvedBy: command.actorEmployeeId,
+              dispatchDate,
+              productId: line.product_id,
+              quantity: line.proposed_quantity,
+              requestId: command.requestId,
+              territoryId: request.territory_id,
+            });
+          }
         }
       }
       await finalizeRequest(client, command, "APPROVED");
@@ -749,13 +783,135 @@ export class PlanningRepository {
   }
 }
 
+interface EffectiveNormBase {
+  readonly dailyNormId: string | null;
+  readonly overrideId: string | null;
+  readonly quantity: number;
+  readonly weeklyNormId: string | null;
+  readonly weeklyValidFrom: string | null;
+}
+
+async function loadEffectiveNormBases(
+  client: PoolClient,
+  territoryId: string,
+  dispatchDate: string,
+  productIds: readonly string[],
+): Promise<Map<string, EffectiveNormBase>> {
+  const result = await client.query<{
+    daily_norm_id: string | null;
+    override_id: string | null;
+    product_id: string;
+    quantity: number;
+    weekly_norm_id: string | null;
+    weekly_valid_from: string | null;
+  }>(
+    `select requested.product_id,
+            weekly.id as weekly_norm_id, weekly.valid_from::text as weekly_valid_from,
+            daily.id as daily_norm_id, override.id as override_id,
+            coalesce(override.quantity, daily.quantity, weekly.quantity, 0)::integer as quantity
+     from unnest($3::uuid[]) requested(product_id)
+     left join lateral (
+       select id, quantity, valid_from
+       from planning.weekly_norm
+       where territory_id = $1 and weekday = extract(isodow from $2::date)
+         and product_id = requested.product_id
+         and valid_from <= $2::date and (valid_until is null or valid_until >= $2::date)
+       order by valid_from desc limit 1
+     ) weekly on true
+     left join lateral (
+       select id, quantity from planning.territory_daily_norm
+       where territory_id = $1 and dispatch_date = $2::date
+         and product_id = requested.product_id and is_current limit 1
+     ) daily on true
+     left join lateral (
+       select id, quantity from planning.one_off_norm_override
+       where territory_id = $1 and dispatch_date = $2::date
+         and product_id = requested.product_id and is_current limit 1
+     ) override on true`,
+    [territoryId, dispatchDate, productIds],
+  );
+  return new Map(
+    result.rows.map((row) => [
+      row.product_id,
+      {
+        dailyNormId: row.daily_norm_id,
+        overrideId: row.override_id,
+        quantity: row.quantity,
+        weeklyNormId: row.weekly_norm_id,
+        weeklyValidFrom: row.weekly_valid_from,
+      },
+    ]),
+  );
+}
+
+async function saveOneOffOverride(
+  client: PoolClient,
+  input: {
+    approvedBy: string;
+    dispatchDate: string;
+    productId: string;
+    quantity: number;
+    requestId: string;
+    territoryId: string;
+  },
+): Promise<void> {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `planning:one-off:${input.territoryId}:${input.dispatchDate}:${input.productId}`,
+  ]);
+  await client.query(
+    `select id from planning.one_off_norm_override
+     where territory_id = $1 and dispatch_date = $2 and product_id = $3
+     for update`,
+    [input.territoryId, input.dispatchDate, input.productId],
+  );
+  const previous = await client.query<{ next_version: number }>(
+    `select coalesce(max(version), 0) + 1 as next_version
+     from planning.one_off_norm_override
+     where territory_id = $1 and dispatch_date = $2 and product_id = $3`,
+    [input.territoryId, input.dispatchDate, input.productId],
+  );
+  await client.query(
+    `update planning.one_off_norm_override
+     set is_current = false, superseded_at = now()
+     where territory_id = $1 and dispatch_date = $2 and product_id = $3 and is_current`,
+    [input.territoryId, input.dispatchDate, input.productId],
+  );
+  await client.query(
+    `insert into planning.one_off_norm_override (
+       id, territory_id, dispatch_date, product_id, quantity,
+       request_id, approved_by, version
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      randomUUID(),
+      input.territoryId,
+      input.dispatchDate,
+      input.productId,
+      input.quantity,
+      input.requestId,
+      input.approvedBy,
+      previous.rows[0]!.next_version,
+    ],
+  );
+}
+
+function sameWeekdayDates(from: string, until: string, weekday: number): string[] {
+  const dates: string[] = [];
+  let current = from;
+  while (current <= until) {
+    if (isoWeekday(current) === weekday) dates.push(current);
+    current = addDays(current, 1);
+  }
+  return dates;
+}
+
 async function resolveDriverAuthorization(
   client: PoolClient,
   command: {
     actorEmployeeId: string;
     dispatchDate: string | null;
     effectiveFrom: string | null;
-    kind: "ONE_OFF" | "PERMANENT";
+    effectiveUntil: string | null;
+    kind: "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
     territoryId: string;
   },
 ): Promise<{
@@ -764,16 +920,19 @@ async function resolveDriverAuthorization(
   cutoffAt: Date | null;
   runId: string | null;
 }> {
-  if (command.kind === "PERMANENT") {
+  if (command.kind !== "ONE_OFF") {
     const assignment = await client.query<{ id: string }>(
       `select id from logistics.territory_default_assignment
        where territory_id = $1 and driver_employee_id = $2
          and valid_from <= $3 and (valid_to is null or valid_to >= $3)
+         and ($4::date is null or valid_to is null or valid_to >= $4)
        order by valid_from desc limit 1`,
-      [command.territoryId, command.actorEmployeeId, command.effectiveFrom],
+      [command.territoryId, command.actorEmployeeId, command.effectiveFrom, command.effectiveUntil],
     );
     if (assignment.rows[0] === undefined) {
-      throw new ForbiddenException("Постоянную норму меняет только основной водитель территории");
+      throw new ForbiddenException(
+        "Повторяющуюся норму меняет только основной водитель территории",
+      );
     }
     return {
       assignmentId: assignment.rows[0].id,
@@ -823,29 +982,44 @@ async function isRequestStale(
     calendar_link_id: string | null;
     dispatch_date: string | null;
     requester_employee_id: string;
-    request_kind: "ONE_OFF" | "PERMANENT";
+    request_kind: "MONTH_WEEKDAY" | "ONE_OFF" | "PERMANENT";
     territory_id: string;
   },
-  lines: ReadonlyArray<{ base_norm_id: string | null; product_id: string }>,
+  lines: ReadonlyArray<{
+    base_daily_norm_id: string | null;
+    base_norm_id: string | null;
+    base_override_id: string | null;
+    product_id: string;
+  }>,
   weekday: number,
   referenceDate: string,
 ): Promise<boolean> {
-  const current = await client.query<{ id: string; product_id: string; valid_from: string }>(
-    `select distinct on (product_id) id, product_id, valid_from::text from planning.weekly_norm
-     where territory_id = $1 and weekday = $2 and product_id = any($3::uuid[])
-       and valid_from <= $4 and (valid_until is null or valid_until >= $4)
-     order by product_id, valid_from desc`,
-    [request.territory_id, weekday, lines.map((line) => line.product_id), referenceDate],
+  const current = await loadEffectiveNormBases(
+    client,
+    request.territory_id,
+    referenceDate,
+    lines.map((line) => line.product_id),
   );
-  const ids = new Map(current.rows.map((row) => [row.product_id, row.id]));
-  if (lines.some((line) => (ids.get(line.product_id) ?? null) !== line.base_norm_id)) return true;
+  if (
+    lines.some((line) => {
+      const base = current.get(line.product_id);
+      return (
+        (base?.weeklyNormId ?? null) !== line.base_norm_id ||
+        (base?.dailyNormId ?? null) !== line.base_daily_norm_id ||
+        (base?.overrideId ?? null) !== line.base_override_id
+      );
+    })
+  )
+    return true;
   if (
     request.request_kind === "PERMANENT" &&
-    current.rows.some((row) => row.valid_from >= referenceDate)
+    [...current.values()].some(
+      (row) => row.weeklyValidFrom !== null && row.weeklyValidFrom >= referenceDate,
+    )
   ) {
     return true;
   }
-  if (request.request_kind === "PERMANENT") {
+  if (request.request_kind !== "ONE_OFF") {
     const assignment = await client.query(
       `select 1 from logistics.territory_default_assignment
        where id = $1 and territory_id = $2 and driver_employee_id = $3
@@ -994,6 +1168,7 @@ function mapRequest(row: RequestRow): NormChangeRequestView {
     dispatchDate: row.dispatch_date,
     dispatchWeekday: row.dispatch_weekday,
     effectiveFrom: row.effective_from,
+    effectiveUntil: row.effective_until,
     id: row.id,
     kind: row.request_kind,
     lines: row.lines,
