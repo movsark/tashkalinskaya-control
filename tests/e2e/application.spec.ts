@@ -984,6 +984,18 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("button", { name: /Сухая выпечка/ })).toContainText("7 шт.");
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Включить группировку" }).click();
+    const dryGroup = page.locator("details.driver-norm-group").filter({
+      has: page.getByText("Сухая выпечка", { exact: true }),
+    });
+    await expect(dryGroup).toContainText("1 тов. · 7 шт.");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+    await dryGroup.locator("summary").click();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
+    await page.getByRole("button", { name: "Отключить группировку" }).click();
+    await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Сухая выпечка/ }).click();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     await expect(page.getByText("Торт тестовый", { exact: true })).toHaveCount(0);

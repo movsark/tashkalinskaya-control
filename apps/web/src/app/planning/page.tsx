@@ -43,6 +43,7 @@ export default function PlanningPage() {
   const [homeTerritoryId, setHomeTerritoryId] = useState("");
   const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
   const [selectedProductGroup, setSelectedProductGroup] = useState("ALL");
+  const [groupProducts, setGroupProducts] = useState(false);
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -358,7 +359,24 @@ export default function PlanningPage() {
             <p className="eyebrow">Текущая неделя</p>
             <h2>Норма по дням</h2>
           </div>
-          <span>Нажмите день, чтобы увидеть товары</span>
+          {isDriver ? (
+            <div className="driver-grouping-toggle">
+              <span>Нажмите день, чтобы увидеть товары</span>
+              <button
+                aria-pressed={groupProducts}
+                type="button"
+                onClick={() => {
+                  setGroupProducts((current) => !current);
+                  setSelectedProductGroup("ALL");
+                  setEditingNorm(null);
+                }}
+              >
+                {groupProducts ? "Отключить группировку" : "Включить группировку"}
+              </button>
+            </div>
+          ) : (
+            <span>Нажмите день, чтобы увидеть товары</span>
+          )}
         </div>
         {isDriver ? (
           <>
@@ -422,59 +440,79 @@ export default function PlanningPage() {
                 </div>
                 <strong>{selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.</strong>
               </header>
-              <nav className="driver-norm-group-switcher" aria-label="Группы продукции">
-                <button
-                  aria-pressed={selectedProductGroup === "ALL"}
-                  className={selectedProductGroup === "ALL" ? "is-active" : ""}
-                  onClick={() => {
-                    setSelectedProductGroup("ALL");
-                    setEditingNorm(null);
-                  }}
-                  type="button"
-                >
-                  <strong>Все товары</strong>
-                  <span>
-                    {selectedNorms.length} тов. ·{" "}
-                    {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
-                  </span>
-                </button>
-                {driverProductGroups.map((group) => (
-                  <button
-                    aria-pressed={selectedProductGroup === group.code}
-                    className={selectedProductGroup === group.code ? "is-active" : ""}
-                    key={group.code}
-                    onClick={() => {
-                      setSelectedProductGroup(group.code);
-                      setEditingNorm(null);
-                    }}
-                    type="button"
-                  >
-                    <strong>{group.name}</strong>
-                    <span>
-                      {group.count} тов. · {group.total} шт.
-                    </span>
-                  </button>
-                ))}
-              </nav>
-              <div className="driver-selected-norm__lines">
-                {visibleSelectedNorms.length ? (
-                  visibleSelectedNorms.map((norm) => (
-                    <div key={norm.id}>
-                      <span>{norm.productName}</span>
-                      <strong>{norm.quantity} шт.</strong>
-                      <button type="button" onClick={() => setEditingNorm(norm)}>
-                        Изменить
+              {groupProducts ? (
+                <div className="driver-norm-accordion" aria-label="Норма по группам продукции">
+                  {driverProductGroups.map((group) => {
+                    const groupNorms = selectedNorms.filter((norm) =>
+                      setup?.products.some(
+                        (product) =>
+                          product.id === norm.productId && product.categoryCode === group.code,
+                      ),
+                    );
+                    return (
+                      <details className="driver-norm-group" key={group.code}>
+                        <summary>
+                          <strong>{group.name}</strong>
+                          <span>
+                            {group.count} тов. · {group.total} шт.
+                          </span>
+                        </summary>
+                        <NormProductLines
+                          emptyMessage="В этой группе на выбранный день товаров нет."
+                          norms={groupNorms}
+                          onEdit={setEditingNorm}
+                        />
+                      </details>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <nav className="driver-norm-group-switcher" aria-label="Группы продукции">
+                    <button
+                      aria-pressed={selectedProductGroup === "ALL"}
+                      className={selectedProductGroup === "ALL" ? "is-active" : ""}
+                      onClick={() => {
+                        setSelectedProductGroup("ALL");
+                        setEditingNorm(null);
+                      }}
+                      type="button"
+                    >
+                      <strong>Все товары</strong>
+                      <span>
+                        {selectedNorms.length} тов. ·{" "}
+                        {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
+                      </span>
+                    </button>
+                    {driverProductGroups.map((group) => (
+                      <button
+                        aria-pressed={selectedProductGroup === group.code}
+                        className={selectedProductGroup === group.code ? "is-active" : ""}
+                        key={group.code}
+                        onClick={() => {
+                          setSelectedProductGroup(group.code);
+                          setEditingNorm(null);
+                        }}
+                        type="button"
+                      >
+                        <strong>{group.name}</strong>
+                        <span>
+                          {group.count} тов. · {group.total} шт.
+                        </span>
                       </button>
-                    </div>
-                  ))
-                ) : (
-                  <p>
-                    {selectedNorms.length
-                      ? "В этой группе на выбранный день товаров нет."
-                      : "На этот день норма не задана."}
-                  </p>
-                )}
-              </div>
+                    ))}
+                  </nav>
+                  <NormProductLines
+                    emptyMessage={
+                      selectedNorms.length
+                        ? "В этой группе на выбранный день товаров нет."
+                        : "На этот день норма не задана."
+                    }
+                    norms={visibleSelectedNorms}
+                    onEdit={setEditingNorm}
+                  />
+                </>
+              )}
             </article>
             {session && editingNorm ? (
               <DriverRequestForm
@@ -588,6 +626,34 @@ export default function PlanningPage() {
         </details>
       ) : null}
     </main>
+  );
+}
+
+function NormProductLines({
+  emptyMessage,
+  norms,
+  onEdit,
+}: {
+  emptyMessage: string;
+  norms: readonly WeeklyNormView[];
+  onEdit: (norm: WeeklyNormView) => void;
+}) {
+  return (
+    <div className="driver-selected-norm__lines">
+      {norms.length ? (
+        norms.map((norm) => (
+          <div key={norm.id}>
+            <span>{norm.productName}</span>
+            <strong>{norm.quantity} шт.</strong>
+            <button type="button" onClick={() => onEdit(norm)}>
+              Изменить
+            </button>
+          </div>
+        ))
+      ) : (
+        <p>{emptyMessage}</p>
+      )}
+    </div>
   );
 }
 
