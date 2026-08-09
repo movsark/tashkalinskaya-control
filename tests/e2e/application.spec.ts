@@ -1083,7 +1083,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("an administrator sees production quantities before calculation details", async ({
+  test("an administrator sees dispatch quantities by territories without driver or production blocks", async ({
     page,
   }) => {
     const productId = "20000000-0000-4000-8000-000000000100";
@@ -1304,32 +1304,13 @@ test.describe("B20 browser and HTTP regression", () => {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByText("Водитель плана", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "По водителям" })).toHaveCount(0);
+    await expect(page.getByText("План производства по цехам", { exact: true })).toHaveCount(0);
     await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
     await page.getByRole("button", { name: /Территория 3/ }).click();
     await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
     await page.getByRole("button", { name: /Сухая выпечка/ }).click();
     await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
-    await page.getByText("План производства по цехам", { exact: true }).click();
-    await expect(
-      page.locator(".published-plan-summary .planning-plan-line").getByText("12 шт.", {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(page.getByText("физический пересчёт склада не подтверждён")).toBeVisible();
-    const demandDetails = page.locator(".planning-calculation .planning-demand-line");
-    const publishedProductLine = page
-      .locator(".published-plan-summary .planning-plan-line")
-      .filter({ hasText: "Торт тестовый" });
-    await expect(demandDetails).not.toBeVisible();
-    await expect(publishedProductLine.getByLabel("Новое количество")).not.toBeVisible();
-
-    await page.getByText("Как рассчитан план", { exact: false }).click();
-    await expect(
-      demandDetails.getByText("Территория 3 · вывоз 05.08", { exact: true }),
-    ).toBeVisible();
-    await publishedProductLine.getByText("Изменить опубликованный план", { exact: true }).click();
-    await expect(publishedProductLine.getByLabel("Новое количество")).toBeVisible();
 
     await page.goto("/logistics");
     await expect(

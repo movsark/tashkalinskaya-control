@@ -3907,16 +3907,6 @@ select:focus {
   width: 100%;
 }
 
-.published-plan-summary {
-  margin: 0;
-}
-
-.planning-plan-boundary {
-  color: var(--ink-soft);
-  line-height: 1.55;
-  margin: 0 0 16px;
-}
-
 .dispatch-overview {
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -3944,42 +3934,13 @@ select:focus {
   background: var(--sand);
 }
 
-.dispatch-overview__groups span,
-.dispatch-overview__drivers small {
+.dispatch-overview__groups span {
   color: var(--ink-soft);
   font-size: 0.78rem;
 }
 
-.dispatch-overview__groups strong,
-.dispatch-overview__drivers strong {
+.dispatch-overview__groups strong {
   color: var(--forest);
-}
-
-.dispatch-overview__drivers {
-  margin-top: 18px;
-}
-
-.dispatch-overview__drivers h3 {
-  margin: 0 0 10px;
-}
-
-.dispatch-overview__drivers > div {
-  display: grid;
-  gap: 8px;
-}
-
-.dispatch-overview__drivers article {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 11px 0;
-  border-top: 1px solid var(--line);
-}
-
-.dispatch-overview__drivers article > span {
-  display: grid;
-  gap: 2px;
 }
 
 .published-plan-date {
