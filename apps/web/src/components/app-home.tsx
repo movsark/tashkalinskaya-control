@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getSession } from "../lib/api";
 import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
+import { AccountMenu } from "./account-menu";
 
 export function AppHome() {
   const [session, setSession] = useState<AuthenticatedUser | null | undefined>(undefined);
@@ -62,7 +63,7 @@ export function AppHome() {
     <main className="app-home">
       <header className="app-home__header">
         <AppBrand />
-        <span>{initials(session.employee.fullName)}</span>
+        <AccountMenu session={session} />
       </header>
       <section className="app-home__welcome">
         <small>Добро пожаловать</small>
@@ -101,14 +102,4 @@ export function AppHome() {
 
 function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/u)[1] ?? fullName.trim().split(/\s+/u)[0] ?? "";
-}
-
-function initials(fullName: string): string {
-  return fullName
-    .trim()
-    .split(/\s+/u)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toLocaleUpperCase("ru-RU");
 }

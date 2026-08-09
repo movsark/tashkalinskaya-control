@@ -23,6 +23,7 @@ const environmentSchema = z.object({
   DATABASE_URL: z.string().trim().min(1).optional(),
   FILE_STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   FILE_STORAGE_LOCAL_DIR: z.string().trim().min(1).default("var/private-files"),
+  LOCAL_UAT_QUICK_LOGIN: booleanFromEnvironment,
   NODE_ENV: z.enum(["development", "test", "staging", "production"]).default("development"),
   PUSH_SUBSCRIPTION_ENCRYPTION_KEY: z
     .string()
@@ -55,6 +56,7 @@ export interface ApiConfig {
   readonly databaseUrl?: string;
   readonly fileStorageDriver: "local" | "s3";
   readonly fileStorageLocalDirectory: string;
+  readonly localUatQuickLogin: boolean;
   readonly nodeEnvironment: "development" | "test" | "staging" | "production";
   readonly port: number;
   readonly pushSubscriptionEncryptionKey: string;
@@ -129,6 +131,9 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
       );
     }
   }
+  if (parsed.LOCAL_UAT_QUICK_LOGIN && parsed.NODE_ENV !== "development") {
+    throw new Error("LOCAL_UAT_QUICK_LOGIN=true is allowed only when NODE_ENV=development");
+  }
 
   return {
     appVersion: parsed.APP_VERSION,
@@ -143,6 +148,7 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv = process.env): Api
     ...(databaseUrl === undefined ? {} : { databaseUrl }),
     fileStorageDriver: parsed.FILE_STORAGE_DRIVER,
     fileStorageLocalDirectory: parsed.FILE_STORAGE_LOCAL_DIR,
+    localUatQuickLogin: parsed.LOCAL_UAT_QUICK_LOGIN,
     nodeEnvironment: parsed.NODE_ENV,
     port: parsed.API_PORT,
     pushSubscriptionEncryptionKey: parsed.PUSH_SUBSCRIPTION_ENCRYPTION_KEY,

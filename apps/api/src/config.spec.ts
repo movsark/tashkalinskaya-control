@@ -13,6 +13,7 @@ describe("loadApiConfig", () => {
     expect(config.databaseRequired).toBe(false);
     expect(config.corsOrigins).toEqual(["http://localhost:3000"]);
     expect(config.fileStorageDriver).toBe("local");
+    expect(config.localUatQuickLogin).toBe(false);
     expect(config.s3).toBeNull();
     expect(config.pushVapidPublicKey).toBeNull();
     expect(config.sessionTokenPepper.length).toBeGreaterThanOrEqual(32);
@@ -30,6 +31,13 @@ describe("loadApiConfig", () => {
 
   it("does not allow local identity secrets in production", () => {
     expect(() => loadApiConfig({ NODE_ENV: "production" })).toThrow("AUTH_TOKEN_PEPPER");
+  });
+
+  it("allows quick role login only in local development", () => {
+    expect(loadApiConfig({ LOCAL_UAT_QUICK_LOGIN: "true" }).localUatQuickLogin).toBe(true);
+    expect(() => loadApiConfig(stagingEnvironment({ LOCAL_UAT_QUICK_LOGIN: "true" }))).toThrow(
+      "allowed only when NODE_ENV=development",
+    );
   });
 
   it("requires a complete private S3 configuration", () => {

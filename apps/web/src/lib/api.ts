@@ -248,6 +248,29 @@ export async function logoutAll(csrfToken: string): Promise<void> {
   });
 }
 
+export async function logout(csrfToken: string): Promise<void> {
+  return request("/auth/logout", {
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export interface LocalUatProfile {
+  readonly label: string;
+  readonly roleCode: RoleCode;
+}
+
+export async function getLocalUatProfiles(): Promise<readonly LocalUatProfile[]> {
+  return request("/auth/local-uat/profiles");
+}
+
+export async function loginLocalUat(roleCode: RoleCode): Promise<AuthenticatedUser> {
+  return request("/auth/local-uat/login", {
+    body: JSON.stringify({ roleCode }),
+    method: "POST",
+  });
+}
+
 export async function refreshOptions(): Promise<{
   challengeId: string;
   options: PublicKeyCredentialRequestOptionsJSON;

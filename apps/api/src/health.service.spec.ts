@@ -13,6 +13,7 @@ const localConfig: ApiConfig = {
   databaseSsl: "disable",
   fileStorageDriver: "local",
   fileStorageLocalDirectory: "var/test-private-files",
+  localUatQuickLogin: false,
   nodeEnvironment: "test",
   port: 4000,
   pushSubscriptionEncryptionKey: "test-push-subscription-secret-32-characters",
