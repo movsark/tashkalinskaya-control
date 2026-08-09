@@ -674,6 +674,7 @@ function ConfectionerWorkCard({
   task: ProductionTaskView;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [pendingQuantity, setPendingQuantity] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(String(Math.max(task.remainingToDeclare, 1)));
   const numericQuantity = Number(quantity);
   const activeBatches = task.batches.filter((batch) =>
@@ -687,6 +688,7 @@ function ConfectionerWorkCard({
 
   useEffect(() => {
     setQuantity(String(Math.max(task.remainingToDeclare, 1)));
+    setPendingQuantity(null);
   }, [task.id, task.remainingToDeclare]);
 
   return (
@@ -745,6 +747,51 @@ function ConfectionerWorkCard({
             <p className="production-confectioner-work__done">
               Всё количество произведено и ожидает проверки склада.
             </p>
+          ) : pendingQuantity !== null ? (
+            <div
+              aria-label="Подтверждение произведённого количества"
+              className="production-confectioner-work__confirmation"
+            >
+              <strong>Перепроверьте перед подтверждением</strong>
+              <p>
+                {task.productName}: <b>{pendingQuantity} шт.</b> Вы уверены?
+              </p>
+              <div>
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={() => setPendingQuantity(null)}
+                  type="button"
+                >
+                  Нет
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={busy}
+                  onClick={() =>
+                    void onAction(async () => {
+                      await submitProductionBatch(
+                        task.id,
+                        {
+                          idempotencyKey: crypto.randomUUID(),
+                          producedAt: new Date().toISOString(),
+                          quantity: pendingQuantity,
+                          taskVersion: task.version,
+                        },
+                        session.csrfToken,
+                      );
+                      setPendingQuantity(null);
+                      await onReload(
+                        `Произведено ${pendingQuantity} шт. «${task.productName}». Остаток пересчитан.`,
+                      );
+                    })
+                  }
+                  type="button"
+                >
+                  Да
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="production-confectioner-work__submit">
               <label>
@@ -766,23 +813,7 @@ function ConfectionerWorkCard({
                   numericQuantity < 1 ||
                   numericQuantity > task.remainingToDeclare
                 }
-                onClick={() =>
-                  void onAction(async () => {
-                    await submitProductionBatch(
-                      task.id,
-                      {
-                        idempotencyKey: crypto.randomUUID(),
-                        producedAt: new Date().toISOString(),
-                        quantity: numericQuantity,
-                        taskVersion: task.version,
-                      },
-                      session.csrfToken,
-                    );
-                    await onReload(
-                      `Произведено ${numericQuantity} шт. «${task.productName}». Остаток пересчитан.`,
-                    );
-                  })
-                }
+                onClick={() => setPendingQuantity(numericQuantity)}
                 type="button"
               >
                 Произведено

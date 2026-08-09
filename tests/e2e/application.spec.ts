@@ -1621,6 +1621,17 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.getByLabel("Произведено сейчас").fill("6");
     await page.getByRole("button", { name: "Произведено", exact: true }).click();
+    await expect(page.getByLabel("Подтверждение произведённого количества")).toContainText(
+      "Торт тестовый: 6 шт. Вы уверены?",
+    );
+    await expect(workProduct).toContainText("Произведено4 шт.");
+
+    await page.getByRole("button", { name: "Нет", exact: true }).click();
+    await expect(page.getByLabel("Произведено сейчас")).toHaveValue("6");
+    await expect(workProduct).toContainText("Произведено4 шт.");
+
+    await page.getByRole("button", { name: "Произведено", exact: true }).click();
+    await page.getByRole("button", { name: "Да", exact: true }).click();
     await expect(workProduct).toContainText("Произведено10 шт.");
     await expect(workProduct).toContainText("Осталось2 шт.");
     await expect(
