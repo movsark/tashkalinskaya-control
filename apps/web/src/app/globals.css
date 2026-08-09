@@ -4534,6 +4534,16 @@ select:focus {
   width: calc(100% - 48px);
 }
 
+.production-norm-demand.is-confectioner-plan {
+  border: 2px solid rgb(23 72 61 / 22%);
+  background: linear-gradient(145deg, #fff 0%, #f2f7f4 100%);
+}
+
+.production-norm-demand.is-confectioner-plan .production-section-heading > span {
+  background: var(--forest);
+  color: #fff;
+}
+
 .production-hero {
   align-items: end;
   display: flex;

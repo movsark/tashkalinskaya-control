@@ -1358,7 +1358,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a confectioner sees today's production separately from tomorrow's dispatch norm", async ({
+  test("a confectioner sees today's production plan and separate personal tasks", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 844, width: 390 });
@@ -1440,11 +1440,17 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
     await expect(page.getByLabel("Производственная дата")).toHaveCount(0);
-    await expect(page.getByText("План производства", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("0 шт.", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("На вывоз завтра", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("План производства на сегодня")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Норма вывоза на следующий день" }),
+      page.getByText("План производства на сегодня", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByText("Мои назначенные задания", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Мои задания на/ })).toBeVisible();
+    await expect(
+      page.getByText(
+        "План производства на сегодня показан выше. Ответственный цеха ещё не распределил вам личные задания.",
+        { exact: true },
+      ),
     ).toBeVisible();
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();

@@ -30,6 +30,14 @@ import {
   withdrawProductionBatch,
 } from "../../lib/api";
 
+const productionGroupOrder = [
+  "Торты Базовые",
+  "Торты Премиум",
+  "Пироги",
+  "Десерты",
+  "Сухая выпечка",
+] as const;
+
 export default function ProductionPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -71,7 +79,16 @@ export default function ProductionPage() {
     for (const line of workspace?.normDemand.lines ?? []) {
       groups.set(line.productGroup, [...(groups.get(line.productGroup) ?? []), line]);
     }
-    return [...groups.entries()];
+    return [...groups.entries()].sort(([left], [right]) => {
+      const leftIndex = productionGroupOrder.indexOf(left as (typeof productionGroupOrder)[number]);
+      const rightIndex = productionGroupOrder.indexOf(
+        right as (typeof productionGroupOrder)[number],
+      );
+      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right, "ru");
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    });
   }, [workspace]);
 
   useEffect(() => {
@@ -216,70 +233,47 @@ export default function ProductionPage() {
       {error ? <p className="form-error production-notice">{error}</p> : null}
       {message ? <p className="logistics-success production-notice">{message}</p> : null}
 
+      {isConfectionerOnly ? (
+        <ProductionDemandBoard
+          date={date}
+          groups={normGroups}
+          isConfectioner
+          workspace={workspace}
+        />
+      ) : null}
+
       <section className="production-metrics" aria-label="Сводка производства">
-        <Metric label="План производства" value={metrics.plan} />
-        <Metric label="На вывоз завтра" value={metrics.dispatchNorm} />
+        <Metric
+          label={isConfectionerOnly ? "План производства на сегодня" : "План производства"}
+          value={isConfectionerOnly ? metrics.dispatchNorm : metrics.plan}
+        />
+        <Metric
+          label={isConfectionerOnly ? "Мои назначенные задания" : "На вывоз завтра"}
+          value={isConfectionerOnly ? metrics.plan : metrics.dispatchNorm}
+        />
         <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
         <Metric label="Принято складом" value={metrics.accepted} tone="green" />
       </section>
 
-      <section className="production-board production-norm-demand">
-        <div className="production-section-heading">
-          <div>
-            <p className="eyebrow">Основание для расчёта</p>
-            <h2>Норма вывоза на следующий день</h2>
-          </div>
-          <span>{workspace.normDemand.lines.length} позиций</span>
-        </div>
-        <p className="production-demand-caption">
-          Справочно, дата вывоза:{" "}
-          {workspace.normDemand.dispatchDates.map(dateLabel).join(", ") ||
-            dateLabel(addDays(date, 1))}
-          .
-          {workspace.normDemand.source === "CALENDAR"
-            ? " Даты взяты из производственного календаря."
-            : " Пока действует правило: производство за день до вывоза."}
-        </p>
-        {normGroups.length === 0 ? (
-          <p className="logistics-empty">
-            На связанный день вывоза нормы ещё не загружены или равны нулю.
-          </p>
-        ) : (
-          <div className="production-demand-groups">
-            {normGroups.map(([group, lines]) => (
-              <article key={group}>
-                <header>
-                  <h3>{group}</h3>
-                  <span>{lines.reduce((sum, line) => sum + line.quantity, 0)} шт.</span>
-                </header>
-                <div>
-                  {lines.map((line) => (
-                    <p key={line.productId}>
-                      <span>
-                        <b>{line.productName}</b>
-                        <small>{line.workshopName ?? "Цех ещё не назначен"}</small>
-                      </span>
-                      <strong>{line.quantity}</strong>
-                    </p>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      {!isConfectionerOnly ? (
+        <ProductionDemandBoard date={date} groups={normGroups} workspace={workspace} />
+      ) : null}
 
       <section className="production-board">
         <div className="production-section-heading">
           <div>
             <p className="eyebrow">Оперативная доска</p>
-            <h2>Задания на {dateLabel(date)}</h2>
+            <h2>
+              {isConfectionerOnly ? "Мои задания" : "Задания"} на {dateLabel(date)}
+            </h2>
           </div>
           <span>{workspace.tasks.length} заданий</span>
         </div>
         {workspace.tasks.length === 0 ? (
           <p className="logistics-empty">
-            Заданий пока нет. Администратор создаёт их из утверждённого плана.
+            {isConfectionerOnly
+              ? "План производства на сегодня показан выше. Ответственный цеха ещё не распределил вам личные задания."
+              : "Заданий пока нет. Администратор создаёт их из утверждённого плана."}
           </p>
         ) : (
           <div className="production-task-grid">
@@ -340,6 +334,82 @@ function Metric({ label, tone = "", value }: { label: string; tone?: string; val
       <span>{label}</span>
       <strong>{value} шт.</strong>
     </article>
+  );
+}
+
+function ProductionDemandBoard({
+  date,
+  groups,
+  isConfectioner = false,
+  workspace,
+}: {
+  date: string;
+  groups: [string, ProductionWorkspaceView["normDemand"]["lines"]][];
+  isConfectioner?: boolean;
+  workspace: ProductionWorkspaceView;
+}) {
+  const total = workspace.normDemand.lines.reduce((sum, line) => sum + line.quantity, 0);
+  const dispatchDates =
+    workspace.normDemand.dispatchDates.map(dateLabel).join(", ") || dateLabel(addDays(date, 1));
+
+  return (
+    <section
+      aria-label={isConfectioner ? "План производства на сегодня" : undefined}
+      className={`production-board production-norm-demand${isConfectioner ? " is-confectioner-plan" : ""}`}
+    >
+      <div className="production-section-heading">
+        <div>
+          <p className="eyebrow">
+            {isConfectioner ? "Сегодня нужно изготовить" : "Основание для расчёта"}
+          </p>
+          <h2>
+            {isConfectioner ? "План производства на сегодня" : "Норма вывоза на следующий день"}
+          </h2>
+        </div>
+        <span>
+          {workspace.normDemand.lines.length} позиций · {total} шт.
+        </span>
+      </div>
+      <p className="production-demand-caption">
+        {isConfectioner
+          ? `Это общий план фабрики на сегодня для вывоза ${dispatchDates}. Личные задания ответственный цеха распределяет отдельно.`
+          : `Справочно, дата вывоза: ${dispatchDates}.`}
+        {!isConfectioner && workspace.normDemand.source === "CALENDAR"
+          ? " Даты взяты из производственного календаря."
+          : !isConfectioner
+            ? " Пока действует правило: производство за день до вывоза."
+            : null}
+      </p>
+      {groups.length === 0 ? (
+        <p className="logistics-empty">
+          План производства на сегодня ещё не рассчитан или равен нулю.
+        </p>
+      ) : (
+        <div className="production-demand-groups">
+          {groups.map(([group, lines]) => (
+            <article key={group}>
+              <header>
+                <h3>{group}</h3>
+                <span>
+                  {lines.length} поз. · {lines.reduce((sum, line) => sum + line.quantity, 0)} шт.
+                </span>
+              </header>
+              <div>
+                {lines.map((line) => (
+                  <p key={line.productId}>
+                    <span>
+                      <b>{line.productName}</b>
+                      <small>{line.workshopName ?? "Цех ещё не назначен"}</small>
+                    </span>
+                    <strong>{line.quantity} шт.</strong>
+                  </p>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
