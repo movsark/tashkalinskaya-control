@@ -25,6 +25,7 @@ export default function WarehousePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [openPickupKey, setOpenPickupKey] = useState<string | null>(null);
   const roles = useMemo(
     () => new Set(session?.employee.roles.map((item) => item.roleCode) ?? []),
     [session],
@@ -92,7 +93,7 @@ export default function WarehousePage() {
   const free = data.balances.reduce((sum, item) => sum + item.freeQuantity, 0),
     onHand = data.balances.reduce((sum, item) => sum + item.onHandQuantity, 0),
     open = data.discrepancies.filter((item) => !item.status.startsWith("RESOLVED")).length,
-    pickupQuantity = pickupGroups.reduce((sum, item) => sum + item.quantity, 0);
+    pickupQuantity = pickupGroups.reduce((sum, item) => sum + item.remainingQuantity, 0);
   return (
     <main className="workspace-layout warehouse-page simple-workspace">
       <header className="workspace-header">
@@ -152,6 +153,10 @@ export default function WarehousePage() {
                 canReceive={canReceive}
                 group={group}
                 key={group.key}
+                open={openPickupKey === group.key}
+                onToggle={() =>
+                  setOpenPickupKey((current) => (current === group.key ? null : group.key))
+                }
                 session={session}
                 run={run}
                 reload={reload}
@@ -253,6 +258,8 @@ function PickupGroupCard({
   busy,
   canReceive,
   group,
+  open,
+  onToggle,
   session,
   run,
   reload,
@@ -260,11 +267,12 @@ function PickupGroupCard({
   busy: boolean;
   canReceive: boolean;
   group: WarehousePickupGroup;
+  open: boolean;
+  onToggle: () => void;
   session: AuthenticatedUser;
   run: (a: () => Promise<void>) => Promise<void>;
   reload: (m?: string) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   const [quantity, setQuantity] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState("");
@@ -273,104 +281,112 @@ function PickupGroupCard({
     Number.isInteger(parsedQuantity) &&
     parsedQuantity > 0 &&
     parsedQuantity <= group.remainingQuantity;
+  const detailsId = `warehouse-pickup-${group.productId}-${group.workshopId}-${group.productionDate}-${group.productionWindow}`;
   return (
-    <article className={group.isNight ? "is-night" : ""}>
-      <header>
-        <div>
-          <span>
-            {group.productCode} · {group.workshopName}
-          </span>
-          <h3>{group.productName}</h3>
-          <small>
-            Производство {group.productionDate} · готово: {group.quantity} шт.
-          </small>
-        </div>
-        <b>{group.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
-      </header>
-      <div className="warehouse-pickup-progress">
-        <div>
-          <span>Перемещено</span>
+    <article className={`${group.isNight ? "is-night " : ""}${open ? "is-open" : ""}`}>
+      <button
+        aria-controls={detailsId}
+        aria-expanded={open}
+        className="warehouse-pickup-summary"
+        onClick={() => {
+          onToggle();
+          setConfirming(false);
+        }}
+        type="button"
+      >
+        <span className="warehouse-pickup-title" title={group.productName}>
+          <strong>{group.productName}</strong>
+        </span>
+        <span className="warehouse-pickup-summary-metric">
+          <small>Перемещено</small>
           <strong>{group.movedQuantity} шт.</strong>
-        </div>
-        <div>
-          <span>Осталось забрать</span>
+        </span>
+        <span className="warehouse-pickup-summary-metric is-remaining">
+          <small>Осталось забрать</small>
           <strong>{group.remainingQuantity} шт.</strong>
-        </div>
-      </div>
-      {canReceive ? (
-        <button
-          className="primary-button"
-          onClick={() => {
-            setOpen((current) => !current);
-            setConfirming(false);
-          }}
-        >
-          {open ? "Скрыть" : "Указать перемещённое количество"}
-        </button>
-      ) : null}
-      {open && canReceive ? (
-        <div className="warehouse-pickup-form">
-          <label>
-            Сколько перемещено сейчас
-            <input
-              inputMode="numeric"
-              min="1"
-              max={group.remainingQuantity}
-              type="number"
-              value={quantity}
-              onChange={(event) => {
-                setQuantity(event.target.value);
-                setConfirming(false);
-              }}
-            />
-          </label>
-          <p>После подтверждения это количество попадёт в свободный остаток склада.</p>
-          {!confirming ? (
-            <button
-              className="primary-button"
-              disabled={busy || !quantityIsValid}
-              onClick={() => setConfirming(true)}
-            >
-              Перемещено
-            </button>
-          ) : (
-            <div className="warehouse-pickup-confirm">
-              <strong>Переместить на склад {parsedQuantity} шт.?</strong>
-              <div>
-                <button disabled={busy} onClick={() => setConfirming(false)} type="button">
-                  Нет
-                </button>
+        </span>
+        <span aria-hidden="true" className="warehouse-pickup-toggle">
+          {open ? "−" : "+"}
+        </span>
+      </button>
+      {open ? (
+        <div className="warehouse-pickup-details" id={detailsId}>
+          <div className="warehouse-pickup-meta">
+            <span>
+              {group.productCode} · {group.workshopName}
+            </span>
+            <small>
+              Производство {group.productionDate} · готово: {group.quantity} шт.
+            </small>
+            <b>{group.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
+          </div>
+          {canReceive ? (
+            <div className="warehouse-pickup-form">
+              <label>
+                Сколько перемещено сейчас
+                <input
+                  inputMode="numeric"
+                  min="1"
+                  max={group.remainingQuantity}
+                  type="number"
+                  value={quantity}
+                  onChange={(event) => {
+                    setQuantity(event.target.value);
+                    setConfirming(false);
+                  }}
+                />
+              </label>
+              <p>После подтверждения это количество попадёт в свободный остаток склада.</p>
+              {!confirming ? (
                 <button
                   className="primary-button"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const requestKey = idempotencyKey || crypto.randomUUID();
-                      setIdempotencyKey(requestKey);
-                      await transferWarehousePickup(
-                        {
-                          idempotencyKey: requestKey,
-                          productId: group.productId,
-                          productionDate: group.productionDate,
-                          productionWindow: group.productionWindow,
-                          quantity: parsedQuantity,
-                          workshopId: group.workshopId,
-                        },
-                        session.csrfToken,
-                      );
-                      setIdempotencyKey("");
-                      setQuantity("");
-                      setConfirming(false);
-                      await reload(`Перемещено ${parsedQuantity} шт. Остаток к переносу обновлён.`);
-                    })
-                  }
-                  type="button"
+                  disabled={busy || !quantityIsValid}
+                  onClick={() => setConfirming(true)}
                 >
-                  Да
+                  Перемещено
                 </button>
-              </div>
+              ) : (
+                <div className="warehouse-pickup-confirm">
+                  <strong>Переместить на склад {parsedQuantity} шт.?</strong>
+                  <div>
+                    <button disabled={busy} onClick={() => setConfirming(false)} type="button">
+                      Нет
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const requestKey = idempotencyKey || crypto.randomUUID();
+                          setIdempotencyKey(requestKey);
+                          await transferWarehousePickup(
+                            {
+                              idempotencyKey: requestKey,
+                              productId: group.productId,
+                              productionDate: group.productionDate,
+                              productionWindow: group.productionWindow,
+                              quantity: parsedQuantity,
+                              workshopId: group.workshopId,
+                            },
+                            session.csrfToken,
+                          );
+                          setIdempotencyKey("");
+                          setQuantity("");
+                          setConfirming(false);
+                          await reload(
+                            `Перемещено ${parsedQuantity} шт. Остаток к переносу обновлён.`,
+                          );
+                        })
+                      }
+                      type="button"
+                    >
+                      Да
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          ) : null}
         </div>
       ) : null}
     </article>

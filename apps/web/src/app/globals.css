@@ -5648,16 +5648,17 @@ select:focus {
 }
 
 .warehouse-queue {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .warehouse-queue > article {
   display: grid;
   align-content: start;
-  gap: 14px;
-  padding: 18px;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 19px;
+  border-radius: 16px;
   background: #fff;
 }
 
@@ -5666,35 +5667,114 @@ select:focus {
   background: linear-gradient(145deg, #f3f7f8, #fff);
 }
 
-.warehouse-pickup-progress {
+.warehouse-pickup-summary {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: minmax(120px, 1fr) auto auto 38px;
+  width: 100%;
+  min-height: 76px;
+  padding: 13px 14px 13px 18px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
-.warehouse-pickup-progress > div {
-  display: grid;
-  gap: 5px;
-  padding: 14px 16px;
-  border-radius: 14px;
+.warehouse-pickup-summary:hover,
+.warehouse-pickup-summary:focus-visible,
+.warehouse-queue > article.is-open .warehouse-pickup-summary {
   background: var(--forest-soft);
 }
 
-.warehouse-pickup-progress span {
-  color: var(--muted);
-  font-size: 12px;
+.warehouse-pickup-summary:focus-visible {
+  outline: 3px solid rgb(22 85 68 / 28%);
+  outline-offset: -3px;
 }
 
-.warehouse-pickup-progress strong {
+.warehouse-pickup-title {
+  min-width: 0;
+}
+
+.warehouse-pickup-title > strong {
+  display: block;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-pickup-summary-metric {
+  display: grid;
+  gap: 3px;
+  min-width: 80px;
+  text-align: right;
+}
+
+.warehouse-pickup-summary-metric small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.warehouse-pickup-summary-metric strong {
   color: var(--forest);
+  font-size: 17px;
+  white-space: nowrap;
+}
+
+.warehouse-pickup-summary-metric.is-remaining strong {
+  color: #8b5a17;
+}
+
+.warehouse-pickup-toggle {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--forest);
+  background: #edf2ed;
   font-size: 22px;
+  font-weight: 800;
+}
+
+.warehouse-pickup-details {
+  display: grid;
+  gap: 14px;
+  padding: 0 18px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.warehouse-pickup-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+}
+
+.warehouse-pickup-meta span,
+.warehouse-pickup-meta small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.warehouse-pickup-meta b {
+  padding: 7px 9px;
+  border-radius: 999px;
+  color: #315b75;
+  background: #e8f0f6;
+  font-size: 10px;
 }
 
 .warehouse-pickup-form {
   display: grid;
   gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
 }
 
 .warehouse-pickup-form label {
@@ -6630,6 +6710,38 @@ select:focus {
 
   .warehouse-queue article > header {
     flex-direction: column;
+  }
+
+  .warehouse-pickup-summary {
+    gap: 7px;
+    grid-template-columns: minmax(82px, 1fr) auto auto 34px;
+    min-height: 72px;
+    padding: 11px 10px 11px 14px;
+  }
+
+  .warehouse-pickup-title > strong {
+    font-size: 16px;
+  }
+
+  .warehouse-pickup-summary-metric {
+    min-width: 58px;
+  }
+
+  .warehouse-pickup-summary-metric small {
+    font-size: 9px;
+  }
+
+  .warehouse-pickup-summary-metric strong {
+    font-size: 14px;
+  }
+
+  .warehouse-pickup-toggle {
+    width: 32px;
+    height: 32px;
+  }
+
+  .warehouse-pickup-details {
+    padding: 0 14px 14px;
   }
 
   .warehouse-queue header b {

@@ -263,6 +263,24 @@ test.describe("B20 browser and HTTP regression", () => {
               workshopId: "20000000-0000-4000-8000-000000000035",
               workshopName: "Тортовый цех",
             },
+            {
+              batchId: "20000000-0000-4000-8000-000000000038",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              movedQuantity: 0,
+              productCode: "TV-016",
+              productId: "20000000-0000-4000-8000-000000000039",
+              productName: "ТБ Наполеон (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 6,
+              remainingQuantity: 6,
+              submittedAt: "2026-08-10T07:05:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
           ],
           reasons: [],
           serverTime: "2026-08-10T07:06:00.000Z",
@@ -288,19 +306,28 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       reminder.getByRole("heading", { name: "Нужно забрать готовую продукцию" }),
     ).toBeVisible();
-    await expect(reminder).toContainText("1 товар · 14 шт.");
+    await expect(reminder).toContainText("2 товара · 20 шт.");
     await expect(reminder).toContainText("при необходимости — в холодильную камеру");
-    await expect(page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" })).toHaveCount(1);
-    await expect(page.getByText("готово: 14 шт.")).toBeVisible();
-    await expect(page.getByText("Забрать из цеха", { exact: true })).toHaveCount(2);
     const pickupCard = page.getByRole("article").filter({
-      has: page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" }),
+      has: page.getByRole("button", { name: /ТБ Рыжик/ }),
+    });
+    const napoleonCard = page.getByRole("article").filter({
+      has: page.getByRole("button", { name: /ТБ Наполеон/ }),
     });
     await expect(pickupCard.getByText("Перемещено", { exact: true })).toBeVisible();
     await expect(pickupCard.getByText("0 шт.", { exact: true })).toBeVisible();
     await expect(pickupCard.getByText("Осталось забрать", { exact: true })).toBeVisible();
     await expect(pickupCard.getByText("14 шт.", { exact: true })).toBeVisible();
-    await pickupCard.getByRole("button", { name: "Указать перемещённое количество" }).click();
+    await expect(pickupCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await pickupCard.getByRole("button", { name: /ТБ Рыжик/ }).click();
+    await expect(pickupCard.getByText("готово: 14 шт.")).toBeVisible();
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await napoleonCard.getByRole("button", { name: /ТБ Наполеон/ }).click();
+    await expect(pickupCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toBeVisible();
+    await pickupCard.getByRole("button", { name: /ТБ Рыжик/ }).click();
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
     await pickupCard.getByLabel("Сколько перемещено сейчас").fill("4");
     await pickupCard.getByRole("button", { exact: true, name: "Перемещено" }).click();
     await expect(page.getByText("Переместить на склад 4 шт.?", { exact: true })).toBeVisible();
