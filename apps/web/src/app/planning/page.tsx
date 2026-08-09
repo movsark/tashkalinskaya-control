@@ -44,6 +44,7 @@ export default function PlanningPage() {
   const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
   const [selectedProductGroup, setSelectedProductGroup] = useState("ALL");
   const [groupProducts, setGroupProducts] = useState(false);
+  const [expandedDriverDate, setExpandedDriverDate] = useState(() => initialDriverSelection().date);
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -385,8 +386,10 @@ export default function PlanningPage() {
                 type="button"
                 onClick={() => {
                   const nextStart = addDays(weekStart, -7);
+                  const nextDate = addDays(nextStart, selectedDay.weekday - 1);
                   setWeekStart(nextStart);
-                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setSelectedDate(nextDate);
+                  setExpandedDriverDate(nextDate);
                   setEditingNorm(null);
                   setSelectedProductGroup("ALL");
                 }}
@@ -398,8 +401,10 @@ export default function PlanningPage() {
                 type="button"
                 onClick={() => {
                   const nextStart = addDays(weekStart, 7);
+                  const nextDate = addDays(nextStart, selectedDay.weekday - 1);
                   setWeekStart(nextStart);
-                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setSelectedDate(nextDate);
+                  setExpandedDriverDate(nextDate);
                   setEditingNorm(null);
                   setSelectedProductGroup("ALL");
                 }}
@@ -407,133 +412,165 @@ export default function PlanningPage() {
                 Неделя →
               </button>
             </div>
-            <nav className="driver-weekday-switcher" aria-label="Быстрый выбор дня">
+            <div className="driver-weekday-accordion" aria-label="Дни недели">
               {days.map((day) => {
                 const dayNorms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
                 const total = dayNorms.reduce((sum, norm) => sum + norm.quantity, 0);
                 const closed = day.weekday === 5;
+                const expanded = !closed && expandedDriverDate === day.date;
                 return (
-                  <button
-                    aria-pressed={day.date === selectedDay.date}
-                    className={day.date === selectedDay.date ? "is-active" : ""}
-                    disabled={closed}
+                  <section
+                    className={`driver-weekday-accordion__day ${closed ? "is-closed" : ""}`}
                     key={day.date}
-                    onClick={() => {
-                      setSelectedDate(day.date);
-                      setEditingNorm(null);
-                      setSelectedProductGroup("ALL");
-                    }}
-                    type="button"
                   >
-                    <strong>{shortWeekday(day.weekday)}</strong>
-                    <small>{shortDate(day.date)}</small>
-                    <span>{closed ? "выходной" : `${total} шт.`}</span>
-                  </button>
-                );
-              })}
-            </nav>
-            <article className="driver-selected-norm">
-              <header>
-                <div>
-                  <p className="eyebrow">{selectedDay.label}</p>
-                  <h3>{longDate(selectedDay.date)}</h3>
-                </div>
-                <strong>{selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.</strong>
-              </header>
-              {groupProducts ? (
-                <div className="driver-norm-accordion" aria-label="Норма по группам продукции">
-                  {driverProductGroups.map((group) => {
-                    const groupNorms = selectedNorms.filter((norm) =>
-                      setup?.products.some(
-                        (product) =>
-                          product.id === norm.productId && product.categoryCode === group.code,
-                      ),
-                    );
-                    return (
-                      <details className="driver-norm-group" key={group.code}>
-                        <summary>
-                          <strong>{group.name}</strong>
-                          <span>
-                            {group.count} тов. · {group.total} шт.
-                          </span>
-                        </summary>
-                        <NormProductLines
-                          emptyMessage="В этой группе на выбранный день товаров нет."
-                          norms={groupNorms}
-                          onEdit={setEditingNorm}
-                        />
-                      </details>
-                    );
-                  })}
-                </div>
-              ) : (
-                <>
-                  <nav className="driver-norm-group-switcher" aria-label="Группы продукции">
                     <button
-                      aria-pressed={selectedProductGroup === "ALL"}
-                      className={selectedProductGroup === "ALL" ? "is-active" : ""}
+                      aria-expanded={expanded}
+                      className="driver-weekday-accordion__trigger"
+                      disabled={closed}
                       onClick={() => {
-                        setSelectedProductGroup("ALL");
+                        if (expanded) {
+                          setExpandedDriverDate("");
+                        } else {
+                          setSelectedDate(day.date);
+                          setExpandedDriverDate(day.date);
+                        }
                         setEditingNorm(null);
+                        setSelectedProductGroup("ALL");
                       }}
                       type="button"
                     >
-                      <strong>Все товары</strong>
                       <span>
-                        {selectedNorms.length} тов. ·{" "}
-                        {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
+                        <strong>{day.label}</strong>
+                        <small>{shortDate(day.date)}</small>
                       </span>
+                      <span>{closed ? "выходной" : `${total} шт.`}</span>
+                      <b aria-hidden="true">{expanded ? "−" : "+"}</b>
                     </button>
-                    {driverProductGroups.map((group) => (
-                      <button
-                        aria-pressed={selectedProductGroup === group.code}
-                        className={selectedProductGroup === group.code ? "is-active" : ""}
-                        key={group.code}
-                        onClick={() => {
-                          setSelectedProductGroup(group.code);
-                          setEditingNorm(null);
-                        }}
-                        type="button"
-                      >
-                        <strong>{group.name}</strong>
-                        <span>
-                          {group.count} тов. · {group.total} шт.
-                        </span>
-                      </button>
-                    ))}
-                  </nav>
-                  <NormProductLines
-                    emptyMessage={
-                      selectedNorms.length
-                        ? "В этой группе на выбранный день товаров нет."
-                        : "На этот день норма не задана."
-                    }
-                    norms={visibleSelectedNorms}
-                    onEdit={setEditingNorm}
-                  />
-                </>
-              )}
-            </article>
-            {session && editingNorm ? (
-              <DriverRequestForm
-                busy={busy}
-                date={selectedDay.date}
-                norm={editingNorm}
-                onCancel={() => setEditingNorm(null)}
-                onSubmit={(input) =>
-                  action(async () => {
-                    const created = await createNormChangeRequest(input, session.csrfToken);
-                    await reload(
-                      created.status === "MISSED_CUTOFF"
-                        ? "Изменять уже поздно: запрос сохранён как просроченный."
-                        : "Запрос отправлен администратору.",
-                    );
-                    setEditingNorm(null);
-                  })
-                }
-                territoryId={territoryId}
-              />
-            ) : null}
+                    {expanded ? (
+                      <div className="driver-weekday-accordion__content">
+                        <article className="driver-selected-norm">
+                          <header>
+                            <div>
+                              <p className="eyebrow">{selectedDay.label}</p>
+                              <h3>{longDate(selectedDay.date)}</h3>
+                            </div>
+                            <strong>
+                              {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
+                            </strong>
+                          </header>
+                          {groupProducts ? (
+                            <div
+                              className="driver-norm-accordion"
+                              aria-label="Норма по группам продукции"
+                            >
+                              {driverProductGroups.map((group) => {
+                                const groupNorms = selectedNorms.filter((norm) =>
+                                  setup?.products.some(
+                                    (product) =>
+                                      product.id === norm.productId &&
+                                      product.categoryCode === group.code,
+                                  ),
+                                );
+                                return (
+                                  <details className="driver-norm-group" key={group.code}>
+                                    <summary>
+                                      <strong>{group.name}</strong>
+                                      <span>
+                                        {group.count} тов. · {group.total} шт.
+                                      </span>
+                                    </summary>
+                                    <NormProductLines
+                                      emptyMessage="В этой группе на выбранный день товаров нет."
+                                      norms={groupNorms}
+                                      onEdit={setEditingNorm}
+                                    />
+                                  </details>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <>
+                              <nav
+                                className="driver-norm-group-switcher"
+                                aria-label="Группы продукции"
+                              >
+                                <button
+                                  aria-pressed={selectedProductGroup === "ALL"}
+                                  className={selectedProductGroup === "ALL" ? "is-active" : ""}
+                                  onClick={() => {
+                                    setSelectedProductGroup("ALL");
+                                    setEditingNorm(null);
+                                  }}
+                                  type="button"
+                                >
+                                  <strong>Все товары</strong>
+                                  <span>
+                                    {selectedNorms.length} тов. ·{" "}
+                                    {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)}{" "}
+                                    шт.
+                                  </span>
+                                </button>
+                                {driverProductGroups.map((group) => (
+                                  <button
+                                    aria-pressed={selectedProductGroup === group.code}
+                                    className={
+                                      selectedProductGroup === group.code ? "is-active" : ""
+                                    }
+                                    key={group.code}
+                                    onClick={() => {
+                                      setSelectedProductGroup(group.code);
+                                      setEditingNorm(null);
+                                    }}
+                                    type="button"
+                                  >
+                                    <strong>{group.name}</strong>
+                                    <span>
+                                      {group.count} тов. · {group.total} шт.
+                                    </span>
+                                  </button>
+                                ))}
+                              </nav>
+                              <NormProductLines
+                                emptyMessage={
+                                  selectedNorms.length
+                                    ? "В этой группе на выбранный день товаров нет."
+                                    : "На этот день норма не задана."
+                                }
+                                norms={visibleSelectedNorms}
+                                onEdit={setEditingNorm}
+                              />
+                            </>
+                          )}
+                        </article>
+                        {session && editingNorm ? (
+                          <DriverRequestForm
+                            busy={busy}
+                            date={selectedDay.date}
+                            norm={editingNorm}
+                            onCancel={() => setEditingNorm(null)}
+                            onSubmit={(input) =>
+                              action(async () => {
+                                const created = await createNormChangeRequest(
+                                  input,
+                                  session.csrfToken,
+                                );
+                                await reload(
+                                  created.status === "MISSED_CUTOFF"
+                                    ? "Изменять уже поздно: запрос сохранён как просроченный."
+                                    : "Запрос отправлен администратору.",
+                                );
+                                setEditingNorm(null);
+                              })
+                            }
+                            territoryId={territoryId}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
           </>
         ) : (
           days.map((day) => {
