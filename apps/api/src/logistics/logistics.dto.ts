@@ -84,6 +84,15 @@ export class UpsertDriverProfileDto {
   version?: number;
 }
 
+export class SelectDriverHomeTerritoryDto {
+  @IsUUID()
+  territoryId!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}
+
 export class CreateDefaultAssignmentDto {
   @IsUUID()
   territoryId!: string;

@@ -336,6 +336,9 @@ export class PlanningRepository {
           where r.territory_id = $2 and r.driver_employee_id = $1
             and r.dispatch_date between $3::date and $3::date + 6
             and r.status <> 'CANCELLED'
+        ) or exists (
+          select 1 from logistics.driver_profile d
+          where d.employee_id = $1 and d.home_territory_id = $2 and d.status = 'ACTIVE'
         )
       `,
       [employeeId, territoryId, weekStart],
@@ -929,19 +932,28 @@ async function resolveDriverAuthorization(
        order by valid_from desc limit 1`,
       [command.territoryId, command.actorEmployeeId, command.effectiveFrom, command.effectiveUntil],
     );
-    if (assignment.rows[0] === undefined) {
+    const home = await client.query(
+      `select 1 from logistics.driver_profile
+       where employee_id = $1 and home_territory_id = $2 and status = 'ACTIVE'`,
+      [command.actorEmployeeId, command.territoryId],
+    );
+    if (assignment.rows[0] === undefined && home.rowCount === 0) {
       throw new ForbiddenException(
         "Повторяющуюся норму меняет только основной водитель территории",
       );
     }
     return {
-      assignmentId: assignment.rows[0].id,
+      assignmentId: assignment.rows[0]?.id ?? null,
       calendarLinkId: null,
       cutoffAt: null,
       runId: null,
     };
   }
-  const allowed = await client.query<{ assignment_id: string | null; run_id: string | null }>(
+  const allowed = await client.query<{
+    assignment_id: string | null;
+    home_allowed: boolean;
+    run_id: string | null;
+  }>(
     `select
        (select id from logistics.territory_run
         where territory_id = $1 and driver_employee_id = $2 and dispatch_date = $3
@@ -949,11 +961,16 @@ async function resolveDriverAuthorization(
        (select id from logistics.territory_default_assignment
         where territory_id = $1 and driver_employee_id = $2
           and valid_from <= $3 and (valid_to is null or valid_to >= $3)
-        order by valid_from desc limit 1) as assignment_id`,
+        order by valid_from desc limit 1) as assignment_id,
+       exists (select 1 from logistics.driver_profile
+         where employee_id = $2 and home_territory_id = $1 and status = 'ACTIVE') as home_allowed`,
     [command.territoryId, command.actorEmployeeId, command.dispatchDate],
   );
   const source = allowed.rows[0];
-  if (source === undefined || (source.run_id === null && source.assignment_id === null)) {
+  if (
+    source === undefined ||
+    (source.run_id === null && source.assignment_id === null && !source.home_allowed)
+  ) {
     throw new ForbiddenException("Водитель не назначен на эту дату");
   }
   const calendar = await client.query<{ cutoff_at: Date; id: string }>(
