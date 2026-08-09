@@ -2,6 +2,7 @@
 
 import type {
   AuthenticatedUser,
+  LogisticsSetupView,
   PlanningSetupView,
   ProductionPlanView,
   TerritoryDailyNormView,
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
+  getLogisticsSetup,
   getPlanningSetup,
   getProductionPlan,
   getSession,
@@ -26,6 +28,9 @@ export default function ProductionPlanPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [setup, setSetup] = useState<PlanningSetupView | null>(null);
+  const [logisticsSetup, setLogisticsSetup] = useState<LogisticsSetupView | null>(null);
+  const [overviewNorms, setOverviewNorms] = useState<Record<string, TerritoryDailyNormView>>({});
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [dispatchDate, setDispatchDate] = useState(tomorrow());
   const [territoryId, setTerritoryId] = useState("");
   const [groupCode, setGroupCode] = useState("");
@@ -56,12 +61,14 @@ export default function ProductionPlanPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [currentSession, currentSetup] = await Promise.all([
+        const [currentSession, currentSetup, currentLogisticsSetup] = await Promise.all([
           getSession(),
           getPlanningSetup(),
+          getLogisticsSetup(),
         ]);
         setSession(currentSession);
         setSetup(currentSetup);
+        setLogisticsSetup(currentLogisticsSetup);
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace("/login");
@@ -72,6 +79,30 @@ export default function ProductionPlanPage() {
     }
     void load();
   }, [router]);
+
+  useEffect(() => {
+    if (territories.length === 0) return;
+    let cancelled = false;
+    setOverviewLoading(true);
+    Promise.all(
+      territories.map(
+        async (territory) =>
+          [territory.id, await getTerritoryDailyNorm(territory.id, dispatchDate)] as const,
+      ),
+    )
+      .then((entries) => {
+        if (!cancelled) setOverviewNorms(Object.fromEntries(entries));
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(messageOf(caught));
+      })
+      .finally(() => {
+        if (!cancelled) setOverviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchDate, territories]);
 
   useEffect(() => {
     if (territoryId === "") {
@@ -110,6 +141,7 @@ export default function ProductionPlanPage() {
         session.csrfToken,
       );
       setNorm(saved);
+      setOverviewNorms((current) => ({ ...current, [selectedTerritory.id]: saved }));
       setQuantities(Object.fromEntries(saved.lines.map((line) => [line.productId, line.quantity])));
       setMessage(`Норма сохранена: территория ${selectedTerritory.number}, ${selectedGroup.name}.`);
     } catch (caught) {
@@ -126,19 +158,22 @@ export default function ProductionPlanPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            План производства · <Link href="/planning">календарь и запросы</Link>
+            План вывоза · <Link href="/planning">календарь и запросы</Link>
           </small>
         </div>
       </header>
 
       <section className="workspace-title planning-title">
         <div>
-          <p className="eyebrow">Нормы территорий</p>
-          <h1>План производства</h1>
-          <p>Сначала выберите территорию, затем группу продукции и укажите количество товаров.</p>
+          <p className="eyebrow">Норма вывоза по территориям</p>
+          <h1>План вывоза</h1>
+          <p>
+            Здесь указано, что водители должны вывезти в выбранную дату. Производственный план
+            показывается отдельно ниже и относится к дате изготовления.
+          </p>
           {isAdmin ? (
             <Link className="secondary-button" href="/planning/monthly-import">
-              Загрузить месячный план
+              Загрузить нормы на месяц
             </Link>
           ) : null}
         </div>
@@ -157,6 +192,16 @@ export default function ProductionPlanPage() {
 
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="logistics-success">{message}</p> : null}
+
+      <DispatchOverview
+        dispatchDate={dispatchDate}
+        drivers={logisticsSetup?.drivers ?? []}
+        loading={overviewLoading}
+        norms={overviewNorms}
+        products={setup?.products ?? []}
+        productGroups={setup?.productGroups ?? []}
+        territories={territories}
+      />
 
       <nav className="territory-norm-breadcrumbs" aria-label="Путь выбора">
         <button
@@ -183,6 +228,7 @@ export default function ProductionPlanPage() {
 
       {territoryId === "" ? (
         <TerritoryGrid
+          norms={overviewNorms}
           territories={territories}
           onSelect={(nextTerritoryId) => {
             setTerritoryId(nextTerritoryId);
@@ -260,9 +306,11 @@ export default function ProductionPlanPage() {
 }
 
 function TerritoryGrid({
+  norms,
   onSelect,
   territories,
 }: {
+  norms: Record<string, TerritoryDailyNormView>;
   onSelect: (territoryId: string) => void;
   territories: PlanningSetupView["territories"];
 }) {
@@ -280,9 +328,91 @@ function TerritoryGrid({
           <button key={territory.id} onClick={() => onSelect(territory.id)} type="button">
             <span>{territory.number}</span>
             <strong>Территория {territory.number}</strong>
-            <small>Открыть норму →</small>
+            <small>
+              {norms[territory.id]?.lines.reduce((sum, line) => sum + line.quantity, 0) ?? 0} шт. к
+              вывозу →
+            </small>
           </button>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function DispatchOverview({
+  dispatchDate,
+  drivers,
+  loading,
+  norms,
+  productGroups,
+  products,
+  territories,
+}: {
+  dispatchDate: string;
+  drivers: LogisticsSetupView["drivers"];
+  loading: boolean;
+  norms: Record<string, TerritoryDailyNormView>;
+  productGroups: PlanningSetupView["productGroups"];
+  products: PlanningSetupView["products"];
+  territories: PlanningSetupView["territories"];
+}) {
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const lines = Object.values(norms).flatMap((item) => item.lines);
+  const total = lines.reduce((sum, line) => sum + line.quantity, 0);
+  const activeDrivers = drivers.filter((driver) => driver.status === "ACTIVE");
+  return (
+    <section className="dispatch-overview">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Вывоз {shortDate(dispatchDate)}</p>
+          <h2>Общий объём вывоза</h2>
+        </div>
+        <strong>{loading ? "Считаем…" : `${total} шт.`}</strong>
+      </div>
+      <div className="dispatch-overview__groups">
+        {productGroups.map((group) => {
+          const quantity = lines.reduce(
+            (sum, line) =>
+              sum +
+              (productById.get(line.productId)?.categoryCode === group.code ? line.quantity : 0),
+            0,
+          );
+          return (
+            <article key={group.code}>
+              <span>{group.name}</span>
+              <strong>{quantity} шт.</strong>
+            </article>
+          );
+        })}
+      </div>
+      <div className="dispatch-overview__drivers">
+        <h3>По водителям</h3>
+        {activeDrivers.length ? (
+          <div>
+            {activeDrivers.map((driver) => {
+              const territory = territories.find((item) => item.id === driver.homeTerritoryId);
+              const quantity = driver.homeTerritoryId
+                ? (norms[driver.homeTerritoryId]?.lines.reduce(
+                    (sum, line) => sum + line.quantity,
+                    0,
+                  ) ?? 0)
+                : 0;
+              return (
+                <article key={driver.employeeId}>
+                  <span>
+                    <b>{driver.employeeName}</b>
+                    <small>
+                      {territory ? `Территория ${territory.number}` : "Территория не выбрана"}
+                    </small>
+                  </span>
+                  <strong>{quantity} шт.</strong>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="planning-empty-note">Водители ещё не добавлены.</p>
+        )}
       </div>
     </section>
   );
@@ -372,8 +502,12 @@ function PublishedPlanSummary({
 
   return (
     <details className="workspace-more published-plan-summary">
-      <summary>Сводный опубликованный план по цехам</summary>
+      <summary>План производства по цехам</summary>
       <div className="workspace-more__content">
+        <p className="planning-plan-boundary">
+          Это отдельный план: сколько фабрика должна изготовить в производственную дату с учётом
+          доступных остатков и возвратов. Норма вывоза на выбранную дату показана выше.
+        </p>
         <label className="published-plan-date">
           Дата производства
           <input

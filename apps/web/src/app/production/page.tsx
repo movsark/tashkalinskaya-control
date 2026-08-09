@@ -62,8 +62,8 @@ export default function ProductionPage() {
       accepted: tasks.reduce((sum, task) => sum + task.acceptedQuantity, 0),
       awaiting: tasks.reduce((sum, task) => sum + task.awaitingWarehouseQuantity, 0),
       defects: tasks.reduce((sum, task) => sum + task.confirmedDefectQuantity, 0),
-      plan:
-        tasks.length > 0 ? tasks.reduce((sum, task) => sum + task.targetQuantity, 0) : normQuantity,
+      dispatchNorm: normQuantity,
+      plan: tasks.reduce((sum, task) => sum + task.targetQuantity, 0),
     };
   }, [workspace]);
   const normGroups = useMemo(() => {
@@ -217,22 +217,22 @@ export default function ProductionPage() {
       {message ? <p className="logistics-success production-notice">{message}</p> : null}
 
       <section className="production-metrics" aria-label="Сводка производства">
-        <Metric label="Нужно произвести" value={metrics.plan} />
+        <Metric label="План производства" value={metrics.plan} />
+        <Metric label="На вывоз завтра" value={metrics.dispatchNorm} />
         <Metric label="Ожидает склад" value={metrics.awaiting} tone="amber" />
         <Metric label="Принято складом" value={metrics.accepted} tone="green" />
-        <Metric label="Подтвержденный брак" value={metrics.defects} tone="red" />
       </section>
 
       <section className="production-board production-norm-demand">
         <div className="production-section-heading">
           <div>
-            <p className="eyebrow">Нормы территорий</p>
-            <h2>Что нужно произвести {date === today() ? "сегодня" : dateLabel(date)}</h2>
+            <p className="eyebrow">Основание для расчёта</p>
+            <h2>Норма вывоза на следующий день</h2>
           </div>
           <span>{workspace.normDemand.lines.length} позиций</span>
         </div>
         <p className="production-demand-caption">
-          Для вывоза:{" "}
+          Справочно, дата вывоза:{" "}
           {workspace.normDemand.dispatchDates.map(dateLabel).join(", ") ||
             dateLabel(addDays(date, 1))}
           .

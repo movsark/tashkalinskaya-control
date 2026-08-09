@@ -82,7 +82,7 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/planning/plan",
-    label: "План производства",
+    label: "План вывоза",
     roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER"],
     shortLabel: "План",
     symbol: "П",

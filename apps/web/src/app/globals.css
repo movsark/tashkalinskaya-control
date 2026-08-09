@@ -2141,6 +2141,10 @@ select:focus {
   gap: 12px;
 }
 
+.logistics-summary--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .logistics-summary article {
   display: grid;
   gap: 4px;
@@ -2165,6 +2169,11 @@ select:focus {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.logistics-setup-grid--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
 }
 
 .logistics-form {
@@ -3900,6 +3909,77 @@ select:focus {
 
 .published-plan-summary {
   margin: 0;
+}
+
+.planning-plan-boundary {
+  color: var(--ink-soft);
+  line-height: 1.55;
+  margin: 0 0 16px;
+}
+
+.dispatch-overview {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  padding: 20px;
+}
+
+.dispatch-overview .planning-section-heading > strong {
+  color: var(--forest);
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  white-space: nowrap;
+}
+
+.dispatch-overview__groups {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dispatch-overview__groups article {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border-radius: 15px;
+  background: var(--sand);
+}
+
+.dispatch-overview__groups span,
+.dispatch-overview__drivers small {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.dispatch-overview__groups strong,
+.dispatch-overview__drivers strong {
+  color: var(--forest);
+}
+
+.dispatch-overview__drivers {
+  margin-top: 18px;
+}
+
+.dispatch-overview__drivers h3 {
+  margin: 0 0 10px;
+}
+
+.dispatch-overview__drivers > div {
+  display: grid;
+  gap: 8px;
+}
+
+.dispatch-overview__drivers article {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+
+.dispatch-overview__drivers article > span {
+  display: grid;
+  gap: 2px;
 }
 
 .published-plan-date {
@@ -8259,6 +8339,69 @@ a {
 
 .logistics-driver-norms__list small {
   color: var(--muted);
+}
+
+.logistics-driver-directory,
+.logistics-groups {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.logistics-driver-directory__list,
+.logistics-groups__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.logistics-driver-directory__list article,
+.logistics-groups__list article {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--sand);
+}
+
+.logistics-driver-directory__list strong,
+.logistics-groups__list strong {
+  color: var(--forest);
+}
+
+.logistics-driver-directory__list small,
+.logistics-groups__list small {
+  color: var(--muted);
+}
+
+.logistics-groups .logistics-day__heading label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .dispatch-overview__groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .logistics-summary--compact,
+  .logistics-setup-grid--compact,
+  .dispatch-overview__groups {
+    grid-template-columns: 1fr;
+  }
+
+  .dispatch-overview .planning-section-heading {
+    align-items: flex-start;
+  }
 }
 
 .driver-territory-request,

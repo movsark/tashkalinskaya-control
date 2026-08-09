@@ -160,7 +160,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText("Выберите, что нужно сделать сейчас.")).toBeVisible();
-    await expect(page.getByRole("link", { exact: true, name: "План производства" })).toBeVisible();
+    await expect(page.getByRole("link", { exact: true, name: "План вывоза" })).toBeVisible();
     const primaryNavigation = page.getByRole("navigation", { name: "Основная навигация" });
     await expect(primaryNavigation).toBeVisible();
     await primaryNavigation.getByRole("button", { name: "Меню" }).click();
@@ -1144,6 +1144,58 @@ test.describe("B20 browser and HTTP regression", () => {
         territories,
       }),
     );
+    await page.route("**/api/v1/logistics/setup", (route) =>
+      json(route, {
+        assignments: [],
+        drivers: [
+          {
+            canDriveFrom: null,
+            canDriveTo: null,
+            comment: null,
+            employeeId: "20000000-0000-4000-8000-000000000188",
+            employeeName: "Водитель плана",
+            homeTerritoryId: territories[2].id,
+            personnelNumber: "DRIVER-PLAN",
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        territories,
+        vehicles: [
+          {
+            capacityNote: null,
+            comment: null,
+            displayName: "Скрытая машина",
+            id: "20000000-0000-4000-8000-000000000189",
+            registrationNumber: "ТЕСТ",
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/logistics/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        driverNormTotals: [],
+        driverRequests: [],
+        groups: [
+          {
+            dispatchDate: "2026-08-10",
+            groupNo: 1,
+            id: "20000000-0000-4000-8000-000000000190",
+            loadingZone: "MAIN",
+            plannedEndAt: "2026-08-10T07:00:00+03:00",
+            plannedStartAt: "2026-08-10T06:00:00+03:00",
+            status: "DRAFT",
+            version: 1,
+          },
+        ],
+        runs: [],
+        summary: { completeAssignments: 0, draft: 0, published: 0, total: 0 },
+      }),
+    );
+    await page.route("**/api/v1/employees", (route) => json(route, { items: [], total: 0 }));
     await page.route("**/api/v1/planning/territory-norms/*", (route) =>
       json(route, {
         dispatchDate: "2026-08-06",
@@ -1245,13 +1297,20 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("button", { name: "Отклонить", exact: true })).toBeEnabled();
 
     await page.goto("/planning/plan");
-    await expect(page.getByRole("heading", { level: 1, name: "План производства" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "План вывоза" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Общий объём вывоза" })).toBeVisible();
+    await expect(
+      page.locator(".dispatch-overview .planning-section-heading").getByText("63 шт.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Водитель плана", { exact: true })).toBeVisible();
     await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
     await page.getByRole("button", { name: /Территория 3/ }).click();
     await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
     await page.getByRole("button", { name: /Сухая выпечка/ }).click();
     await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
-    await page.getByText("Сводный опубликованный план по цехам", { exact: true }).click();
+    await page.getByText("План производства по цехам", { exact: true }).click();
     await expect(
       page.locator(".published-plan-summary .planning-plan-line").getByText("12 шт.", {
         exact: true,
@@ -1271,6 +1330,18 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBeVisible();
     await publishedProductLine.getByText("Изменить опубликованный план", { exact: true }).click();
     await expect(publishedProductLine.getByLabel("Новое количество")).toBeVisible();
+
+    await page.goto("/logistics");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Территории и водители" }),
+    ).toBeVisible();
+    await expect(page.getByText("9", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Водитель плана", { exact: true })).toBeVisible();
+    await expect(page.getByText("Группа 1", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Новая машина" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Закрепление" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Дополнительный рейс" })).toHaveCount(0);
+    await expect(page.getByText("Готовые назначения", { exact: true })).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -1278,7 +1349,9 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a confectioner sees the full factory need for today only", async ({ page }) => {
+  test("a confectioner sees today's production separately from tomorrow's dispatch norm", async ({
+    page,
+  }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     const workshopId = "20000000-0000-4000-8000-000000000180";
     let requestedProductionDate = "";
@@ -1358,7 +1431,12 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
     await expect(page.getByLabel("Производственная дата")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Что нужно произвести сегодня" })).toBeVisible();
+    await expect(page.getByText("План производства", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("0 шт.", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("На вывоз завтра", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Норма вывоза на следующий день" }),
+    ).toBeVisible();
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     await expect(page.getByText("19 шт.", { exact: true })).toBeVisible();
