@@ -8593,6 +8593,7 @@ label:has(input[type="datetime-local"]) {
 }
 
 .app-home__primary {
+  position: relative;
   display: grid;
   min-height: 84px;
   align-items: center;
@@ -8603,6 +8604,12 @@ label:has(input[type="datetime-local"]) {
   background: var(--forest);
   grid-template-columns: 44px minmax(0, 1fr) auto;
   text-decoration: none;
+}
+
+.app-home__primary.has-attention {
+  box-shadow:
+    0 0 0 3px #f0b557,
+    0 14px 36px rgb(139 90 23 / 20%);
 }
 
 .app-home__primary > span {
@@ -8643,6 +8650,7 @@ label:has(input[type="datetime-local"]) {
 }
 
 .app-home__grid a {
+  position: relative;
   display: grid;
   min-height: 104px;
   align-content: space-between;
@@ -8653,6 +8661,31 @@ label:has(input[type="datetime-local"]) {
   color: var(--ink);
   background: #fff;
   text-decoration: none;
+}
+
+.app-home__grid a.has-attention {
+  border-color: #d99a3d;
+  background: #fffaf0;
+  box-shadow: 0 8px 24px rgb(139 90 23 / 12%);
+}
+
+.app-home__attention-badge {
+  position: absolute;
+  z-index: 2;
+  top: -10px;
+  right: 12px;
+  display: grid;
+  min-width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0 8px;
+  border: 3px solid var(--paper);
+  border-radius: 999px;
+  color: #fff;
+  background: #c84b37;
+  box-shadow: 0 7px 18px rgb(114 37 26 / 28%);
+  font-size: 13px;
+  line-height: 1;
 }
 
 .app-home__grid a strong {

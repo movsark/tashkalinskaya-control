@@ -301,7 +301,12 @@ test.describe("B20 browser and HTTP regression", () => {
       return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
     });
 
-    await page.goto("/warehouse");
+    await page.goto("/");
+    const warehousePrimary = page.getByRole("link", { name: /Основная работа Склад/ });
+    await expect(warehousePrimary).toBeVisible();
+    await expect(warehousePrimary.getByLabel("На складе ожидают 2 товара")).toHaveText("2");
+    await warehousePrimary.click();
+    await expect(page).toHaveURL(/\/warehouse$/);
     const reminder = page.getByRole("status");
     await expect(
       reminder.getByRole("heading", { name: "Нужно забрать готовую продукцию" }),
