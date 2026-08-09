@@ -1011,11 +1011,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const friday = weekdayButtons.filter({ hasText: "Пятница" });
     await expect(friday).toBeDisabled();
     await expect(friday).toContainText("выходной");
-    await page
-      .locator(".driver-selected-norm__lines > div")
-      .filter({ hasText: "Торт тестовый" })
-      .getByRole("button", { name: "Изменить" })
-      .click();
+    await page.locator(".driver-norm-product").filter({ hasText: "Торт тестовый" }).click();
     await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
     await expect
       .poll(() =>

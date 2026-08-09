@@ -594,13 +594,17 @@ function NormProductLines({
     <div className="driver-selected-norm__lines">
       {norms.length ? (
         norms.map((norm) => (
-          <div key={norm.id}>
+          <button
+            aria-label={`Изменить ${norm.productName}, ${norm.quantity} шт.`}
+            className="driver-norm-product"
+            key={norm.id}
+            onClick={() => onEdit(norm)}
+            type="button"
+          >
             <span>{norm.productName}</span>
             <strong>{norm.quantity} шт.</strong>
-            <button type="button" onClick={() => onEdit(norm)}>
-              Изменить
-            </button>
-          </div>
+            <b aria-hidden="true">›</b>
+          </button>
         ))
       ) : (
         <p>{emptyMessage}</p>
