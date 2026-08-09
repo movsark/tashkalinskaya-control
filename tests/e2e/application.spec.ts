@@ -270,10 +270,12 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       reminder.getByRole("heading", { name: "Нужно забрать готовую продукцию" }),
     ).toBeVisible();
-    await expect(reminder).toContainText("2 партии · 14 шт.");
+    await expect(reminder).toContainText("1 товар · 14 шт.");
     await expect(reminder).toContainText("при необходимости — в холодильную камеру");
-    await expect(page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" })).toHaveCount(2);
-    await expect(page.getByText("Забрать из цеха", { exact: true })).toHaveCount(3);
+    await expect(page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" })).toHaveCount(1);
+    await expect(page.getByText("готово забрать: 14 шт.")).toBeVisible();
+    await expect(page.getByText("Забрать из цеха", { exact: true })).toHaveCount(2);
+    await expect(page.getByText("Подтверждено кондитером:")).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

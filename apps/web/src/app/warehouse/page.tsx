@@ -34,6 +34,7 @@ export default function WarehousePage() {
   const isAdmin = roles.has("ADMIN");
   const canReceive = isAdmin || roles.has("WAREHOUSE_KEEPER");
   const canExplain = isAdmin || roles.has("WORKSHOP_MANAGER");
+  const pickupGroups = useMemo(() => groupWarehouseQueue(data?.queue ?? []), [data?.queue]);
   useEffect(() => {
     let active = true;
     let refreshTimer: number | undefined;
@@ -93,7 +94,7 @@ export default function WarehousePage() {
   const free = data.balances.reduce((sum, item) => sum + item.freeQuantity, 0),
     onHand = data.balances.reduce((sum, item) => sum + item.onHandQuantity, 0),
     open = data.discrepancies.filter((item) => !item.status.startsWith("RESOLVED")).length,
-    pickupQuantity = data.queue.reduce((sum, item) => sum + item.quantity, 0);
+    pickupQuantity = pickupGroups.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <main className="workspace-layout warehouse-page simple-workspace">
       <header className="workspace-header">
@@ -123,7 +124,7 @@ export default function WarehousePage() {
       {error ? <p className="form-error warehouse-notice">{error}</p> : null}
       {message ? <p className="logistics-success warehouse-notice">{message}</p> : null}
       <section className="warehouse-metrics">
-        <Metric label="Ожидает приёмки" value={data.queue.length} />
+        <Metric label="Товаров забрать" value={pickupGroups.length} />
         <Metric label="Свободно" value={free} unit="шт." />
         <Metric label="Физически на складе" value={onHand} unit="шт." />
         <Metric label="Открытые расхождения" value={open} />
@@ -139,21 +140,21 @@ export default function WarehousePage() {
             </p>
           </div>
           <strong>
-            {formatBatchCount(data.queue.length)} · {pickupQuantity} шт.
+            {formatProductCount(pickupGroups.length)} · {pickupQuantity} шт.
           </strong>
         </section>
       ) : null}
       <section className="warehouse-panel">
-        <Heading eyebrow="Очередь" title="Партии из цехов" count={data.queue.length} />
+        <Heading eyebrow="Очередь" title="Готовая продукция из цехов" count={pickupGroups.length} />
         {data.queue.length ? (
           <div className="warehouse-queue">
-            {data.queue.map((item) => (
-              <ReceiptCard
+            {pickupGroups.map((group) => (
+              <PickupGroupCard
                 busy={busy}
                 canReceive={canReceive}
+                group={group}
                 isAdmin={isAdmin}
-                item={item}
-                key={item.batchId}
+                key={group.key}
                 reasons={data.reasons.filter((reason) => reason.kind === "RECEIPT_DIFFERENCE")}
                 session={session}
                 run={run}
@@ -236,9 +237,84 @@ export default function WarehousePage() {
   );
 }
 
+interface WarehousePickupGroup {
+  readonly isNight: boolean;
+  readonly items: readonly WarehouseQueueItemView[];
+  readonly key: string;
+  readonly productCode: string;
+  readonly productName: string;
+  readonly productionDate: string;
+  readonly quantity: number;
+  readonly workshopName: string;
+}
+
+function PickupGroupCard({
+  busy,
+  canReceive,
+  group,
+  isAdmin,
+  reasons,
+  session,
+  run,
+  reload,
+}: {
+  busy: boolean;
+  canReceive: boolean;
+  group: WarehousePickupGroup;
+  isAdmin: boolean;
+  reasons: WarehouseWorkspaceView["reasons"];
+  session: AuthenticatedUser;
+  run: (a: () => Promise<void>) => Promise<void>;
+  reload: (m?: string) => Promise<void>;
+}) {
+  const hasActiveReview = group.items.some((item) => item.claimedById !== null);
+  const [open, setOpen] = useState(hasActiveReview);
+  useEffect(() => {
+    if (hasActiveReview) setOpen(true);
+  }, [hasActiveReview]);
+  return (
+    <article className={group.isNight ? "is-night" : ""}>
+      <header>
+        <div>
+          <span>
+            {group.productCode} · {group.workshopName}
+          </span>
+          <h3>{group.productName}</h3>
+          <small>
+            Производство {group.productionDate} · готово забрать: {group.quantity} шт.
+          </small>
+        </div>
+        <b>{group.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
+      </header>
+      <button className="primary-button" onClick={() => setOpen((current) => !current)}>
+        {open ? "Скрыть приёмку" : "Начать проверку"}
+      </button>
+      {open ? (
+        <div className="warehouse-pickup-entries">
+          {group.items.map((item) => (
+            <ReceiptCard
+              busy={busy}
+              canReceive={canReceive}
+              compact
+              isAdmin={isAdmin}
+              item={item}
+              key={item.batchId}
+              reasons={reasons}
+              session={session}
+              run={run}
+              reload={reload}
+            />
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function ReceiptCard({
   busy,
   canReceive,
+  compact = false,
   isAdmin,
   item,
   reasons,
@@ -248,6 +324,7 @@ function ReceiptCard({
 }: {
   busy: boolean;
   canReceive: boolean;
+  compact?: boolean;
   isAdmin: boolean;
   item: WarehouseQueueItemView;
   reasons: WarehouseWorkspaceView["reasons"];
@@ -266,19 +343,33 @@ function ReceiptCard({
   const acceptedIsValid = Number.isInteger(acceptedQuantity);
   const difference = acceptedQuantity !== item.quantity;
   return (
-    <article className={item.isNight ? "is-night" : ""}>
-      <header>
-        <div>
-          <span>
-            {item.productCode} · {item.workshopName}
-          </span>
-          <h3>{item.productName}</h3>
-          <small>
-            Производство {item.productionDate} · заявлено {item.quantity} шт.
-          </small>
-        </div>
-        <b>{item.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
-      </header>
+    <article className={compact ? "warehouse-pickup-entry" : item.isNight ? "is-night" : ""}>
+      {compact ? (
+        <header>
+          <div>
+            <strong>Подтверждено кондитером: {item.quantity} шт.</strong>
+            <small>
+              {new Date(item.submittedAt).toLocaleTimeString("ru-RU", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </small>
+          </div>
+        </header>
+      ) : (
+        <header>
+          <div>
+            <span>
+              {item.productCode} · {item.workshopName}
+            </span>
+            <h3>{item.productName}</h3>
+            <small>
+              Производство {item.productionDate} · заявлено {item.quantity} шт.
+            </small>
+          </div>
+          <b>{item.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
+        </header>
+      )}
       {!claimed && canReceive ? (
         <button
           className="primary-button"
@@ -614,11 +705,39 @@ function textOf(value: unknown) {
   return value instanceof Error ? value.message : "Не удалось выполнить операцию";
 }
 
-function formatBatchCount(count: number): string {
+function formatProductCount(count: number): string {
   const lastTwo = count % 100;
   const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return `${count} партий`;
-  if (last === 1) return `${count} партия`;
-  if (last >= 2 && last <= 4) return `${count} партии`;
-  return `${count} партий`;
+  if (lastTwo >= 11 && lastTwo <= 14) return `${count} товаров`;
+  if (last === 1) return `${count} товар`;
+  if (last >= 2 && last <= 4) return `${count} товара`;
+  return `${count} товаров`;
+}
+
+function groupWarehouseQueue(queue: readonly WarehouseQueueItemView[]): WarehousePickupGroup[] {
+  const groups = new Map<string, WarehouseQueueItemView[]>();
+  for (const item of queue) {
+    const key = [
+      item.productId,
+      item.workshopId,
+      item.productionDate,
+      item.isNight ? "NIGHT" : "DAY",
+    ].join(":");
+    const current = groups.get(key);
+    if (current) current.push(item);
+    else groups.set(key, [item]);
+  }
+  return [...groups.entries()].map(([key, items]) => {
+    const first = items[0]!;
+    return {
+      isNight: first.isNight,
+      items,
+      key,
+      productCode: first.productCode,
+      productName: first.productName,
+      productionDate: first.productionDate,
+      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      workshopName: first.workshopName,
+    };
+  });
 }

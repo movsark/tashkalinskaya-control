@@ -5666,6 +5666,33 @@ select:focus {
   background: linear-gradient(145deg, #f3f7f8, #fff);
 }
 
+.warehouse-pickup-entries {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.warehouse-pickup-entry {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8faf8;
+}
+
+.warehouse-pickup-entry header strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.warehouse-pickup-entry header small {
+  display: block;
+  margin-top: 4px;
+}
+
 .warehouse-queue article > header {
   display: flex;
   align-items: flex-start;
