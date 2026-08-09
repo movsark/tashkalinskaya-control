@@ -9,6 +9,7 @@ import type {
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
@@ -448,38 +449,45 @@ export default function PlanningPage() {
                                     </span>
                                   </summary>
                                   <NormProductLines
+                                    editingNormId={editingNorm?.id ?? ""}
                                     emptyMessage="В этой группе на выбранный день товаров нет."
                                     norms={groupNorms}
-                                    onEdit={setEditingNorm}
+                                    onEdit={(norm) =>
+                                      setEditingNorm((current) =>
+                                        current?.id === norm.id ? null : norm,
+                                      )
+                                    }
+                                    renderEditor={(norm) =>
+                                      session ? (
+                                        <DriverRequestForm
+                                          busy={busy}
+                                          date={selectedDay.date}
+                                          norm={norm}
+                                          onCancel={() => setEditingNorm(null)}
+                                          onSubmit={(input) =>
+                                            action(async () => {
+                                              const created = await createNormChangeRequest(
+                                                input,
+                                                session.csrfToken,
+                                              );
+                                              await reload(
+                                                created.status === "MISSED_CUTOFF"
+                                                  ? "Изменять уже поздно: запрос сохранён как просроченный."
+                                                  : "Запрос отправлен администратору.",
+                                              );
+                                              setEditingNorm(null);
+                                            })
+                                          }
+                                          territoryId={territoryId}
+                                        />
+                                      ) : null
+                                    }
                                   />
                                 </details>
                               );
                             })}
                           </div>
                         </article>
-                        {session && editingNorm ? (
-                          <DriverRequestForm
-                            busy={busy}
-                            date={selectedDay.date}
-                            norm={editingNorm}
-                            onCancel={() => setEditingNorm(null)}
-                            onSubmit={(input) =>
-                              action(async () => {
-                                const created = await createNormChangeRequest(
-                                  input,
-                                  session.csrfToken,
-                                );
-                                await reload(
-                                  created.status === "MISSED_CUTOFF"
-                                    ? "Изменять уже поздно: запрос сохранён как просроченный."
-                                    : "Запрос отправлен администратору.",
-                                );
-                                setEditingNorm(null);
-                              })
-                            }
-                            territoryId={territoryId}
-                          />
-                        ) : null}
                       </div>
                     ) : null}
                   </section>
@@ -582,30 +590,40 @@ export default function PlanningPage() {
 }
 
 function NormProductLines({
+  editingNormId,
   emptyMessage,
   norms,
   onEdit,
+  renderEditor,
 }: {
+  editingNormId: string;
   emptyMessage: string;
   norms: readonly WeeklyNormView[];
   onEdit: (norm: WeeklyNormView) => void;
+  renderEditor: (norm: WeeklyNormView) => ReactNode;
 }) {
   return (
     <div className="driver-selected-norm__lines">
       {norms.length ? (
-        norms.map((norm) => (
-          <button
-            aria-label={`Изменить ${norm.productName}, ${norm.quantity} шт.`}
-            className="driver-norm-product"
-            key={norm.id}
-            onClick={() => onEdit(norm)}
-            type="button"
-          >
-            <span>{norm.productName}</span>
-            <strong>{norm.quantity} шт.</strong>
-            <b aria-hidden="true">›</b>
-          </button>
-        ))
+        norms.map((norm) => {
+          const expanded = editingNormId === norm.id;
+          return (
+            <div className="driver-norm-product-entry" key={norm.id}>
+              <button
+                aria-expanded={expanded}
+                aria-label={`Изменить ${norm.productName}, ${norm.quantity} шт.`}
+                className="driver-norm-product"
+                onClick={() => onEdit(norm)}
+                type="button"
+              >
+                <span>{norm.productName}</span>
+                <strong>{norm.quantity} шт.</strong>
+                <b aria-hidden="true">{expanded ? "⌃" : "›"}</b>
+              </button>
+              {expanded ? renderEditor(norm) : null}
+            </div>
+          );
+        })
       ) : (
         <p>{emptyMessage}</p>
       )}

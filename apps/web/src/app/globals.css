@@ -3413,13 +3413,17 @@ select:focus {
   border-top: 1px solid var(--line);
 }
 
-.driver-norm-group .driver-norm-product:first-child {
+.driver-norm-group .driver-norm-product-entry:first-child .driver-norm-product {
   border-top: 0;
 }
 
 .driver-selected-norm__lines {
   display: grid;
   background: #fff;
+}
+
+.driver-norm-product-entry {
+  min-width: 0;
 }
 
 .driver-norm-product {
@@ -3459,6 +3463,10 @@ select:focus {
 .driver-norm-product:focus-visible {
   outline: 2px solid var(--forest);
   outline-offset: -2px;
+}
+
+.driver-norm-product-entry .driver-inline-request {
+  margin: 0 12px 12px;
 }
 
 .driver-selected-norm__lines > p {

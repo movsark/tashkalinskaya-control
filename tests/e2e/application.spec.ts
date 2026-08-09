@@ -1011,8 +1011,12 @@ test.describe("B20 browser and HTTP regression", () => {
     const friday = weekdayButtons.filter({ hasText: "Пятница" });
     await expect(friday).toBeDisabled();
     await expect(friday).toContainText("выходной");
-    await page.locator(".driver-norm-product").filter({ hasText: "Торт тестовый" }).click();
+    const cakeProductEntry = page.locator(".driver-norm-product-entry").filter({
+      has: page.getByText("Торт тестовый", { exact: true }),
+    });
+    await cakeProductEntry.locator(".driver-norm-product").click();
     await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
+    await expect(cakeProductEntry.locator("form.driver-inline-request")).toBeVisible();
     await expect
       .poll(() =>
         page.locator("form.driver-inline-request").evaluate((form) => {
