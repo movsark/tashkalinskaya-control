@@ -160,6 +160,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText("Выберите, что нужно сделать сейчас.")).toBeVisible();
+    await expect(page.getByRole("link", { exact: true, name: "План производства" })).toBeVisible();
     const primaryNavigation = page.getByRole("navigation", { name: "Основная навигация" });
     await expect(primaryNavigation).toBeVisible();
     await primaryNavigation.getByRole("button", { name: "Меню" }).click();

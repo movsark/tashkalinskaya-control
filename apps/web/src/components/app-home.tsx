@@ -82,7 +82,7 @@ export function AppHome() {
         <div className="app-home__grid">
           {destinations
             .filter((destination) => destination.href !== primary.href)
-            .slice(0, 7)
+            .slice(0, 8)
             .map((destination) => (
               <Link href={destination.href} key={destination.href}>
                 <span aria-hidden="true">{destination.symbol}</span>
