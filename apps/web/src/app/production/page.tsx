@@ -625,7 +625,6 @@ function ConfectionerWorkBoard({
   tasks: readonly ProductionTaskView[];
 }) {
   const total = tasks.reduce((sum, task) => sum + task.targetQuantity, 0);
-  const remaining = tasks.reduce((sum, task) => sum + task.remainingToDeclare, 0);
 
   return (
     <section aria-label="В работе" className="production-board production-confectioner-work">
@@ -644,24 +643,18 @@ function ConfectionerWorkBoard({
           «Взять в работу».
         </p>
       ) : (
-        <>
-          <div className="production-confectioner-work__summary">
-            <span>Всего взято: {total} шт.</span>
-            <strong>Осталось произвести: {remaining} шт.</strong>
-          </div>
-          <div className="production-confectioner-work__list">
-            {tasks.map((task) => (
-              <ConfectionerWorkCard
-                busy={busy}
-                key={task.id}
-                onAction={onAction}
-                onReload={onReload}
-                session={session}
-                task={task}
-              />
-            ))}
-          </div>
-        </>
+        <div className="production-confectioner-work__list">
+          {tasks.map((task) => (
+            <ConfectionerWorkCard
+              busy={busy}
+              key={task.id}
+              onAction={onAction}
+              onReload={onReload}
+              session={session}
+              task={task}
+            />
+          ))}
+        </div>
       )}
     </section>
   );
@@ -680,6 +673,7 @@ function ConfectionerWorkCard({
   session: AuthenticatedUser;
   task: ProductionTaskView;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [quantity, setQuantity] = useState(String(Math.max(task.remainingToDeclare, 1)));
   const numericQuantity = Number(quantity);
   const activeBatches = task.batches.filter((batch) =>
@@ -697,84 +691,106 @@ function ConfectionerWorkCard({
 
   return (
     <article className={task.remainingToDeclare === 0 ? "is-completed" : ""}>
-      <header>
-        <div>
+      <button
+        aria-expanded={expanded}
+        className="production-confectioner-work__trigger"
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
+      >
+        <span>
           <span>{task.productCode}</span>
           <h3>{task.productName}</h3>
-        </div>
-        <strong>{task.targetQuantity} шт.</strong>
-      </header>
-      <div className="production-confectioner-work__progress">
-        <span>Передано: {task.declaredQuantity} шт.</span>
-        <strong>Осталось: {task.remainingToDeclare} шт.</strong>
-      </div>
-      <div className="production-confectioner-work__people">
-        <strong>Выполняют вместе</strong>
-        {task.assignments.map((assignment) => (
-          <span key={assignment.id}>
-            {assignment.employeeName}
-            {assignment.employeeId === session.employee.id ? " · вы" : ""}
+        </span>
+        <i aria-hidden="true">{expanded ? "−" : "+"}</i>
+        <span
+          aria-label={`План ${task.targetQuantity} штук, произведено ${task.declaredQuantity} штук, осталось ${task.remainingToDeclare} штук`}
+          className="production-demand-product__numbers production-confectioner-work__numbers"
+        >
+          <span className="is-plan">
+            <small>План</small>
+            <strong>{task.targetQuantity} шт.</strong>
           </span>
-        ))}
-      </div>
-      {activeBatches.length > 0 ? (
-        <div className="production-confectioner-work__history">
-          <strong>Кто сколько произвёл</strong>
-          {activeBatches.map((batch) => (
-            <span key={batch.id}>
-              {batch.submittedByName} · произведено {batch.quantity} шт.
-            </span>
-          ))}
+          <span className="is-produced">
+            <small>Произведено</small>
+            <strong>{task.declaredQuantity} шт.</strong>
+          </span>
+          <span className="is-remaining">
+            <small>Осталось</small>
+            <strong>{task.remainingToDeclare} шт.</strong>
+          </span>
+        </span>
+      </button>
+      {expanded ? (
+        <div className="production-confectioner-work__details">
+          <div className="production-confectioner-work__people">
+            <strong>Выполняют вместе</strong>
+            {task.assignments.map((assignment) => (
+              <span key={assignment.id}>
+                {assignment.employeeName}
+                {assignment.employeeId === session.employee.id ? " · вы" : ""}
+              </span>
+            ))}
+          </div>
+          {activeBatches.length > 0 ? (
+            <div className="production-confectioner-work__history">
+              <strong>Кто сколько произвёл</strong>
+              {activeBatches.map((batch) => (
+                <span key={batch.id}>
+                  {batch.submittedByName} · произведено {batch.quantity} шт.
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {task.remainingToDeclare === 0 ? (
+            <p className="production-confectioner-work__done">
+              Всё количество произведено и ожидает проверки склада.
+            </p>
+          ) : (
+            <div className="production-confectioner-work__submit">
+              <label>
+                Произведено сейчас
+                <input
+                  inputMode="numeric"
+                  max={task.remainingToDeclare}
+                  min="1"
+                  onChange={(event) => setQuantity(event.target.value)}
+                  type="number"
+                  value={quantity}
+                />
+              </label>
+              <button
+                className="primary-button"
+                disabled={
+                  busy ||
+                  !Number.isInteger(numericQuantity) ||
+                  numericQuantity < 1 ||
+                  numericQuantity > task.remainingToDeclare
+                }
+                onClick={() =>
+                  void onAction(async () => {
+                    await submitProductionBatch(
+                      task.id,
+                      {
+                        idempotencyKey: crypto.randomUUID(),
+                        producedAt: new Date().toISOString(),
+                        quantity: numericQuantity,
+                        taskVersion: task.version,
+                      },
+                      session.csrfToken,
+                    );
+                    await onReload(
+                      `Произведено ${numericQuantity} шт. «${task.productName}». Остаток пересчитан.`,
+                    );
+                  })
+                }
+                type="button"
+              >
+                Произведено
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
-      {task.remainingToDeclare === 0 ? (
-        <p className="production-confectioner-work__done">
-          Всё количество передано и ожидает дальнейшей проверки склада.
-        </p>
-      ) : (
-        <div className="production-confectioner-work__submit">
-          <label>
-            Сколько готово сейчас
-            <input
-              inputMode="numeric"
-              max={task.remainingToDeclare}
-              min="1"
-              onChange={(event) => setQuantity(event.target.value)}
-              type="number"
-              value={quantity}
-            />
-          </label>
-          <button
-            className="primary-button"
-            disabled={
-              busy ||
-              !Number.isInteger(numericQuantity) ||
-              numericQuantity < 1 ||
-              numericQuantity > task.remainingToDeclare
-            }
-            onClick={() =>
-              void onAction(async () => {
-                await submitProductionBatch(
-                  task.id,
-                  {
-                    idempotencyKey: crypto.randomUUID(),
-                    producedAt: new Date().toISOString(),
-                    quantity: numericQuantity,
-                    taskVersion: task.version,
-                  },
-                  session.csrfToken,
-                );
-                await onReload(
-                  `${numericQuantity} шт. «${task.productName}» передано. Остаток пересчитан.`,
-                );
-              })
-            }
-            type="button"
-          >
-            Передать готовое
-          </button>
-        </div>
-      )}
     </article>
   );
 }

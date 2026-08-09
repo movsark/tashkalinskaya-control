@@ -1606,14 +1606,23 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByRole("button", { name: "Присоединиться к работе" }).click();
     await expect(page.getByLabel("В работе")).toBeVisible();
     await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("1 поз. · 12 шт.");
-    await expect(page.getByText("Осталось: 8 шт.", { exact: true })).toBeVisible();
+
+    const workProduct = page.getByRole("button", { name: /Торт тестовый/ });
+    await expect(workProduct).toContainText("План12 шт.");
+    await expect(workProduct).toContainText("Произведено4 шт.");
+    await expect(workProduct).toContainText("Осталось8 шт.");
+    await expect(page.getByText("Выполняют вместе", { exact: true })).not.toBeVisible();
+
+    await workProduct.click();
+    await expect(page.getByText("Выполняют вместе", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Кондитер смены · произведено 4 шт.", { exact: true }),
     ).toBeVisible();
 
-    await page.getByLabel("Сколько готово сейчас").fill("6");
-    await page.getByRole("button", { name: "Передать готовое" }).click();
-    await expect(page.getByText("Осталось: 2 шт.", { exact: true })).toBeVisible();
+    await page.getByLabel("Произведено сейчас").fill("6");
+    await page.getByRole("button", { name: "Произведено", exact: true }).click();
+    await expect(workProduct).toContainText("Произведено10 шт.");
+    await expect(workProduct).toContainText("Осталось2 шт.");
     await expect(
       page.getByText("Кондитер производства · произведено 6 шт.", { exact: true }),
     ).toBeVisible();
