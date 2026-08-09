@@ -3173,6 +3173,36 @@ select:focus {
   font-weight: 700;
 }
 
+.planning-home-territory {
+  align-items: end;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr) auto;
+  margin-bottom: 24px;
+  padding: 24px;
+}
+
+.planning-home-territory h2,
+.planning-home-territory p {
+  margin: 0;
+}
+
+.planning-home-territory label {
+  display: grid;
+  gap: 8px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .planning-home-territory {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+}
+
 .planning-summary {
   display: grid;
   gap: 10px;

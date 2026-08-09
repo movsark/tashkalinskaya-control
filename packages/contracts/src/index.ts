@@ -330,6 +330,7 @@ export interface DriverProfileView {
   readonly comment: string | null;
   readonly employeeId: string;
   readonly employeeName: string;
+  readonly homeTerritoryId: string | null;
   readonly personnelNumber: string;
   readonly status: DirectoryStatus;
   readonly version: number;
@@ -398,10 +399,18 @@ export interface TerritoryRunView {
 export interface DriverLogisticsDayView {
   readonly availableTerritoryIds: readonly string[];
   readonly dispatchDate: string;
+  readonly driverProfileVersion: number;
+  readonly homeTerritoryId: string | null;
   readonly requests: readonly DriverTerritoryRequestView[];
   readonly runs: readonly TerritoryRunView[];
   readonly territories: readonly TerritoryView[];
   readonly totalNormQuantity: number;
+}
+
+export interface DriverHomeTerritoryView {
+  readonly employeeId: string;
+  readonly territoryId: string;
+  readonly version: number;
 }
 
 export type DriverTerritoryRequestStatus = "APPROVED" | "REJECTED" | "SUBMITTED";

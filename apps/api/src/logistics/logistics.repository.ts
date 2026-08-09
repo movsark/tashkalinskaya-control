@@ -4,6 +4,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import type {
   DriverTerritoryRequestView,
   DriverLogisticsDayView,
+  DriverHomeTerritoryView,
   DriverProfileView,
   LoadingGroupView,
   LogisticsDayView,
@@ -34,6 +35,7 @@ interface DriverRow {
   readonly comment: string | null;
   readonly employee_id: string;
   readonly employee_name: string;
+  readonly home_territory_id: string | null;
   readonly personnel_number: string;
   readonly status: "ACTIVE" | "ARCHIVED";
   readonly version: number;
@@ -153,7 +155,8 @@ export class LogisticsRepository {
       this.database.query<DriverRow>(`
         select
           d.employee_id, e.full_name as employee_name, e.personnel_number,
-          d.status, d.can_drive_from::text, d.can_drive_to::text, d.comment, d.version
+          d.status, d.can_drive_from::text, d.can_drive_to::text, d.comment,
+          d.home_territory_id, d.version
         from logistics.driver_profile d
         join identity.employee e on e.id = d.employee_id
         order by e.full_name, e.personnel_number
@@ -337,7 +340,8 @@ export class LogisticsRepository {
             employee_id,
             (select full_name from identity.employee where id = employee_id) as employee_name,
             (select personnel_number from identity.employee where id = employee_id) as personnel_number,
-            status, can_drive_from::text, can_drive_to::text, comment, version
+            status, can_drive_from::text, can_drive_to::text, comment,
+            home_territory_id, version
         `,
         [
           command.employeeId,
@@ -364,6 +368,59 @@ export class LogisticsRepository {
       return current;
     });
     return mapDriver(row);
+  }
+
+  async selectDriverHomeTerritory(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    territoryId: string;
+    version: number;
+  }): Promise<DriverHomeTerritoryView> {
+    return this.database.transaction(async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:home-territory:${command.territoryId}`,
+      ]);
+      const territory = await client.query(
+        "select 1 from logistics.territory where id = $1 and status = 'ACTIVE'",
+        [command.territoryId],
+      );
+      if (territory.rowCount === 0) throw new NotFoundException("Активная территория не найдена");
+      const occupied = await client.query(
+        `select 1 from logistics.driver_profile
+         where home_territory_id = $1 and employee_id <> $2 and status = 'ACTIVE'`,
+        [command.territoryId, command.actorEmployeeId],
+      );
+      if (occupied.rowCount !== 0) {
+        throw new ConflictException("Территория уже выбрана другим водителем");
+      }
+      const updated = await client.query<{ employee_id: string; version: number }>(
+        `update logistics.driver_profile
+         set home_territory_id = $2, version = version + 1, updated_at = now()
+         where employee_id = $1 and status = 'ACTIVE' and version = $3
+         returning employee_id, version`,
+        [command.actorEmployeeId, command.territoryId, command.version],
+      );
+      const row = updated.rows[0];
+      if (row === undefined) {
+        throw new ConflictException("Профиль водителя изменился. Обновите экран и повторите");
+      }
+      await insertAudit(
+        client,
+        { ...command, activeRole: "DRIVER" },
+        "DRIVER_HOME_TERRITORY_SELECTED",
+        "DRIVER_PROFILE",
+        command.actorEmployeeId,
+        { territoryId: command.territoryId },
+      );
+      await insertOutbox(client, "logistics.driver-home-territory.changed", row.employee_id, {
+        territoryId: command.territoryId,
+      });
+      return {
+        employeeId: row.employee_id,
+        territoryId: command.territoryId,
+        version: row.version,
+      };
+    });
   }
 
   async createDefaultAssignment(command: {
@@ -941,16 +998,17 @@ export class LogisticsRepository {
     dispatchDate: string,
     driverEmployeeId: string,
   ): Promise<DriverLogisticsDayView> {
-    const [runs, normTotal, territories, requests, availableTerritories] = await Promise.all([
-      this.database.query<RunRow>(
-        `${runSelect}
+    const [runs, normTotal, territories, requests, availableTerritories, profile] =
+      await Promise.all([
+        this.database.query<RunRow>(
+          `${runSelect}
          where r.dispatch_date = $1 and r.driver_employee_id = $2
            and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
          order by r.planned_start_at, t.territory_number, r.run_no`,
-        [dispatchDate, driverEmployeeId],
-      ),
-      this.database.query<{ total_norm_quantity: number }>(
-        `select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
+          [dispatchDate, driverEmployeeId],
+        ),
+        this.database.query<{ total_norm_quantity: number }>(
+          `select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
          from planning.territory_daily_norm n
          where n.dispatch_date = $1 and n.is_current
            and n.territory_id in (
@@ -959,20 +1017,20 @@ export class LogisticsRepository {
              where r.dispatch_date = $1 and r.driver_employee_id = $2
                and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
            )`,
-        [dispatchDate, driverEmployeeId],
-      ),
-      this.database.query<TerritoryRow>(
-        `select id, territory_number, name, description, sort_order, status, version
+          [dispatchDate, driverEmployeeId],
+        ),
+        this.database.query<TerritoryRow>(
+          `select id, territory_number, name, description, sort_order, status, version
          from logistics.territory where status = 'ACTIVE' order by sort_order, territory_number`,
-      ),
-      this.database.query<DriverTerritoryRequestRow>(
-        `${driverRequestSelect}
+        ),
+        this.database.query<DriverTerritoryRequestRow>(
+          `${driverRequestSelect}
          where q.dispatch_date = $1 and q.requester_employee_id = $2
          order by q.created_at desc`,
-        [dispatchDate, driverEmployeeId],
-      ),
-      this.database.query<{ territory_id: string }>(
-        `select distinct territory_id from (
+          [dispatchDate, driverEmployeeId],
+        ),
+        this.database.query<{ territory_id: string }>(
+          `select distinct territory_id from (
            select r.territory_id
            from logistics.territory_run r
            where r.dispatch_date = $1 and r.driver_employee_id = $2 and r.status <> 'CANCELLED'
@@ -981,13 +1039,27 @@ export class LogisticsRepository {
            from logistics.territory_default_assignment a
            where a.driver_employee_id = $2 and a.valid_from <= $1
              and (a.valid_to is null or a.valid_to >= $1)
+           union
+           select d.home_territory_id
+           from logistics.driver_profile d
+           where d.employee_id = $2 and d.status = 'ACTIVE'
+             and d.home_territory_id is not null
          ) allowed`,
-        [dispatchDate, driverEmployeeId],
-      ),
-    ]);
+          [dispatchDate, driverEmployeeId],
+        ),
+        this.database.query<{ home_territory_id: string | null; version: number }>(
+          `select home_territory_id, version from logistics.driver_profile
+         where employee_id = $1 and status = 'ACTIVE'`,
+          [driverEmployeeId],
+        ),
+      ]);
+    const driverProfile = profile.rows[0];
+    if (driverProfile === undefined) throw new NotFoundException("Профиль водителя не найден");
     return {
       availableTerritoryIds: availableTerritories.rows.map((row) => row.territory_id),
       dispatchDate,
+      driverProfileVersion: driverProfile.version,
+      homeTerritoryId: driverProfile.home_territory_id,
       requests: requests.rows.map(mapDriverTerritoryRequest),
       runs: runs.rows.map(mapRun),
       territories: territories.rows.map(mapTerritory),
@@ -1337,6 +1409,7 @@ function mapDriver(row: DriverRow): DriverProfileView {
     comment: row.comment,
     employeeId: row.employee_id,
     employeeName: row.employee_name,
+    homeTerritoryId: row.home_territory_id,
     personnelNumber: row.personnel_number,
     status: row.status,
     version: row.version,

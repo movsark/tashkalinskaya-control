@@ -22,6 +22,7 @@ import {
   getSession,
   getTerritoryNormWeek,
   listNormChangeRequests,
+  selectDriverHomeTerritory,
 } from "../../lib/api";
 
 export default function PlanningPage() {
@@ -38,6 +39,9 @@ export default function PlanningPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [driverTerritoryIds, setDriverTerritoryIds] = useState<readonly string[]>([]);
+  const [driverProfileVersion, setDriverProfileVersion] = useState(1);
+  const [homeTerritoryId, setHomeTerritoryId] = useState("");
+  const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -96,6 +100,13 @@ export default function PlanningPage() {
         setSession(currentSession);
         setSetup(currentSetup);
         setDriverTerritoryIds(driverDay?.availableTerritoryIds ?? []);
+        setDriverProfileVersion(driverDay?.driverProfileVersion ?? 1);
+        setHomeTerritoryId(driverDay?.homeTerritoryId ?? "");
+        setHomeTerritoryChoice(
+          driverDay?.homeTerritoryId ??
+            currentSetup.territories.find((item) => item.status === "ACTIVE")?.id ??
+            "",
+        );
         setTerritoryId((current) => current || firstTerritory?.id || "");
         if (currentSession.employee.roles.some((role) => role.roleCode === "ADMIN")) {
           setRequests(await listNormChangeRequests());
@@ -116,6 +127,9 @@ export default function PlanningPage() {
     void getDriverLogisticsDay(selectedDate)
       .then((day) => {
         setDriverTerritoryIds(day.availableTerritoryIds);
+        setDriverProfileVersion(day.driverProfileVersion);
+        setHomeTerritoryId(day.homeTerritoryId ?? "");
+        setHomeTerritoryChoice((current) => current || day.homeTerritoryId || "");
         setTerritoryId((current) =>
           day.availableTerritoryIds.includes(current)
             ? current
@@ -210,6 +224,56 @@ export default function PlanningPage() {
 
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="logistics-success">{message}</p> : null}
+
+      {isDriver && setup && session ? (
+        <section className="planning-home-territory" aria-label="Постоянная территория">
+          <div>
+            <p className="eyebrow">Настройка водителя</p>
+            <h2>Постоянная территория</h2>
+            <p>
+              Выберите свою основную территорию для просмотра нормы. Машину и рейс назначает
+              администратор отдельно.
+            </p>
+          </div>
+          <label>
+            Территория
+            <select
+              value={homeTerritoryChoice}
+              onChange={(event) => setHomeTerritoryChoice(event.target.value)}
+            >
+              <option value="">Выберите территорию</option>
+              {setup.territories
+                .filter((item) => item.status === "ACTIVE")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    Территория {item.number}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <button
+            className="primary-action"
+            disabled={busy || homeTerritoryChoice === "" || homeTerritoryChoice === homeTerritoryId}
+            type="button"
+            onClick={() =>
+              action(async () => {
+                const saved = await selectDriverHomeTerritory(
+                  { territoryId: homeTerritoryChoice, version: driverProfileVersion },
+                  session.csrfToken,
+                );
+                const day = await getDriverLogisticsDay(selectedDate);
+                setDriverProfileVersion(saved.version);
+                setHomeTerritoryId(saved.territoryId);
+                setDriverTerritoryIds(day.availableTerritoryIds);
+                setTerritoryId(saved.territoryId);
+                setMessage("Постоянная территория сохранена.");
+              })
+            }
+          >
+            {homeTerritoryId ? "Сменить территорию" : "Сохранить территорию"}
+          </button>
+        </section>
+      ) : null}
 
       <section className="planning-summary" aria-label="Сводка нормы">
         <article>

@@ -24,6 +24,7 @@ import {
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
+  SelectDriverHomeTerritoryDto,
   UpdateRunAssignmentDto,
   UpdateTerritoryDto,
   UpdateVehicleDto,
@@ -121,6 +122,19 @@ export class LogisticsController {
   @RequireRoles("DRIVER")
   driverDay(@Param("dispatchDate") dispatchDate: string, @Req() request: AuthenticatedRequest) {
     return this.logistics.driverDay(dispatchDate, requireActorId(request));
+  }
+
+  @Put("me/home-territory")
+  @RequireRoles("DRIVER")
+  selectHomeTerritory(
+    @Body() dto: SelectDriverHomeTerritoryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.logistics.selectDriverHomeTerritory(
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
   }
 
   @Post("me/territory-requests")

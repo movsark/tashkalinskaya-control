@@ -12,6 +12,7 @@ import type {
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
+  SelectDriverHomeTerritoryDto,
   UpdateRunAssignmentDto,
   UpdateTerritoryDto,
   UpdateVehicleDto,
@@ -35,6 +36,21 @@ export class LogisticsService {
   driverDay(dispatchDate: string, driverEmployeeId: string) {
     assertDate(dispatchDate);
     return this.repository.getDriverDay(dispatchDate, driverEmployeeId);
+  }
+
+  selectDriverHomeTerritory(
+    dto: SelectDriverHomeTerritoryDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    return this.withConflictMapping(() =>
+      this.repository.selectDriverHomeTerritory({
+        actorEmployeeId,
+        correlationId,
+        territoryId: dto.territoryId,
+        version: dto.version,
+      }),
+    );
   }
 
   warehouseDay(dispatchDate: string) {
