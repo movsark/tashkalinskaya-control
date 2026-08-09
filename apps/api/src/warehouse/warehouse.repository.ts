@@ -48,6 +48,8 @@ export class WarehouseRepository {
             integrityStatus: row.integrity_status,
             onHandQuantity: Number(row.on_hand_quantity),
             productCode: row.product_code,
+            productGroupCode: row.product_group_code,
+            productGroupName: row.product_group_name,
             productId: row.product_id,
             productName: row.product_name,
             reservedLoadingQuantity: Number(row.reserved_loading_quantity),
@@ -660,7 +662,8 @@ async function sequential(client: PoolClient, actor: WarehouseActor) {
          from warehouse.movement m join warehouse.movement_document d on d.id=m.document_id where d.warehouse_id=$1
        ) entries group by product_id,bucket
      )
-     select p.id product_id,p.product_code,p.name product_name,coalesce(max(sb.updated_at),now()) updated_at,
+     select p.id product_id,p.product_code,p.name product_name,c.code product_group_code,
+       c.name product_group_name,coalesce(max(sb.updated_at),now()) updated_at,
        case when bool_or(sb.integrity_status='MISMATCH' or sb.quantity<>coalesce(l.quantity,0)) then 'MISMATCH' else 'OK' end integrity_status,
        coalesce(sum(sb.quantity) filter(where sb.bucket='FREE_STOCK'),0) free_quantity,
        coalesce(sum(sb.quantity) filter(where sb.bucket='RESERVED_FOR_LOADING'),0) reserved_loading_quantity,
@@ -669,9 +672,17 @@ async function sequential(client: PoolClient, actor: WarehouseActor) {
        coalesce(sum(sb.quantity) filter(where sb.bucket='BLOCKED_FOR_WRITEOFF'),0) blocked_quantity,
        coalesce(sum(sb.quantity) filter(where sb.bucket in ('FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL','RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING','BLOCKED_FOR_WRITEOFF')),0) on_hand_quantity
      from warehouse.stock_balance sb join catalog.product p on p.id=sb.product_id
+     join catalog.category c on c.id=p.category_id
      left join ledger l on l.product_id=sb.product_id and l.bucket=sb.bucket
      where sb.warehouse_id=$1
-     group by p.id,p.product_code,p.name order by p.name`,
+     group by p.id,p.product_code,p.name,c.code,c.name
+     order by case c.code
+       when 'BASIC_CAKES' then 1
+       when 'PREMIUM_CAKES' then 2
+       when 'PIES_AND_PASTRIES' then 3
+       when 'DESSERTS' then 4
+       when 'DRY_BAKERY' then 5
+       else 6 end,p.name`,
     [warehouseId],
   );
   const reasons = await client.query(

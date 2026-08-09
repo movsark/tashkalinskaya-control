@@ -900,6 +900,8 @@ export interface WarehouseBalanceView {
   readonly integrityStatus: "MISMATCH" | "OK";
   readonly onHandQuantity: number;
   readonly productCode: string;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
   readonly productId: string;
   readonly productName: string;
   readonly reservedLoadingQuantity: number;

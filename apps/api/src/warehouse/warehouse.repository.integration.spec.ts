@@ -189,6 +189,8 @@ describe.runIf(Boolean(process.env.DATABASE_URL))("WarehouseRepository with Post
     expect(partial.balances.find((item) => item.productId === pickupProductId)).toMatchObject({
       freeQuantity: 4,
       onHandQuantity: 4,
+      productGroupCode: "BASIC_CAKES",
+      productGroupName: "Торты Базовые",
     });
 
     const completed = await repository.transferPickup({

@@ -2,6 +2,7 @@
 
 import type {
   AuthenticatedUser,
+  WarehouseBalanceView,
   WarehouseQueueItemView,
   WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
@@ -124,8 +125,8 @@ export default function WarehousePage() {
       {message ? <p className="logistics-success warehouse-notice">{message}</p> : null}
       <section className="warehouse-metrics">
         <Metric label="Товаров забрать" value={pickupGroups.length} />
-        <Metric label="Свободно" value={free} unit="шт." />
-        <Metric label="Физически на складе" value={onHand} unit="шт." />
+        <Metric label="Доступно для погрузки" value={free} unit="шт." />
+        <Metric label="Всего на складе" value={onHand} unit="шт." />
         <Metric label="Открытые расхождения" value={open} />
       </section>
       {data.queue.length ? (
@@ -174,44 +175,7 @@ export default function WarehousePage() {
         </summary>
         <section className="warehouse-panel workspace-more__content">
           <Heading eyebrow="По товарам" title="Остатки" count={data.balances.length} />
-          <div className="warehouse-balances">
-            {data.balances.map((item) => (
-              <article
-                className={item.integrityStatus === "MISMATCH" ? "is-alert" : ""}
-                key={item.productId}
-              >
-                <div>
-                  <span>{item.productCode}</span>
-                  <strong>{item.productName}</strong>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Свободно</dt>
-                    <dd>{item.freeQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Резервы</dt>
-                    <dd>{item.reservedLoadingQuantity + item.reservedStoreQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Возврат</dt>
-                    <dd>{item.returnPoolQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Блок</dt>
-                    <dd>{item.blockedQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Всего</dt>
-                    <dd>{item.onHandQuantity}</dd>
-                  </div>
-                </dl>
-                <small>
-                  {item.integrityStatus === "OK" ? "Данные совпадают" : "Есть расхождение"}
-                </small>
-              </article>
-            ))}
-          </div>
+          <WarehouseBalances balances={data.balances} />
         </section>
       </details>
       <details className="workspace-more" open={open > 0}>
@@ -252,6 +216,192 @@ interface WarehousePickupGroup {
   readonly remainingQuantity: number;
   readonly workshopId: string;
   readonly workshopName: string;
+}
+
+const warehouseProductGroups = [
+  { code: "BASIC_CAKES", name: "Торты Базовые" },
+  { code: "PREMIUM_CAKES", name: "Торты Премиум" },
+  { code: "PIES_AND_PASTRIES", name: "Пироги" },
+  { code: "DESSERTS", name: "Десерты" },
+  { code: "DRY_BAKERY", name: "Сухая выпечка" },
+] as const;
+
+function WarehouseBalances({ balances }: { balances: readonly WarehouseBalanceView[] }) {
+  const [grouped, setGrouped] = useState(true);
+  const [openGroupCode, setOpenGroupCode] = useState<string | null>(null);
+  const [openProductId, setOpenProductId] = useState<string | null>(null);
+  const knownGroupCodes = new Set<string>(warehouseProductGroups.map((group) => group.code));
+  const unknownBalances = balances.filter((item) => !knownGroupCodes.has(item.productGroupCode));
+  const groups = [
+    ...warehouseProductGroups.map((group) => ({
+      ...group,
+      items: balances.filter((item) => item.productGroupCode === group.code),
+    })),
+    ...(unknownBalances.length
+      ? [
+          {
+            code: "OTHER",
+            items: unknownBalances,
+            name: "Прочее",
+          },
+        ]
+      : []),
+  ];
+  return (
+    <div aria-label="Остатки склада" className="warehouse-balance-browser" role="region">
+      <button
+        aria-pressed={grouped}
+        className="warehouse-balance-mode"
+        onClick={() => {
+          setGrouped((current) => !current);
+          setOpenGroupCode(null);
+          setOpenProductId(null);
+        }}
+        type="button"
+      >
+        <span>Группировка по разделам</span>
+        <strong>{grouped ? "Включена" : "Выключена"}</strong>
+      </button>
+      {grouped ? (
+        <div className="warehouse-balance-groups">
+          {groups.map((group) => {
+            const open = openGroupCode === group.code;
+            const total = group.items.reduce((sum, item) => sum + item.onHandQuantity, 0);
+            const groupId = `warehouse-balance-group-${group.code}`;
+            return (
+              <section
+                className={`warehouse-balance-group${open ? " is-open" : ""}`}
+                key={group.code}
+              >
+                <button
+                  aria-controls={groupId}
+                  aria-expanded={open}
+                  className="warehouse-balance-group__summary"
+                  onClick={() => {
+                    setOpenGroupCode((current) => (current === group.code ? null : group.code));
+                    setOpenProductId(null);
+                  }}
+                  type="button"
+                >
+                  <span>
+                    <strong>{group.name}</strong>
+                    <small>{formatProductCount(group.items.length)}</small>
+                  </span>
+                  <b>{total} шт.</b>
+                  <i aria-hidden="true">{open ? "−" : "+"}</i>
+                </button>
+                {open ? (
+                  <div className="warehouse-balance-products" id={groupId}>
+                    {group.items.length ? (
+                      group.items.map((item) => (
+                        <WarehouseBalanceItem
+                          item={item}
+                          key={item.productId}
+                          onToggle={() =>
+                            setOpenProductId((current) =>
+                              current === item.productId ? null : item.productId,
+                            )
+                          }
+                          open={openProductId === item.productId}
+                        />
+                      ))
+                    ) : (
+                      <p className="warehouse-balance-empty">
+                        На складе пока нет товаров этой группы.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="warehouse-balance-products is-all">
+          {balances.length ? (
+            balances.map((item) => (
+              <WarehouseBalanceItem
+                item={item}
+                key={item.productId}
+                onToggle={() =>
+                  setOpenProductId((current) =>
+                    current === item.productId ? null : item.productId,
+                  )
+                }
+                open={openProductId === item.productId}
+              />
+            ))
+          ) : (
+            <p className="warehouse-balance-empty">Складских остатков пока нет.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WarehouseBalanceItem({
+  item,
+  onToggle,
+  open,
+}: {
+  item: WarehouseBalanceView;
+  onToggle: () => void;
+  open: boolean;
+}) {
+  const detailsId = `warehouse-balance-${item.productId}`;
+  return (
+    <article
+      className={`warehouse-balance-item${item.integrityStatus === "MISMATCH" ? " is-alert" : ""}`}
+    >
+      <button
+        aria-controls={detailsId}
+        aria-expanded={open}
+        className="warehouse-balance-item__summary"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="warehouse-balance-item__name">
+          <small>{item.productCode}</small>
+          <strong>{item.productName}</strong>
+        </span>
+        <span className="warehouse-balance-item__total">
+          <small>Всего</small>
+          <strong>{item.onHandQuantity} шт.</strong>
+        </span>
+        <i aria-hidden="true">{open ? "−" : "+"}</i>
+      </button>
+      {open ? (
+        <div className="warehouse-balance-item__details" id={detailsId}>
+          <dl>
+            <div>
+              <dt>Доступно для погрузки</dt>
+              <dd>{item.freeQuantity} шт.</dd>
+            </div>
+            <div>
+              <dt>Резерв погрузки</dt>
+              <dd>{item.reservedLoadingQuantity} шт.</dd>
+            </div>
+            <div>
+              <dt>Резерв магазина</dt>
+              <dd>{item.reservedStoreQuantity} шт.</dd>
+            </div>
+            <div>
+              <dt>Возврат</dt>
+              <dd>{item.returnPoolQuantity} шт.</dd>
+            </div>
+            <div>
+              <dt>Блокировка</dt>
+              <dd>{item.blockedQuantity} шт.</dd>
+            </div>
+          </dl>
+          <small className={item.integrityStatus === "MISMATCH" ? "is-alert" : ""}>
+            {item.integrityStatus === "OK" ? "Данные совпадают" : "Есть расхождение"}
+          </small>
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 function PickupGroupCard({

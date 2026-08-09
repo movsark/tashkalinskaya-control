@@ -224,7 +224,38 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/warehouse/workspace")) {
         return json(route, {
-          balances: [],
+          balances: [
+            {
+              blockedQuantity: 0,
+              freeQuantity: 14,
+              integrityStatus: "OK",
+              onHandQuantity: 14,
+              productCode: "TV-015",
+              productGroupCode: "BASIC_CAKES",
+              productGroupName: "Торты Базовые",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              reservedLoadingQuantity: 0,
+              reservedStoreQuantity: 0,
+              returnPoolQuantity: 0,
+              updatedAt: "2026-08-10T07:06:00.000Z",
+            },
+            {
+              blockedQuantity: 0,
+              freeQuantity: 5,
+              integrityStatus: "OK",
+              onHandQuantity: 7,
+              productCode: "SV-001",
+              productGroupCode: "DRY_BAKERY",
+              productGroupName: "Сухая выпечка",
+              productId: "20000000-0000-4000-8000-000000000040",
+              productName: "СВ Бакусы",
+              reservedLoadingQuantity: 2,
+              reservedStoreQuantity: 0,
+              returnPoolQuantity: 0,
+              updatedAt: "2026-08-10T07:06:00.000Z",
+            },
+          ],
           discrepancies: [],
           queue: [
             {
@@ -313,6 +344,8 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBeVisible();
     await expect(reminder).toContainText("2 товара · 20 шт.");
     await expect(reminder).toContainText("при необходимости — в холодильную камеру");
+    await expect(page.getByText("Доступно для погрузки", { exact: true })).toBeVisible();
+    await expect(page.getByText("Всего на складе", { exact: true })).toBeVisible();
     const pickupCard = page.getByRole("article").filter({
       has: page.getByRole("button", { name: /ТБ Рыжик/ }),
     });
@@ -340,6 +373,24 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Перемещено 4 шт. Остаток к переносу обновлён.")).toBeVisible();
     await expect(pickupCard.getByText("4 шт.", { exact: true })).toBeVisible();
     await expect(pickupCard.getByText("10 шт.", { exact: true })).toBeVisible();
+    await page.getByText("Складские остатки", { exact: true }).click();
+    const balances = page.getByRole("region", { name: "Остатки склада" });
+    const grouping = balances.getByRole("button", { name: /Группировка по разделам/ });
+    await expect(grouping).toHaveAttribute("aria-pressed", "true");
+    await expect(balances.getByRole("button", { name: /Торты Базовые/ })).toBeVisible();
+    await expect(balances.getByRole("button", { name: /Сухая выпечка/ })).toBeVisible();
+    await expect(balances.getByText("ТБ Рыжик (0,8кг)", { exact: true })).toHaveCount(0);
+    await balances.getByRole("button", { name: /Торты Базовые/ }).click();
+    const ryzhik = balances.getByRole("button", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("Всего");
+    await expect(ryzhik).toContainText("14 шт.");
+    await ryzhik.click();
+    await expect(balances.getByText("Доступно для погрузки", { exact: true })).toBeVisible();
+    await expect(balances.getByText("Резерв погрузки", { exact: true })).toBeVisible();
+    await grouping.click();
+    await expect(grouping).toHaveAttribute("aria-pressed", "false");
+    await expect(balances.getByRole("button", { name: /ТБ Рыжик/ })).toBeVisible();
+    await expect(balances.getByRole("button", { name: /СВ Бакусы/ })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
