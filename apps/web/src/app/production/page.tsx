@@ -416,9 +416,28 @@ function ProductionDemandBoard({
 }) {
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const total = workspace.normDemand.lines.reduce((sum, line) => sum + line.quantity, 0);
   const dispatchDates =
     workspace.normDemand.dispatchDates.map(dateLabel).join(", ") || dateLabel(addDays(date, 1));
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase("ru-RU");
+  const isSearching = isConfectioner && normalizedSearchQuery.length > 0;
+  const visibleGroups: typeof groups = isSearching
+    ? groups
+        .map(([group, lines]) => {
+          const normalizedGroup = group.toLocaleLowerCase("ru-RU");
+          const visibleLines = normalizedGroup.includes(normalizedSearchQuery)
+            ? lines
+            : lines.filter((line) =>
+                `${line.productCode} ${line.productName}`
+                  .toLocaleLowerCase("ru-RU")
+                  .includes(normalizedSearchQuery),
+              );
+          return [group, visibleLines] as [string, typeof lines];
+        })
+        .filter(([, lines]) => lines.length > 0)
+    : groups;
+  const visibleProductCount = visibleGroups.reduce((sum, [, lines]) => sum + lines.length, 0);
 
   return (
     <section
@@ -447,16 +466,56 @@ function ProductionDemandBoard({
             : null}
         {isConfectioner ? " Нажмите группу, чтобы увидеть товары." : null}
       </p>
+      {isConfectioner && groups.length > 0 ? (
+        <div className="production-demand-search">
+          <label htmlFor="production-demand-search">Найти товар</label>
+          <div className="production-demand-search__control">
+            <input
+              id="production-demand-search"
+              onChange={(event) => {
+                setExpandedProductId(null);
+                setSearchQuery(event.target.value);
+              }}
+              placeholder="Название или код товара"
+              type="search"
+              value={searchQuery}
+            />
+            {searchQuery ? (
+              <button
+                aria-label="Очистить поиск"
+                onClick={() => {
+                  setExpandedGroup(null);
+                  setExpandedProductId(null);
+                  setSearchQuery("");
+                }}
+                type="button"
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+          <small>
+            {isSearching
+              ? `Найдено: ${visibleProductCount} поз.`
+              : `В плане: ${workspace.normDemand.lines.length} поз.`}
+          </small>
+        </div>
+      ) : null}
       {groups.length === 0 ? (
         <p className="logistics-empty">План производства ещё не рассчитан или равен нулю.</p>
+      ) : visibleGroups.length === 0 ? (
+        <p className="logistics-empty production-demand-search__empty">
+          По запросу «{searchQuery.trim()}» товары не найдены.
+        </p>
       ) : (
         <div className="production-demand-groups">
-          {groups.map(([group, lines]) => (
+          {visibleGroups.map(([group, lines]) => (
             <article key={group}>
               {isConfectioner ? (
                 <button
-                  aria-expanded={expandedGroup === group}
+                  aria-expanded={isSearching || expandedGroup === group}
                   className="production-demand-group__trigger"
+                  disabled={isSearching}
                   onClick={() => {
                     setExpandedProductId(null);
                     setExpandedGroup(expandedGroup === group ? null : group);
@@ -470,7 +529,7 @@ function ProductionDemandBoard({
                       шт.
                     </small>
                   </span>
-                  <i aria-hidden="true">{expandedGroup === group ? "−" : "+"}</i>
+                  <i aria-hidden="true">{isSearching || expandedGroup === group ? "−" : "+"}</i>
                 </button>
               ) : (
                 <header>
@@ -480,7 +539,7 @@ function ProductionDemandBoard({
                   </span>
                 </header>
               )}
-              <div hidden={isConfectioner && expandedGroup !== group}>
+              <div hidden={isConfectioner && !isSearching && expandedGroup !== group}>
                 {lines.map((line) => {
                   const productExpanded = expandedProductId === line.productId;
                   const participants = line.work?.participants ?? [];

@@ -1595,6 +1595,23 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
 
+    const productionSearch = page.getByRole("searchbox", { name: "Найти товар" });
+    await productionSearch.fill("печенье");
+    await expect(baseGroup).not.toBeVisible();
+    await expect(dryGroup).toBeVisible();
+    await expect(dryGroup).toBeDisabled();
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Найдено: 1 поз.", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+
+    await productionSearch.fill("SV-001");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Очистить поиск" }).click();
+    await expect(productionSearch).toHaveValue("");
+    await expect(baseGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+
     await baseGroup.click();
     await expect(baseGroup).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
