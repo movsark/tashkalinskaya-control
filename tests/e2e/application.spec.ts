@@ -980,22 +980,14 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Все товары/ })).toContainText("17 шт.");
-    await expect(page.getByRole("button", { name: /Сухая выпечка/ })).toContainText("7 шт.");
-    await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
-    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     const weekdayButtons = page.locator(".driver-weekday-accordion__trigger");
     const monday = weekdayButtons.filter({ hasText: "Понедельник" });
     const tuesday = weekdayButtons.filter({ hasText: "Вторник" });
     await expect(weekdayButtons).toHaveCount(7);
-    await expect(monday).toHaveAttribute("aria-expanded", "true");
-    await tuesday.click();
     await expect(monday).toHaveAttribute("aria-expanded", "false");
-    await expect(tuesday).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByText("На этот день норма не задана.")).toBeVisible();
     await monday.click();
     await expect(monday).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("button", { name: "Включить группировку" }).click();
+    await expect(page.locator("details.driver-norm-group")).toHaveCount(5);
     const dryGroup = page.locator("details.driver-norm-group").filter({
       has: page.getByText("Сухая выпечка", { exact: true }),
     });
@@ -1004,13 +996,18 @@ test.describe("B20 browser and HTTP regression", () => {
     await dryGroup.locator("summary").click();
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
-    await page.getByRole("button", { name: "Отключить группировку" }).click();
+    await tuesday.click();
+    await expect(monday).toHaveAttribute("aria-expanded", "false");
+    await expect(tuesday).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("details.driver-norm-group")).toHaveCount(5);
+    await expect(page.locator("details.driver-norm-group").first()).toContainText("0 тов. · 0 шт.");
+    await monday.click();
+    await expect(monday).toHaveAttribute("aria-expanded", "true");
+    const cakeGroup = page.locator("details.driver-norm-group").filter({
+      has: page.getByText("Торты Базовые", { exact: true }),
+    });
+    await cakeGroup.locator("summary").click();
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
-    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
-    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
-    await expect(page.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: /Все товары/ }).click();
     const friday = weekdayButtons.filter({ hasText: "Пятница" });
     await expect(friday).toBeDisabled();
     await expect(friday).toContainText("выходной");

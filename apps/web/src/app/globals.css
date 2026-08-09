@@ -3241,33 +3241,6 @@ select:focus {
   margin: 0;
 }
 
-.driver-grouping-toggle {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.driver-grouping-toggle > span {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.driver-grouping-toggle button {
-  min-height: 42px;
-  padding: 8px 14px;
-  border: 1px solid var(--forest);
-  border-radius: 999px;
-  color: var(--forest);
-  font-weight: 800;
-  background: #fff;
-}
-
-.driver-grouping-toggle button[aria-pressed="true"] {
-  color: #fff;
-  background: var(--forest);
-}
-
 .planning-week-list {
   display: grid;
   gap: 10px;
@@ -3390,44 +3363,6 @@ select:focus {
 .driver-selected-norm > header > strong {
   color: var(--forest);
   font-size: 1.25rem;
-}
-
-.driver-norm-group-switcher {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 0 14px 14px;
-}
-
-.driver-norm-group-switcher button {
-  display: grid;
-  gap: 5px;
-  min-height: 70px;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  color: var(--ink);
-  text-align: left;
-  background: #fff;
-}
-
-.driver-norm-group-switcher button strong {
-  line-height: 1.15;
-}
-
-.driver-norm-group-switcher button span {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.driver-norm-group-switcher button.is-active {
-  border-color: var(--forest);
-  color: #fff;
-  background: var(--forest);
-}
-
-.driver-norm-group-switcher button.is-active span {
-  color: rgba(255, 255, 255, 0.78);
 }
 
 .driver-norm-accordion {
@@ -5573,14 +5508,6 @@ select:focus {
     flex-direction: column;
   }
 
-  .driver-grouping-toggle {
-    align-items: stretch;
-  }
-
-  .driver-grouping-toggle button {
-    width: 100%;
-  }
-
   .planning-simple-workspace {
     gap: 12px;
   }
@@ -5633,14 +5560,6 @@ select:focus {
 
   .driver-selected-norm__lines > div {
     grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .driver-norm-group-switcher {
-    overflow-x: auto;
-    grid-auto-columns: 145px;
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    scrollbar-width: thin;
   }
 
   .driver-selected-norm__lines button {
