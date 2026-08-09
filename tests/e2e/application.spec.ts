@@ -854,6 +854,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const territoryId = "20000000-0000-4000-8000-000000000090";
     const productId = "20000000-0000-4000-8000-000000000091";
     const dryProductId = "20000000-0000-4000-8000-000000000097";
+    let driverRequests: Array<Record<string, unknown>> = [];
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -972,11 +973,48 @@ test.describe("B20 browser and HTTP regression", () => {
             weekday: 1,
           },
         ],
-        requests: [],
+        requests: driverRequests,
         territoryId,
         weekStart: "2026-08-03",
       }),
     );
+    await page.route("**/api/v1/planning/requests", async (route) => {
+      const input = route.request().postDataJSON() as {
+        comment?: string;
+        dispatchDate?: string;
+        dispatchWeekday?: number;
+        effectiveFrom?: string;
+        effectiveUntil?: string;
+        kind: "MONTH_WEEKDAY" | "ONE_OFF";
+        lines: Array<{ productId: string; quantity: number }>;
+      };
+      const created = {
+        decisionComment: null,
+        dispatchDate: input.dispatchDate ?? null,
+        dispatchWeekday: input.dispatchWeekday ?? null,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveUntil: input.effectiveUntil ?? null,
+        id: "20000000-0000-4000-8000-000000000099",
+        kind: input.kind,
+        lines: input.lines.map((line) => ({
+          baseQuantity: 10,
+          productCode: "T-001",
+          productId: line.productId,
+          productName: "Торт тестовый",
+          proposedQuantity: line.quantity,
+        })),
+        requesterComment: input.comment ?? null,
+        requesterEmployeeId: "20000000-0000-4000-8000-000000000093",
+        requesterName: "Водитель нормы",
+        status: "SUBMITTED",
+        submittedAt: "2026-08-09T19:00:00.000Z",
+        territoryId,
+        territoryNumber: 3,
+        version: 1,
+      };
+      driverRequests = [created];
+      return json(route, created, 201);
+    });
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
@@ -1033,6 +1071,11 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(quantityInput).toHaveValue("11");
     await page.getByRole("button", { name: "Уменьшить количество" }).click();
     await expect(quantityInput).toHaveValue("10");
+    await page.getByRole("button", { name: "Отправить запрос" }).click();
+    await expect(page.getByText("Запрос отправлен", { exact: true })).toBeVisible();
+    await expect(page.getByText("Ожидает решения администратора", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Изменить запрос" }).click();
+    await expect(page.getByRole("button", { name: "Сохранить изменения" })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

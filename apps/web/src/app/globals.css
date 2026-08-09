@@ -3469,6 +3469,38 @@ select:focus {
   margin: 0 12px 12px;
 }
 
+.driver-request-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 12px 12px;
+  padding: 12px;
+  border: 1px solid #9bc9ad;
+  border-radius: 13px;
+  background: #edf8f1;
+}
+
+.driver-request-status > div {
+  display: grid;
+  gap: 3px;
+}
+
+.driver-request-status strong {
+  color: var(--forest);
+}
+
+.driver-request-status span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.driver-request-status button {
+  min-height: 42px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
 .driver-selected-norm__lines > p {
   margin: 0;
   padding: 18px 14px;
@@ -5660,6 +5692,11 @@ select:focus {
   }
 
   .driver-inline-request__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .driver-request-status {
     align-items: stretch;
     flex-direction: column;
   }

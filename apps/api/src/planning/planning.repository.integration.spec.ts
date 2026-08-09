@@ -223,6 +223,42 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     );
   });
 
+  it("replaces an earlier pending request for the same product", async () => {
+    const first = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Первый вариант",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: weekStart,
+      effectiveUntil: null,
+      kind: "PERMANENT",
+      lines: [{ productId, quantity: 11 }],
+      territoryId: territoryOneId,
+    });
+    const replacement = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Исправленный вариант",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: weekStart,
+      effectiveUntil: null,
+      kind: "PERMANENT",
+      lines: [{ productId, quantity: 12 }],
+      territoryId: territoryOneId,
+    });
+
+    const requests = await repository.listRequests(territoryOneId);
+    expect(requests.find((request) => request.id === first.id)?.status).toBe("STALE");
+    expect(requests.find((request) => request.id === replacement.id)).toMatchObject({
+      status: "SUBMITTED",
+      lines: [expect.objectContaining({ proposedQuantity: 12 })],
+    });
+  });
+
   it("applies one approved weekday request only through the selected month", async () => {
     const effectiveUntil = monthEnd(weekStart);
     const request = await repository.createRequest({
@@ -375,6 +411,25 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         territoryId: territoryNineId,
       }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("allows the home driver to request one date from a monthly plan without a calendar link", async () => {
+    const requestDate = addDays(dailyNormDate, 7);
+    const request = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Разовая корректировка месячного плана",
+      correlationId: randomUUID(),
+      dispatchDate: requestDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId, quantity: 8 }],
+      territoryId: territoryOneId,
+    });
+
+    expect(request).toMatchObject({ dispatchDate: requestDate, status: "SUBMITTED" });
   });
 
   it("records a late request as MISSED_CUTOFF without changing norms", async () => {

@@ -449,6 +449,7 @@ export default function PlanningPage() {
                                     </span>
                                   </summary>
                                   <NormProductLines
+                                    date={selectedDay.date}
                                     editingNormId={editingNorm?.id ?? ""}
                                     emptyMessage="В этой группе на выбранный день товаров нет."
                                     norms={groupNorms}
@@ -457,7 +458,8 @@ export default function PlanningPage() {
                                         current?.id === norm.id ? null : norm,
                                       )
                                     }
-                                    renderEditor={(norm) =>
+                                    requests={week?.requests ?? []}
+                                    renderEditor={(norm, pendingRequest) =>
                                       session ? (
                                         <DriverRequestForm
                                           busy={busy}
@@ -478,6 +480,7 @@ export default function PlanningPage() {
                                               setEditingNorm(null);
                                             })
                                           }
+                                          pendingRequest={pendingRequest}
                                           territoryId={territoryId}
                                         />
                                       ) : null
@@ -590,23 +593,28 @@ export default function PlanningPage() {
 }
 
 function NormProductLines({
+  date,
   editingNormId,
   emptyMessage,
   norms,
   onEdit,
+  requests,
   renderEditor,
 }: {
+  date: string;
   editingNormId: string;
   emptyMessage: string;
   norms: readonly WeeklyNormView[];
   onEdit: (norm: WeeklyNormView) => void;
-  renderEditor: (norm: WeeklyNormView) => ReactNode;
+  requests: readonly NormChangeRequestView[];
+  renderEditor: (norm: WeeklyNormView, pendingRequest: NormChangeRequestView | null) => ReactNode;
 }) {
   return (
     <div className="driver-selected-norm__lines">
       {norms.length ? (
         norms.map((norm) => {
           const expanded = editingNormId === norm.id;
+          const pendingRequest = findPendingRequest(requests, norm.productId, date);
           return (
             <div className="driver-norm-product-entry" key={norm.id}>
               <button
@@ -620,7 +628,18 @@ function NormProductLines({
                 <strong>{norm.quantity} шт.</strong>
                 <b aria-hidden="true">{expanded ? "⌃" : "›"}</b>
               </button>
-              {expanded ? renderEditor(norm) : null}
+              {expanded ? renderEditor(norm, pendingRequest) : null}
+              {!expanded && pendingRequest ? (
+                <div className="driver-request-status" role="status">
+                  <div>
+                    <strong>Запрос отправлен</strong>
+                    <span>Ожидает решения администратора</span>
+                  </div>
+                  <button className="secondary-button" onClick={() => onEdit(norm)} type="button">
+                    Изменить запрос
+                  </button>
+                </div>
+              ) : null}
             </div>
           );
         })
@@ -637,6 +656,7 @@ function DriverRequestForm({
   norm,
   onCancel,
   onSubmit,
+  pendingRequest,
   territoryId,
 }: {
   busy: boolean;
@@ -644,12 +664,16 @@ function DriverRequestForm({
   norm: WeeklyNormView;
   onCancel: () => void;
   onSubmit: (input: Parameters<typeof createNormChangeRequest>[0]) => Promise<void>;
+  pendingRequest: NormChangeRequestView | null;
   territoryId: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">("ONE_OFF");
-  const [quantity, setQuantity] = useState(String(norm.quantity));
-  const [comment, setComment] = useState("");
+  const pendingLine = pendingRequest?.lines.find((line) => line.productId === norm.productId);
+  const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">(
+    pendingRequest?.kind === "MONTH_WEEKDAY" ? "MONTH_WEEKDAY" : "ONE_OFF",
+  );
+  const [quantity, setQuantity] = useState(String(pendingLine?.proposedQuantity ?? norm.quantity));
+  const [comment, setComment] = useState(pendingRequest?.requesterComment ?? "");
   const weekday = isoWeekday(date);
   const effectiveUntil = monthEnd(date);
   const quantityInputId = `driver-quantity-${norm.id}`;
@@ -681,7 +705,9 @@ function DriverRequestForm({
       }}
       ref={formRef}
     >
-      <p className="eyebrow">Запрос администратору</p>
+      <p className="eyebrow">
+        {pendingRequest ? "Изменение отправленного запроса" : "Запрос администратору"}
+      </p>
       <h2>{norm.productName}</h2>
       <p>
         Сейчас {norm.quantity} шт. · выбранная дата {longDate(date)}
@@ -731,7 +757,7 @@ function DriverRequestForm({
       </label>
       <div className="driver-inline-request__actions">
         <button className="primary-button" disabled={busy || territoryId === ""}>
-          Отправить запрос
+          {pendingRequest ? "Сохранить изменения" : "Отправить запрос"}
         </button>
         <button className="secondary-button" disabled={busy} onClick={onCancel} type="button">
           Отмена
@@ -972,4 +998,24 @@ function statusLabel(status: NormChangeRequestView["status"]) {
       MISSED_CUTOFF: "После отсечки",
     } as const
   )[status];
+}
+
+function findPendingRequest(
+  requests: readonly NormChangeRequestView[],
+  productId: string,
+  date: string,
+): NormChangeRequestView | null {
+  return (
+    requests.find(
+      (request) =>
+        request.status === "SUBMITTED" &&
+        request.lines.some((line) => line.productId === productId) &&
+        (request.kind === "ONE_OFF"
+          ? request.dispatchDate === date
+          : request.dispatchWeekday === isoWeekday(date) &&
+            request.effectiveFrom !== null &&
+            request.effectiveFrom <= date &&
+            (request.effectiveUntil === null || request.effectiveUntil >= date)),
+    ) ?? null
+  );
 }
