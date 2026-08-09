@@ -118,6 +118,12 @@ STAGING_BASE_URL=https://staging.example EXPECTED_APP_VERSION=<sha> npm run test
 LOAD_BASE_URL=http://127.0.0.1:4180 node scripts/load-test.mjs --run tests/load/local-70-read.json
 ```
 
+Локальный `npm run test:e2e` перед каждым запуском удаляет только временную
+папку `apps/web/.next-e2e`, заново собирает в неё web и затем запускает
+Playwright. После проверки временная сборка также удаляется. Обычный локальный
+сервер продолжает использовать `apps/web/.next`, поэтому тестовая сборка не
+может подменить текущий интерфейс и наоборот.
+
 Staging-профиль требует `LOAD_BASE_URL`, `LOAD_BUSINESS_DATE` и отдельный
 `LOAD_READ_TOKEN`. Исходный ключ хранится только в GitHub Environment, в Timeweb
 находится лишь SHA-256 отпечаток. Значения не сохраняются в репозитории и не

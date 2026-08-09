@@ -29,7 +29,7 @@
     "start:web:e2e": "node scripts/start-web-e2e.mjs",
     "start:worker": "npm run start -w @tashkalinskaya/worker",
     "test": "npm run test:scripts && npm run test --workspaces --if-present",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "test:load:validate": "node scripts/load-test.mjs --validate tests/load/local-70-read.json && node scripts/load-test.mjs --validate tests/load/factory-staging.example.json && node scripts/load-test.mjs --validate tests/load/factory-staging-diagnostics.json",
     "test:recovery:capture": "node scripts/recovery-manifest.mjs capture",
     "test:recovery:verify": "node scripts/recovery-manifest.mjs verify",

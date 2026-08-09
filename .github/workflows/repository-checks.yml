@@ -70,13 +70,7 @@ jobs:
       - name: Install Chromium for browser tests
         run: npx playwright install --with-deps chromium
 
-      - name: Build same-origin web for browser tests
-        env:
-          INTERNAL_API_URL: http://127.0.0.1:4180/api/v1
-          NEXT_PUBLIC_API_URL: /api/v1
-        run: npm run build -w @tashkalinskaya/web
-
-      - name: Run browser and HTTP regression
+      - name: Build fresh web and run browser and HTTP regression
         run: npm run test:e2e
 
   container-build:
