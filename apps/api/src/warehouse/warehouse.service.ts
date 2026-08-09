@@ -5,6 +5,7 @@ import type {
   ExplainWarehouseDiscrepancyDto,
   ReceiveWarehouseBatchDto,
   ResolveWarehouseDiscrepancyDto,
+  TransferWarehousePickupDto,
 } from "./warehouse.dto";
 import { WarehouseRepository } from "./warehouse.repository";
 
@@ -30,6 +31,18 @@ export class WarehouseService {
       idempotencyKey: dto.idempotencyKey,
       reasonId: dto.reasonId ?? null,
       version: dto.version,
+    });
+  }
+  transferPickup(dto: TransferWarehousePickupDto, actor: AuthenticatedActor, cid: string) {
+    return this.repository.transferPickup({
+      actor: toActor(actor),
+      correlationId: cid,
+      idempotencyKey: dto.idempotencyKey,
+      productId: dto.productId,
+      productionDate: dto.productionDate,
+      productionWindow: dto.productionWindow,
+      quantity: dto.quantity,
+      workshopId: dto.workshopId,
     });
   }
   explain(id: string, dto: ExplainWarehouseDiscrepancyDto, actor: AuthenticatedActor, cid: string) {

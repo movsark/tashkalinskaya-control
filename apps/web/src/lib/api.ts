@@ -63,6 +63,7 @@ import type {
   VehicleView,
   WarehouseLogisticsDayView,
   WarehouseReceiptView,
+  WarehousePickupTransferView,
   WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
 import type {
@@ -1740,6 +1741,23 @@ export async function receiveWarehouseBatch(
   csrfToken: string,
 ): Promise<WarehouseReceiptView> {
   return request(`/warehouse/batches/${batchId}/receive`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function transferWarehousePickup(
+  input: {
+    idempotencyKey: string;
+    productId: string;
+    productionDate: string;
+    productionWindow: "DAY" | "NIGHT";
+    quantity: number;
+    workshopId: string;
+  },
+  csrfToken: string,
+): Promise<WarehousePickupTransferView> {
+  return request("/warehouse/pickups/transfer", {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

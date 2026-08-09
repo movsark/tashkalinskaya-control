@@ -5666,31 +5666,86 @@ select:focus {
   background: linear-gradient(145deg, #f3f7f8, #fff);
 }
 
-.warehouse-pickup-entries {
+.warehouse-pickup-progress {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.warehouse-pickup-progress > div {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--forest-soft);
+}
+
+.warehouse-pickup-progress span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.warehouse-pickup-progress strong {
+  color: var(--forest);
+  font-size: 22px;
+}
+
+.warehouse-pickup-form {
+  display: grid;
+  gap: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
-.warehouse-pickup-entry {
+.warehouse-pickup-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.warehouse-pickup-form input {
+  min-height: 58px;
+  padding: 0 16px;
+  border: 2px solid var(--forest);
+  border-radius: 14px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.warehouse-pickup-form > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.warehouse-pickup-confirm {
   display: grid;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
+  padding: 16px;
+  border: 1px solid #d39a44;
   border-radius: 14px;
-  background: #f8faf8;
+  background: #fff8e8;
 }
 
-.warehouse-pickup-entry header strong {
-  display: block;
-  color: var(--ink);
-  font-size: 15px;
+.warehouse-pickup-confirm > div {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.warehouse-pickup-entry header small {
-  display: block;
-  margin-top: 4px;
+.warehouse-pickup-confirm button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--forest);
+  background: #fff;
+  font: inherit;
+  font-weight: 800;
 }
 
 .warehouse-queue article > header {

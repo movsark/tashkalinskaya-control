@@ -10,14 +10,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../components/app-brand";
 import {
   ApiRequestError,
-  claimWarehouseBatch,
   createWarehouseCorrection,
   explainWarehouseDiscrepancy,
   getSession,
   getWarehouseWorkspace,
-  receiveWarehouseBatch,
-  releaseWarehouseBatch,
   resolveWarehouseDiscrepancy,
+  transferWarehousePickup,
 } from "../../lib/api";
 
 export default function WarehousePage() {
@@ -153,9 +151,7 @@ export default function WarehousePage() {
                 busy={busy}
                 canReceive={canReceive}
                 group={group}
-                isAdmin={isAdmin}
                 key={group.key}
-                reasons={data.reasons.filter((reason) => reason.kind === "RECEIPT_DIFFERENCE")}
                 session={session}
                 run={run}
                 reload={reload}
@@ -241,10 +237,15 @@ interface WarehousePickupGroup {
   readonly isNight: boolean;
   readonly items: readonly WarehouseQueueItemView[];
   readonly key: string;
+  readonly movedQuantity: number;
   readonly productCode: string;
+  readonly productId: string;
   readonly productName: string;
   readonly productionDate: string;
+  readonly productionWindow: "DAY" | "NIGHT";
   readonly quantity: number;
+  readonly remainingQuantity: number;
+  readonly workshopId: string;
   readonly workshopName: string;
 }
 
@@ -252,8 +253,6 @@ function PickupGroupCard({
   busy,
   canReceive,
   group,
-  isAdmin,
-  reasons,
   session,
   run,
   reload,
@@ -261,17 +260,19 @@ function PickupGroupCard({
   busy: boolean;
   canReceive: boolean;
   group: WarehousePickupGroup;
-  isAdmin: boolean;
-  reasons: WarehouseWorkspaceView["reasons"];
   session: AuthenticatedUser;
   run: (a: () => Promise<void>) => Promise<void>;
   reload: (m?: string) => Promise<void>;
 }) {
-  const hasActiveReview = group.items.some((item) => item.claimedById !== null);
-  const [open, setOpen] = useState(hasActiveReview);
-  useEffect(() => {
-    if (hasActiveReview) setOpen(true);
-  }, [hasActiveReview]);
+  const [open, setOpen] = useState(false);
+  const [quantity, setQuantity] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+  const parsedQuantity = Number(quantity);
+  const quantityIsValid =
+    Number.isInteger(parsedQuantity) &&
+    parsedQuantity > 0 &&
+    parsedQuantity <= group.remainingQuantity;
   return (
     <article className={group.isNight ? "is-night" : ""}>
       <header>
@@ -281,207 +282,95 @@ function PickupGroupCard({
           </span>
           <h3>{group.productName}</h3>
           <small>
-            Производство {group.productionDate} · готово забрать: {group.quantity} шт.
+            Производство {group.productionDate} · готово: {group.quantity} шт.
           </small>
         </div>
         <b>{group.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
       </header>
-      <button className="primary-button" onClick={() => setOpen((current) => !current)}>
-        {open ? "Скрыть приёмку" : "Начать проверку"}
-      </button>
-      {open ? (
-        <div className="warehouse-pickup-entries">
-          {group.items.map((item) => (
-            <ReceiptCard
-              busy={busy}
-              canReceive={canReceive}
-              compact
-              isAdmin={isAdmin}
-              item={item}
-              key={item.batchId}
-              reasons={reasons}
-              session={session}
-              run={run}
-              reload={reload}
-            />
-          ))}
+      <div className="warehouse-pickup-progress">
+        <div>
+          <span>Перемещено</span>
+          <strong>{group.movedQuantity} шт.</strong>
         </div>
-      ) : null}
-    </article>
-  );
-}
-
-function ReceiptCard({
-  busy,
-  canReceive,
-  compact = false,
-  isAdmin,
-  item,
-  reasons,
-  session,
-  run,
-  reload,
-}: {
-  busy: boolean;
-  canReceive: boolean;
-  compact?: boolean;
-  isAdmin: boolean;
-  item: WarehouseQueueItemView;
-  reasons: WarehouseWorkspaceView["reasons"];
-  session: AuthenticatedUser;
-  run: (a: () => Promise<void>) => Promise<void>;
-  reload: (m?: string) => Promise<void>;
-}) {
-  const [accepted, setAccepted] = useState(String(item.quantity));
-  const [reasonId, setReasonId] = useState("");
-  const [comment, setComment] = useState("");
-  const [releaseReason, setReleaseReason] = useState("");
-  const [idempotencyKey, setIdempotencyKey] = useState("");
-  const claimed = item.claimedById !== null;
-  const mine = item.claimedById === session.employee.id || isAdmin;
-  const acceptedQuantity = Number(accepted);
-  const acceptedIsValid = Number.isInteger(acceptedQuantity);
-  const difference = acceptedQuantity !== item.quantity;
-  return (
-    <article className={compact ? "warehouse-pickup-entry" : item.isNight ? "is-night" : ""}>
-      {compact ? (
-        <header>
-          <div>
-            <strong>Подтверждено кондитером: {item.quantity} шт.</strong>
-            <small>
-              {new Date(item.submittedAt).toLocaleTimeString("ru-RU", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </small>
-          </div>
-        </header>
-      ) : (
-        <header>
-          <div>
-            <span>
-              {item.productCode} · {item.workshopName}
-            </span>
-            <h3>{item.productName}</h3>
-            <small>
-              Производство {item.productionDate} · заявлено {item.quantity} шт.
-            </small>
-          </div>
-          <b>{item.isNight ? "Ночная · забрать" : "Забрать из цеха"}</b>
-        </header>
-      )}
-      {!claimed && canReceive ? (
+        <div>
+          <span>Осталось забрать</span>
+          <strong>{group.remainingQuantity} шт.</strong>
+        </div>
+      </div>
+      {canReceive ? (
         <button
           className="primary-button"
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              await claimWarehouseBatch(item.batchId, item.batchVersion, session.csrfToken);
-              await reload("Партия взята на проверку.");
-            })
-          }
+          onClick={() => {
+            setOpen((current) => !current);
+            setConfirming(false);
+          }}
         >
-          Начать проверку
+          {open ? "Скрыть" : "Указать перемещённое количество"}
         </button>
       ) : null}
-      {claimed ? (
-        <p className="warehouse-claim">
-          Проверяет: <strong>{item.claimedByName}</strong>
-        </p>
-      ) : null}
-      {claimed && mine && canReceive ? (
-        <div className="warehouse-receipt-form">
-          <div className="warehouse-quick">
-            <button onClick={() => setAccepted(String(item.quantity))} type="button">
-              Принять всё
-            </button>
-            <button onClick={() => setAccepted("0")} type="button">
-              Отклонить
-            </button>
-          </div>
+      {open && canReceive ? (
+        <div className="warehouse-pickup-form">
           <label>
-            Фактически принято
+            Сколько перемещено сейчас
             <input
-              min="0"
-              max={item.quantity}
+              inputMode="numeric"
+              min="1"
+              max={group.remainingQuantity}
               type="number"
-              value={accepted}
-              onChange={(e) => setAccepted(e.target.value)}
+              value={quantity}
+              onChange={(event) => {
+                setQuantity(event.target.value);
+                setConfirming(false);
+              }}
             />
           </label>
-          {difference ? (
-            <>
-              <label>
-                Причина
-                <select value={reasonId} onChange={(e) => setReasonId(e.target.value)}>
-                  <option value="">Выберите</option>
-                  {reasons.map((reason) => (
-                    <option key={reason.id} value={reason.id}>
-                      {reason.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <textarea
-                placeholder="Комментарий к разнице"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-              />
-            </>
-          ) : null}
-          <p>
-            В свободный остаток: <strong>{Math.max(0, Number(accepted) || 0)} шт.</strong>
-            {difference ? ` · не принято: ${item.quantity - (Number(accepted) || 0)} шт.` : ""}
-          </p>
-          <button
-            className="primary-button"
-            disabled={
-              busy ||
-              !acceptedIsValid ||
-              acceptedQuantity < 0 ||
-              acceptedQuantity > item.quantity ||
-              (difference && (reasonId === "" || comment.trim().length < 3))
-            }
-            onClick={() =>
-              void run(async () => {
-                const requestKey = idempotencyKey || crypto.randomUUID();
-                setIdempotencyKey(requestKey);
-                await receiveWarehouseBatch(
-                  item.batchId,
-                  {
-                    acceptedQuantity,
-                    ...(difference ? { comment: comment.trim(), reasonId } : {}),
-                    idempotencyKey: requestKey,
-                    version: item.batchVersion,
-                  },
-                  session.csrfToken,
-                );
-                await reload("Приёмка зафиксирована в складском журнале.");
-              })
-            }
-          >
-            Подтвердить приёмку
-          </button>
-        </div>
-      ) : null}
-      {claimed && isAdmin ? (
-        <div className="warehouse-release">
-          <input
-            placeholder="Причина снятия захвата"
-            value={releaseReason}
-            onChange={(e) => setReleaseReason(e.target.value)}
-          />
-          <button
-            disabled={busy || releaseReason.trim().length < 3}
-            onClick={() =>
-              void run(async () => {
-                await releaseWarehouseBatch(item.batchId, releaseReason.trim(), session.csrfToken);
-                await reload("Партия возвращена в очередь.");
-              })
-            }
-          >
-            Снять захват
-          </button>
+          <p>После подтверждения это количество попадёт в свободный остаток склада.</p>
+          {!confirming ? (
+            <button
+              className="primary-button"
+              disabled={busy || !quantityIsValid}
+              onClick={() => setConfirming(true)}
+            >
+              Перемещено
+            </button>
+          ) : (
+            <div className="warehouse-pickup-confirm">
+              <strong>Переместить на склад {parsedQuantity} шт.?</strong>
+              <div>
+                <button disabled={busy} onClick={() => setConfirming(false)} type="button">
+                  Нет
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const requestKey = idempotencyKey || crypto.randomUUID();
+                      setIdempotencyKey(requestKey);
+                      await transferWarehousePickup(
+                        {
+                          idempotencyKey: requestKey,
+                          productId: group.productId,
+                          productionDate: group.productionDate,
+                          productionWindow: group.productionWindow,
+                          quantity: parsedQuantity,
+                          workshopId: group.workshopId,
+                        },
+                        session.csrfToken,
+                      );
+                      setIdempotencyKey("");
+                      setQuantity("");
+                      setConfirming(false);
+                      await reload(`Перемещено ${parsedQuantity} шт. Остаток к переносу обновлён.`);
+                    })
+                  }
+                  type="button"
+                >
+                  Да
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
     </article>
@@ -733,10 +622,15 @@ function groupWarehouseQueue(queue: readonly WarehouseQueueItemView[]): Warehous
       isNight: first.isNight,
       items,
       key,
+      movedQuantity: items.reduce((sum, item) => sum + item.movedQuantity, 0),
       productCode: first.productCode,
+      productId: first.productId,
       productName: first.productName,
       productionDate: first.productionDate,
+      productionWindow: first.isNight ? "NIGHT" : "DAY",
       quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      remainingQuantity: items.reduce((sum, item) => sum + item.remainingQuantity, 0),
+      workshopId: first.workshopId,
       workshopName: first.workshopName,
     };
   });

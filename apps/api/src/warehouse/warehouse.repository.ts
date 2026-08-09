@@ -9,6 +9,7 @@ import {
 import type {
   RoleAssignmentView,
   RoleCode,
+  WarehousePickupTransferView,
   WarehouseReceiptView,
   WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
@@ -76,11 +77,13 @@ export class WarehouseRepository {
             claimedById: row.claimed_by_id,
             claimedByName: row.claimed_by_name,
             isNight: row.production_window === "NIGHT",
+            movedQuantity: Number(row.moved_quantity),
             productCode: row.product_code,
             productId: row.product_id,
             productName: row.product_name,
             productionDate: row.production_date,
             quantity: row.quantity,
+            remainingQuantity: Number(row.remaining_quantity),
             submittedAt: row.submitted_at.toISOString(),
             workshopId: row.workshop_id,
             workshopName: row.workshop_name,
@@ -289,6 +292,146 @@ export class WarehouseRepository {
     });
   }
 
+  transferPickup(command: {
+    actor: WarehouseActor;
+    correlationId: string;
+    idempotencyKey: string;
+    productId: string;
+    productionDate: string;
+    productionWindow: "DAY" | "NIGHT";
+    quantity: number;
+    workshopId: string;
+  }): Promise<WarehousePickupTransferView> {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query(
+        `select pt.*,e.full_name from warehouse.pickup_transfer pt
+         join identity.employee e on e.id=pt.transferred_by
+         where pt.transferred_by=$1 and pt.idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) return mapPickupTransfer(client, repeated.rows[0]);
+
+      const locked = await client.query(
+        `select b.id,b.quantity
+         from production.batch b join production.task t on t.id=b.task_id
+         where b.status='AWAITING_WAREHOUSE' and t.product_id=$1 and t.workshop_id=$2
+           and b.production_date=$3 and b.production_window=$4
+         order by b.submitted_at,b.id for update of b`,
+        [command.productId, command.workshopId, command.productionDate, command.productionWindow],
+      );
+      if (!locked.rowCount) throw new ConflictException("Готового количества для переноса нет");
+      const batchIds = locked.rows.map((row) => row.id);
+      const allocated = await client.query(
+        `select batch_id,sum(quantity)::int moved_quantity
+         from warehouse.pickup_transfer_allocation where batch_id=any($1::uuid[])
+         group by batch_id`,
+        [batchIds],
+      );
+      const movedByBatch = new Map<string, number>(
+        allocated.rows.map((row) => [row.batch_id, Number(row.moved_quantity)]),
+      );
+      const available = locked.rows.reduce(
+        (sum, row) => sum + Number(row.quantity) - (movedByBatch.get(row.id) ?? 0),
+        0,
+      );
+      if (command.quantity > available)
+        throw new ConflictException(`Можно переместить не больше ${available} шт.`);
+
+      const transferId = randomUUID();
+      const documentId = randomUUID();
+      const role = hasRole(command.actor, "ADMIN") ? "ADMIN" : "WAREHOUSE_KEEPER";
+      await client.query(
+        `insert into warehouse.movement_document
+         (id,warehouse_id,document_type,business_date,source_type,source_id,actor_id,actor_role,correlation_id,idempotency_key)
+         values($1,$2,'RECEIPT',$3,'PRODUCT_PICKUP',$4,$5,$6,$7,$8)`,
+        [
+          documentId,
+          warehouseId,
+          command.productionDate,
+          transferId,
+          command.actor.employeeId,
+          role,
+          command.correlationId,
+          command.idempotencyKey,
+        ],
+      );
+      await client.query(
+        `insert into warehouse.pickup_transfer
+         (id,warehouse_id,movement_document_id,product_id,workshop_id,production_date,production_window,
+          quantity,transferred_by,correlation_id,idempotency_key)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          transferId,
+          warehouseId,
+          documentId,
+          command.productId,
+          command.workshopId,
+          command.productionDate,
+          command.productionWindow,
+          command.quantity,
+          command.actor.employeeId,
+          command.correlationId,
+          command.idempotencyKey,
+        ],
+      );
+
+      let quantityToAllocate = command.quantity;
+      for (const batch of locked.rows) {
+        if (quantityToAllocate === 0) break;
+        const alreadyMoved = movedByBatch.get(batch.id) ?? 0;
+        const remaining = Number(batch.quantity) - alreadyMoved;
+        const current = Math.min(quantityToAllocate, remaining);
+        if (current === 0) continue;
+        await client.query(
+          `insert into warehouse.pickup_transfer_allocation(transfer_id,batch_id,quantity)
+           values($1,$2,$3)`,
+          [transferId, batch.id, current],
+        );
+        if (alreadyMoved + current === Number(batch.quantity))
+          await client.query(
+            `update production.batch set status='ACCEPTED_BY_WAREHOUSE',version=version+1
+             where id=$1`,
+            [batch.id],
+          );
+        quantityToAllocate -= current;
+      }
+
+      await addMovement(
+        client,
+        documentId,
+        command.productId,
+        "PENDING_RECEIPT",
+        "FREE_STOCK",
+        command.quantity,
+        command.productionDate,
+      );
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "WAREHOUSE_PRODUCT_MOVED",
+        "WAREHOUSE_PICKUP_TRANSFER",
+        transferId,
+        {
+          productId: command.productId,
+          quantity: command.quantity,
+          workshopId: command.workshopId,
+        },
+      );
+      await outbox(client, "warehouse.pickup.transferred", transferId, {
+        productId: command.productId,
+        quantity: command.quantity,
+      });
+      const row = await client.query(
+        `select pt.*,e.full_name from warehouse.pickup_transfer pt
+         join identity.employee e on e.id=pt.transferred_by where pt.id=$1`,
+        [transferId],
+      );
+      return mapPickupTransfer(client, row.rows[0]);
+    });
+  }
+
   explain(
     id: string,
     explanation: string,
@@ -482,7 +625,29 @@ async function sequential(client: PoolClient, actor: WarehouseActor) {
     .map((r) => r.scopeId)
     .filter(Boolean);
   const queue = await client.query(
-    `select b.id batch_id,b.version batch_version,b.quantity,b.production_date::text,b.production_window,b.submitted_at,t.product_id,t.product_code_snapshot product_code,t.product_name_snapshot product_name,t.workshop_id,t.workshop_name_snapshot workshop_name,br.reviewer_id claimed_by_id,br.started_at claimed_at,e.full_name claimed_by_name from production.batch b join production.task t on t.id=b.task_id left join warehouse.batch_review br on br.batch_id=b.id and br.released_at is null left join identity.employee e on e.id=br.reviewer_id where b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW') and ($1::uuid[] is null or t.workshop_id=any($1::uuid[])) order by case b.production_window when 'NIGHT' then 0 else 1 end,b.submitted_at`,
+    `with batch_progress as (
+       select b.id batch_id,b.version batch_version,b.quantity,b.production_date::text production_date,
+         b.production_window,b.submitted_at,t.product_id,t.product_code_snapshot product_code,
+         t.product_name_snapshot product_name,t.workshop_id,t.workshop_name_snapshot workshop_name,
+         br.reviewer_id claimed_by_id,br.started_at claimed_at,e.full_name claimed_by_name,
+         coalesce((select sum(a.quantity)::int from warehouse.pickup_transfer_allocation a
+                   where a.batch_id=b.id),0) moved_quantity
+       from production.batch b join production.task t on t.id=b.task_id
+       left join warehouse.batch_review br on br.batch_id=b.id and br.released_at is null
+       left join identity.employee e on e.id=br.reviewer_id
+       where (b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW') or exists(
+                select 1 from warehouse.pickup_transfer_allocation a where a.batch_id=b.id))
+         and ($1::uuid[] is null or t.workshop_id=any($1::uuid[]))
+     ), group_progress as (
+       select product_id,workshop_id,production_date,production_window,
+         sum(quantity-moved_quantity)::int remaining_quantity
+       from batch_progress
+       group by product_id,workshop_id,production_date,production_window
+     )
+     select bp.*,(bp.quantity-bp.moved_quantity)::int remaining_quantity
+     from batch_progress bp join group_progress gp using(product_id,workshop_id,production_date,production_window)
+     where gp.remaining_quantity>0
+     order by case bp.production_window when 'NIGHT' then 0 else 1 end,bp.submitted_at`,
     [hasRole(actor, "WORKSHOP_MANAGER") && !hasRole(actor, "ADMIN") ? scopes : null],
   );
   const balances = await client.query(
@@ -569,6 +734,47 @@ interface ReceiptRow {
   received_at: Date;
   rejected_quantity: number;
   status: WarehouseReceiptView["status"];
+}
+
+interface PickupTransferRow {
+  full_name: string;
+  id: string;
+  product_id: string;
+  production_date: string | Date;
+  production_window: "DAY" | "NIGHT";
+  quantity: number;
+  transferred_at: Date;
+  workshop_id: string;
+}
+
+async function mapPickupTransfer(
+  client: PoolClient,
+  row: PickupTransferRow,
+): Promise<WarehousePickupTransferView> {
+  const progress = await client.query(
+    `select coalesce(sum(b.quantity),0)::int ready_quantity,
+       coalesce(sum((select coalesce(sum(a.quantity),0) from warehouse.pickup_transfer_allocation a
+                    where a.batch_id=b.id)),0)::int moved_quantity
+     from production.batch b join production.task t on t.id=b.task_id
+     where t.product_id=$1 and t.workshop_id=$2 and b.production_date=$3
+       and b.production_window=$4 and (
+         b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW') or exists(
+           select 1 from warehouse.pickup_transfer_allocation a where a.batch_id=b.id
+         )
+       )`,
+    [row.product_id, row.workshop_id, row.production_date, row.production_window],
+  );
+  const readyQuantity = Number(progress.rows[0]?.ready_quantity ?? 0);
+  const movedQuantity = Number(progress.rows[0]?.moved_quantity ?? 0);
+  return {
+    id: row.id,
+    movedQuantity,
+    productId: row.product_id,
+    quantity: Number(row.quantity),
+    remainingQuantity: readyQuantity - movedQuantity,
+    transferredAt: row.transferred_at.toISOString(),
+    transferredByName: row.full_name,
+  };
 }
 
 function mapReceipt(r: ReceiptRow): WarehouseReceiptView {

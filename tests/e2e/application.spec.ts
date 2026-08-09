@@ -181,6 +181,7 @@ test.describe("B20 browser and HTTP regression", () => {
 
   test("a warehouse keeper sees a pickup reminder for produced batches", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
+    let movedQuantity = 0;
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith("/auth/session")) {
@@ -208,6 +209,19 @@ test.describe("B20 browser and HTTP regression", () => {
           sessionExpiresAt: "2027-08-10T10:00:00.000Z",
         });
       }
+      if (path.endsWith("/warehouse/pickups/transfer")) {
+        const body = route.request().postDataJSON() as { quantity: number };
+        movedQuantity += body.quantity;
+        return json(route, {
+          id: "20000000-0000-4000-8000-000000000037",
+          movedQuantity,
+          productId: "20000000-0000-4000-8000-000000000034",
+          quantity: body.quantity,
+          remainingQuantity: 14 - movedQuantity,
+          transferredAt: "2026-08-10T07:07:00.000Z",
+          transferredByName: "Тестовый Кладовщик",
+        });
+      }
       if (path.endsWith("/warehouse/workspace")) {
         return json(route, {
           balances: [],
@@ -220,11 +234,13 @@ test.describe("B20 browser and HTTP regression", () => {
               claimedById: null,
               claimedByName: null,
               isNight: false,
+              movedQuantity,
               productCode: "TV-015",
               productId: "20000000-0000-4000-8000-000000000034",
               productName: "ТБ Рыжик (0,8кг)",
               productionDate: "2026-08-10",
               quantity: 10,
+              remainingQuantity: 10 - movedQuantity,
               submittedAt: "2026-08-10T07:00:00.000Z",
               workshopId: "20000000-0000-4000-8000-000000000035",
               workshopName: "Тортовый цех",
@@ -236,11 +252,13 @@ test.describe("B20 browser and HTTP regression", () => {
               claimedById: null,
               claimedByName: null,
               isNight: false,
+              movedQuantity: 0,
               productCode: "TV-015",
               productId: "20000000-0000-4000-8000-000000000034",
               productName: "ТБ Рыжик (0,8кг)",
               productionDate: "2026-08-10",
               quantity: 4,
+              remainingQuantity: 4,
               submittedAt: "2026-08-10T07:05:00.000Z",
               workshopId: "20000000-0000-4000-8000-000000000035",
               workshopName: "Тортовый цех",
@@ -273,9 +291,23 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(reminder).toContainText("1 товар · 14 шт.");
     await expect(reminder).toContainText("при необходимости — в холодильную камеру");
     await expect(page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" })).toHaveCount(1);
-    await expect(page.getByText("готово забрать: 14 шт.")).toBeVisible();
+    await expect(page.getByText("готово: 14 шт.")).toBeVisible();
     await expect(page.getByText("Забрать из цеха", { exact: true })).toHaveCount(2);
-    await expect(page.getByText("Подтверждено кондитером:")).toHaveCount(0);
+    const pickupCard = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "ТБ Рыжик (0,8кг)" }),
+    });
+    await expect(pickupCard.getByText("Перемещено", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("0 шт.", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("Осталось забрать", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("14 шт.", { exact: true })).toBeVisible();
+    await pickupCard.getByRole("button", { name: "Указать перемещённое количество" }).click();
+    await pickupCard.getByLabel("Сколько перемещено сейчас").fill("4");
+    await pickupCard.getByRole("button", { exact: true, name: "Перемещено" }).click();
+    await expect(page.getByText("Переместить на склад 4 шт.?", { exact: true })).toBeVisible();
+    await pickupCard.getByRole("button", { exact: true, name: "Да" }).click();
+    await expect(page.getByText("Перемещено 4 шт. Остаток к переносу обновлён.")).toBeVisible();
+    await expect(pickupCard.getByText("4 шт.", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("10 шт.", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

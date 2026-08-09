@@ -872,14 +872,26 @@ export interface WarehouseQueueItemView {
   readonly claimedById: string | null;
   readonly claimedByName: string | null;
   readonly isNight: boolean;
+  readonly movedQuantity: number;
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
   readonly productionDate: string;
   readonly quantity: number;
+  readonly remainingQuantity: number;
   readonly submittedAt: string;
   readonly workshopId: string;
   readonly workshopName: string;
+}
+
+export interface WarehousePickupTransferView {
+  readonly id: string;
+  readonly movedQuantity: number;
+  readonly productId: string;
+  readonly quantity: number;
+  readonly remainingQuantity: number;
+  readonly transferredAt: string;
+  readonly transferredByName: string;
 }
 
 export interface WarehouseBalanceView {
