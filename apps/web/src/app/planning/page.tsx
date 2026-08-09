@@ -42,6 +42,7 @@ export default function PlanningPage() {
   const [driverProfileVersion, setDriverProfileVersion] = useState(1);
   const [homeTerritoryId, setHomeTerritoryId] = useState("");
   const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
+  const [selectedProductGroup, setSelectedProductGroup] = useState("ALL");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -78,6 +79,33 @@ export default function PlanningPage() {
   const days = weekDays(weekStart);
   const selectedDay = days.find((day) => day.date === selectedDate) ?? days[0]!;
   const selectedNorms = week?.norms.filter((norm) => norm.weekday === selectedDay.weekday) ?? [];
+  const selectedNormProductIds = new Set(selectedNorms.map((norm) => norm.productId));
+  const driverProductGroups =
+    setup?.productGroups.map((group) => {
+      const productIds = new Set(
+        setup.products
+          .filter(
+            (product) =>
+              product.categoryCode === group.code && selectedNormProductIds.has(product.id),
+          )
+          .map((product) => product.id),
+      );
+      const norms = selectedNorms.filter((norm) => productIds.has(norm.productId));
+      return {
+        ...group,
+        count: norms.length,
+        total: norms.reduce((sum, norm) => sum + norm.quantity, 0),
+      };
+    }) ?? [];
+  const visibleSelectedNorms =
+    selectedProductGroup === "ALL"
+      ? selectedNorms
+      : selectedNorms.filter((norm) =>
+          setup?.products.some(
+            (product) =>
+              product.id === norm.productId && product.categoryCode === selectedProductGroup,
+          ),
+        );
 
   useEffect(() => {
     async function load() {
@@ -342,6 +370,7 @@ export default function PlanningPage() {
                   setWeekStart(nextStart);
                   setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
                   setEditingNorm(null);
+                  setSelectedProductGroup("ALL");
                 }}
               >
                 ← Неделя
@@ -354,6 +383,7 @@ export default function PlanningPage() {
                   setWeekStart(nextStart);
                   setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
                   setEditingNorm(null);
+                  setSelectedProductGroup("ALL");
                 }}
               >
                 Неделя →
@@ -373,6 +403,7 @@ export default function PlanningPage() {
                     onClick={() => {
                       setSelectedDate(day.date);
                       setEditingNorm(null);
+                      setSelectedProductGroup("ALL");
                     }}
                     type="button"
                   >
@@ -391,9 +422,43 @@ export default function PlanningPage() {
                 </div>
                 <strong>{selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.</strong>
               </header>
+              <nav className="driver-norm-group-switcher" aria-label="Группы продукции">
+                <button
+                  aria-pressed={selectedProductGroup === "ALL"}
+                  className={selectedProductGroup === "ALL" ? "is-active" : ""}
+                  onClick={() => {
+                    setSelectedProductGroup("ALL");
+                    setEditingNorm(null);
+                  }}
+                  type="button"
+                >
+                  <strong>Все товары</strong>
+                  <span>
+                    {selectedNorms.length} тов. ·{" "}
+                    {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
+                  </span>
+                </button>
+                {driverProductGroups.map((group) => (
+                  <button
+                    aria-pressed={selectedProductGroup === group.code}
+                    className={selectedProductGroup === group.code ? "is-active" : ""}
+                    key={group.code}
+                    onClick={() => {
+                      setSelectedProductGroup(group.code);
+                      setEditingNorm(null);
+                    }}
+                    type="button"
+                  >
+                    <strong>{group.name}</strong>
+                    <span>
+                      {group.count} тов. · {group.total} шт.
+                    </span>
+                  </button>
+                ))}
+              </nav>
               <div className="driver-selected-norm__lines">
-                {selectedNorms.length ? (
-                  selectedNorms.map((norm) => (
+                {visibleSelectedNorms.length ? (
+                  visibleSelectedNorms.map((norm) => (
                     <div key={norm.id}>
                       <span>{norm.productName}</span>
                       <strong>{norm.quantity} шт.</strong>
@@ -403,7 +468,11 @@ export default function PlanningPage() {
                     </div>
                   ))
                 ) : (
-                  <p>На этот день норма не задана.</p>
+                  <p>
+                    {selectedNorms.length
+                      ? "В этой группе на выбранный день товаров нет."
+                      : "На этот день норма не задана."}
+                  </p>
                 )}
               </div>
             </article>

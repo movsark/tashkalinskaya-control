@@ -853,6 +853,7 @@ test.describe("B20 browser and HTTP regression", () => {
   }) => {
     const territoryId = "20000000-0000-4000-8000-000000000090";
     const productId = "20000000-0000-4000-8000-000000000091";
+    const dryProductId = "20000000-0000-4000-8000-000000000097";
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -883,6 +884,8 @@ test.describe("B20 browser and HTTP regression", () => {
       json(route, {
         availableTerritoryIds: [territoryId],
         dispatchDate: "2026-08-10",
+        driverProfileVersion: 1,
+        homeTerritoryId: territoryId,
         requests: [],
         runs: [],
         territories: [],
@@ -891,7 +894,29 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/planning/setup", (route) =>
       json(route, {
-        products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
+        productGroups: [
+          { code: "BASIC_CAKES", name: "Торты Базовые", sortOrder: 1 },
+          { code: "PREMIUM_CAKES", name: "Торты Премиум", sortOrder: 2 },
+          { code: "PIES_AND_PASTRIES", name: "Пироги", sortOrder: 3 },
+          { code: "DESSERTS", name: "Десерты", sortOrder: 4 },
+          { code: "DRY_BAKERY", name: "Сухая выпечка", sortOrder: 5 },
+        ],
+        products: [
+          {
+            categoryCode: "BASIC_CAKES",
+            categoryName: "Торты Базовые",
+            code: "T-001",
+            id: productId,
+            name: "Торт тестовый",
+          },
+          {
+            categoryCode: "DRY_BAKERY",
+            categoryName: "Сухая выпечка",
+            code: "SV-001",
+            id: dryProductId,
+            name: "СВ Печенье тестовое",
+          },
+        ],
         territories: [
           {
             description: null,
@@ -934,6 +959,18 @@ test.describe("B20 browser and HTTP regression", () => {
             validUntil: null,
             weekday: 1,
           },
+          {
+            id: "20000000-0000-4000-8000-000000000098",
+            productCode: "SV-001",
+            productId: dryProductId,
+            productName: "СВ Печенье тестовое",
+            quantity: 7,
+            source: "IMPORT",
+            territoryId,
+            validFrom: "2026-08-03",
+            validUntil: null,
+            weekday: 1,
+          },
         ],
         requests: [],
         territoryId,
@@ -943,11 +980,22 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Все товары/ })).toContainText("17 шт.");
+    await expect(page.getByRole("button", { name: /Сухая выпечка/ })).toContainText("7 шт.");
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await expect(page.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: /Все товары/ }).click();
     const friday = page.locator(".driver-weekday-switcher button").filter({ hasText: "Пт" });
     await expect(friday).toBeDisabled();
     await expect(friday).toContainText("выходной");
-    await page.getByRole("button", { name: "Изменить" }).click();
+    await page
+      .locator(".driver-selected-norm__lines > div")
+      .filter({ hasText: "Торт тестовый" })
+      .getByRole("button", { name: "Изменить" })
+      .click();
     await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
     await page.getByLabel("Как изменить").selectOption("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toHaveValue("MONTH_WEEKDAY");
