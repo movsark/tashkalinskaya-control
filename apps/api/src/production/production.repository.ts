@@ -439,34 +439,40 @@ export class ProductionRepository {
       );
       const existing = existingResult.rows[0];
       if (existing !== undefined) {
-        const lead = await client.query<{ employee_id: string; employee_name: string }>(
-          `select a.employee_id, e.full_name as employee_name
-           from production.task_assignment a
-           join identity.employee e on e.id = a.employee_id
-           where a.task_id = $1 and a.ended_at is null and a.is_lead
-           limit 1`,
+        const assignments = await client.query<{ employee_id: string; is_lead: boolean }>(
+          `select employee_id, is_lead
+           from production.task_assignment
+           where task_id = $1 and ended_at is null
+           order by is_lead desc, assigned_at`,
           [existing.id],
         );
-        const claimedBy = lead.rows[0];
-        if (claimedBy?.employee_id === command.actor.employeeId)
+        if (
+          assignments.rows.some((assignment) => assignment.employee_id === command.actor.employeeId)
+        )
           return loadTask(client, existing.id);
-        if (claimedBy !== undefined) {
-          throw new ConflictException({
-            code: "PRODUCTION_ALREADY_CLAIMED",
-            message: `Позиция уже в работе у сотрудника «${claimedBy.employee_name}»`,
-          });
-        }
         if (existing.workshop_id !== workshopId) {
           throw new ForbiddenException("Задание относится к другому цеху");
         }
-        if (!["CREATED", "ASSIGNED"].includes(existing.status)) {
-          throw new ConflictException("Работа по позиции уже начата другим способом");
+        if (!["CREATED", "ASSIGNED", "IN_PROGRESS"].includes(existing.status)) {
+          throw new ConflictException("Работа по позиции уже завершена");
         }
+        const progress = await client.query<{ declared_quantity: number }>(
+          `select coalesce(sum(quantity), 0)::integer as declared_quantity
+           from production.batch
+           where task_id = $1 and status in (
+             'PENDING_OVERPRODUCTION','AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE'
+           )`,
+          [existing.id],
+        );
+        if ((progress.rows[0]?.declared_quantity ?? 0) >= existing.target_quantity) {
+          throw new ConflictException("Всё количество по позиции уже передано");
+        }
+        const isLead = !assignments.rows.some((assignment) => assignment.is_lead);
         await client.query(
           `insert into production.task_assignment (
              id, task_id, employee_id, is_lead, assigned_by, reason, correlation_id
-           ) values ($1,$2,$3,true,$3,'Кондитер взял позицию в работу',$4)`,
-          [randomUUID(), existing.id, command.actor.employeeId, command.correlationId],
+           ) values ($1,$2,$3,$4,$3,'Кондитер присоединился к позиции',$5)`,
+          [randomUUID(), existing.id, command.actor.employeeId, isLead, command.correlationId],
         );
         await client.query(
           `update production.task
@@ -477,12 +483,17 @@ export class ProductionRepository {
         await audit(
           client,
           command,
-          "PRODUCTION_TASK_SELF_CLAIMED",
+          isLead ? "PRODUCTION_TASK_SELF_CLAIMED" : "PRODUCTION_TASK_SELF_JOINED",
           "PRODUCTION_TASK",
           existing.id,
-          { productId: command.productId, targetQuantity: existing.target_quantity, workshopId },
+          {
+            participantCount: assignments.rows.length + 1,
+            productId: command.productId,
+            targetQuantity: existing.target_quantity,
+            workshopId,
+          },
         );
-        await outbox(client, "production.task.self-claimed", existing.id, {
+        await outbox(client, "production.task.participant-joined", existing.id, {
           employeeId: command.actor.employeeId,
           productId: command.productId,
           workshopId,
@@ -1254,14 +1265,26 @@ interface NormDemandProductRow {
 }
 
 interface NormDemandWorkRow {
-  readonly claimed_by_employee_id: string;
-  readonly claimed_by_name: string;
   readonly declared_quantity: number;
   readonly product_id: string;
   readonly status: ProductionTaskView["status"];
   readonly target_quantity: number;
   readonly task_id: string;
   readonly version: number;
+}
+
+interface NormDemandWorkParticipantRow {
+  readonly employee_id: string;
+  readonly employee_name: string;
+  readonly is_lead: boolean;
+  readonly task_id: string;
+}
+
+interface NormDemandWorkContributionRow {
+  readonly employee_id: string;
+  readonly employee_name: string;
+  readonly quantity: number;
+  readonly task_id: string;
 }
 
 async function loadNormDemandProduct(
@@ -1506,7 +1529,6 @@ async function loadWorkspace(
   const normDemandWork = await client.query<NormDemandWorkRow>(
     `select distinct on (t.product_id)
             t.product_id, t.id as task_id, t.target_quantity, t.status, t.version,
-            a.employee_id as claimed_by_employee_id, e.full_name as claimed_by_name,
             coalesce((
               select sum(b.quantity)::integer
               from production.batch b
@@ -1515,22 +1537,53 @@ async function loadWorkspace(
               )
             ), 0) as declared_quantity
      from production.task t
-     join production.task_assignment a
-       on a.task_id = t.id and a.ended_at is null and a.is_lead
-     join identity.employee e on e.id = a.employee_id
      where t.production_date = $1
        and t.correction_of_task_id is null
        and t.status <> 'CANCELLED_BY_ADMIN'
+       and exists (
+         select 1 from production.task_assignment a
+         where a.task_id = t.id and a.ended_at is null
+       )
      order by t.product_id,
               case t.source_kind when 'DAILY_NORM_CLAIM' then 0 else 1 end,
               t.created_at desc`,
     [productionDate],
   );
+  const normDemandWorkTaskIds = normDemandWork.rows.map((row) => row.task_id);
+  const normDemandWorkParticipants =
+    normDemandWorkTaskIds.length === 0
+      ? { rows: [] as NormDemandWorkParticipantRow[] }
+      : await client.query<NormDemandWorkParticipantRow>(
+          `select a.task_id, a.employee_id, e.full_name as employee_name, a.is_lead
+           from production.task_assignment a
+           join identity.employee e on e.id = a.employee_id
+           where a.task_id = any($1::uuid[]) and a.ended_at is null
+           order by a.task_id, a.is_lead desc, a.assigned_at, e.full_name`,
+          [normDemandWorkTaskIds],
+        );
+  const normDemandWorkContributions =
+    normDemandWorkTaskIds.length === 0
+      ? { rows: [] as NormDemandWorkContributionRow[] }
+      : await client.query<NormDemandWorkContributionRow>(
+          `select b.task_id, b.submitted_by as employee_id, e.full_name as employee_name,
+                  sum(b.quantity)::integer as quantity
+           from production.batch b
+           join identity.employee e on e.id = b.submitted_by
+           where b.task_id = any($1::uuid[])
+             and b.status in (
+               'PENDING_OVERPRODUCTION','AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE'
+             )
+           group by b.task_id, b.submitted_by, e.full_name
+           order by b.task_id, e.full_name`,
+          [normDemandWorkTaskIds],
+        );
   const transfers = await loadTransfers(client, selectedWorkshopIds);
   const assignmentMap = groupBy(assignments.rows, (row) => row.task_id);
   const batchMap = groupBy(batches.rows, (row) => row.task_id);
   const defectMap = groupBy(defects.rows, (row) => row.task_id);
   const workMap = new Map(normDemandWork.rows.map((row) => [row.product_id, row]));
+  const workParticipantMap = groupBy(normDemandWorkParticipants.rows, (row) => row.task_id);
+  const workContributionMap = groupBy(normDemandWorkContributions.rows, (row) => row.task_id);
   return {
     availableTransferWorkshops: availableTransferWorkshops.rows,
     employees: employees.rows.map((row) => ({
@@ -1553,9 +1606,19 @@ async function loadWorkspace(
             work === undefined
               ? null
               : {
-                  claimedByEmployeeId: work.claimed_by_employee_id,
-                  claimedByName: work.claimed_by_name,
+                  contributions: (workContributionMap.get(work.task_id) ?? []).map(
+                    (contribution) => ({
+                      employeeId: contribution.employee_id,
+                      employeeName: contribution.employee_name,
+                      quantity: contribution.quantity,
+                    }),
+                  ),
                   declaredQuantity: work.declared_quantity,
+                  participants: (workParticipantMap.get(work.task_id) ?? []).map((participant) => ({
+                    employeeId: participant.employee_id,
+                    employeeName: participant.employee_name,
+                    isLead: participant.is_lead,
+                  })),
                   remainingQuantity: Math.max(work.target_quantity - work.declared_quantity, 0),
                   status: work.status,
                   targetQuantity: work.target_quantity,

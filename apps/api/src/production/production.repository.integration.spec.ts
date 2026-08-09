@@ -233,7 +233,7 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
     );
   });
 
-  it("lets one confectioner claim norm demand and report it in partial batches", async () => {
+  it("lets confectioners share norm demand and reports each contribution", async () => {
     await database.query(
       `insert into planning.territory_daily_norm (
          id, territory_id, dispatch_date, product_id, quantity, version,
@@ -270,14 +270,26 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
       productionDate: claimProductionDate,
     });
     expect(repeated.id).toBe(claimed.id);
-    await expect(
-      repository.claimNormDemand({
-        actor: absentChef,
-        correlationId: randomUUID(),
-        productId: claimProductId,
-        productionDate: claimProductionDate,
-      }),
-    ).rejects.toMatchObject({ status: 409 });
+    const joined = await repository.claimNormDemand({
+      actor: absentChef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(joined.id).toBe(claimed.id);
+    expect(joined.assignments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ employeeId: chefId, isLead: true }),
+        expect.objectContaining({ employeeId: absentChefId, isLead: false }),
+      ]),
+    );
+    const repeatedJoin = await repository.claimNormDemand({
+      actor: absentChef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(repeatedJoin.version).toBe(joined.version);
 
     await repository.submitBatch({
       actor: chef,
@@ -289,23 +301,44 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
       reasonId: null,
       replacementForBatchId: null,
       taskId: claimed.id,
-      taskVersion: claimed.version,
+      taskVersion: joined.version,
+    });
+    const joinedWorkspace = await repository.workspace(claimProductionDate, workshopId, absentChef);
+    const joinedTask = joinedWorkspace.tasks.find((task) => task.id === claimed.id)!;
+    await repository.submitBatch({
+      actor: absentChef,
+      comment: null,
+      correlationId: randomUUID(),
+      idempotencyKey: `B11-JOINED-BATCH-${randomUUID()}`,
+      producedAt: new Date(),
+      quantity: 3,
+      reasonId: null,
+      replacementForBatchId: null,
+      taskId: claimed.id,
+      taskVersion: joinedTask.version,
     });
     const workspace = await repository.workspace(claimProductionDate, workshopId, chef);
     expect(workspace.tasks).toContainEqual(
       expect.objectContaining({
         id: claimed.id,
-        declaredQuantity: 5,
-        remainingToDeclare: 8,
+        declaredQuantity: 8,
+        remainingToDeclare: 5,
       }),
     );
     expect(workspace.normDemand.lines).toContainEqual(
       expect.objectContaining({
         productId: claimProductId,
         work: expect.objectContaining({
-          claimedByEmployeeId: chefId,
-          declaredQuantity: 5,
-          remainingQuantity: 8,
+          contributions: expect.arrayContaining([
+            expect.objectContaining({ employeeId: chefId, quantity: 5 }),
+            expect.objectContaining({ employeeId: absentChefId, quantity: 3 }),
+          ]),
+          declaredQuantity: 8,
+          participants: expect.arrayContaining([
+            expect.objectContaining({ employeeId: chefId, isLead: true }),
+            expect.objectContaining({ employeeId: absentChefId, isLead: false }),
+          ]),
+          remainingQuantity: 5,
           taskId: claimed.id,
         }),
       }),

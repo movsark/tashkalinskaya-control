@@ -131,6 +131,16 @@ export default function ProductionPage() {
     void load();
   }, [router]);
 
+  useEffect(() => {
+    if (!isConfectionerOnly || session === null) return;
+    const timer = window.setInterval(() => {
+      void getProductionWorkspace(date)
+        .then(setWorkspace)
+        .catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [date, isConfectionerOnly, session]);
+
   async function reload(nextMessage?: string) {
     const next = await getProductionWorkspace(date, workshopId || undefined);
     setWorkspace(next);
@@ -427,7 +437,7 @@ function ProductionDemandBoard({
       </div>
       <p className="production-demand-caption">
         {isConfectioner
-          ? `Это общий план фабрики на сегодня для вывоза ${dispatchDates}. Нажмите товар, чтобы взять его в работу.`
+          ? `Это общий план фабрики на сегодня для вывоза ${dispatchDates}. Одну позицию могут выполнять несколько кондитеров; изменения обновляются автоматически.`
           : `Справочно, дата вывоза: ${dispatchDates}.`}
         {!isConfectioner && workspace.normDemand.source === "CALENDAR"
           ? " Даты взяты из производственного календаря."
@@ -450,8 +460,16 @@ function ProductionDemandBoard({
               <div>
                 {lines.map((line) => {
                   const expanded = expandedProductId === line.productId;
-                  const mine = line.work?.claimedByEmployeeId === session?.employee.id;
+                  const participants = line.work?.participants ?? [];
+                  const contributions = line.work?.contributions ?? [];
+                  const mine =
+                    participants.some(
+                      (participant) => participant.employeeId === session?.employee.id,
+                    ) ?? false;
                   const completed = line.work?.remainingQuantity === 0;
+                  const participantNames = participants
+                    .map((participant) => participant.employeeName)
+                    .join(", ");
                   return (
                     <div
                       className={`production-demand-product${line.work ? " is-claimed" : ""}${mine ? " is-mine" : ""}${completed ? " is-completed" : ""}`}
@@ -468,10 +486,10 @@ function ProductionDemandBoard({
                           <small>
                             {line.work
                               ? completed
-                                ? `Готово · ${line.work.claimedByName}`
+                                ? `Готово · ${participants.length} исполн.`
                                 : mine
-                                  ? `У вас в работе · осталось ${line.work.remainingQuantity} шт.`
-                                  : `В работе · ${line.work.claimedByName}`
+                                  ? `Вы в работе · вместе ${participants.length} · осталось ${line.work.remainingQuantity} шт.`
+                                  : `В работе · ${participantNames}`
                               : (line.workshopName ?? "Можно взять в работу")}
                           </small>
                         </span>
@@ -506,13 +524,60 @@ function ProductionDemandBoard({
                               <p>Позиция пока свободна.</p>
                             )
                           ) : (
-                            <p>
-                              {completed
-                                ? `Всё количество передано. Ответственный: ${line.work.claimedByName}.`
-                                : mine
-                                  ? `Вы передали ${line.work.declaredQuantity} шт., осталось ${line.work.remainingQuantity} шт.`
-                                  : `Позицию уже выполняет ${line.work.claimedByName}. Осталось ${line.work.remainingQuantity} шт.`}
-                            </p>
+                            <>
+                              <p>
+                                {completed
+                                  ? "Всё количество передано."
+                                  : `Общий остаток для всех кондитеров: ${line.work.remainingQuantity} шт.`}
+                              </p>
+                              <div className="production-demand-product__people">
+                                <strong>В работе</strong>
+                                {participants.map((participant) => (
+                                  <span key={participant.employeeId}>
+                                    {participant.employeeName}
+                                    {participant.employeeId === session?.employee.id ? " · вы" : ""}
+                                  </span>
+                                ))}
+                              </div>
+                              {contributions.length > 0 ? (
+                                <div className="production-demand-product__people is-contributions">
+                                  <strong>Уже произведено</strong>
+                                  {contributions.map((contribution) => (
+                                    <span key={contribution.employeeId}>
+                                      {contribution.employeeName} произвёл {contribution.quantity}{" "}
+                                      шт.
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {!mine &&
+                              !completed &&
+                              isConfectioner &&
+                              session &&
+                              onAction &&
+                              onReload ? (
+                                <button
+                                  className="primary-button production-full-button"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void onAction(async () => {
+                                      await claimProductionProduct(
+                                        date,
+                                        line.productId,
+                                        session.csrfToken,
+                                      );
+                                      await onReload(
+                                        `Вы присоединились к «${line.productName}». Общий остаток будет меняться для всех.`,
+                                      );
+                                      onClaimed?.();
+                                    })
+                                  }
+                                  type="button"
+                                >
+                                  Присоединиться к работе
+                                </button>
+                              ) : null}
+                            </>
                           )}
                         </div>
                       ) : null}
@@ -599,6 +664,14 @@ function ConfectionerWorkCard({
 }) {
   const [quantity, setQuantity] = useState(String(Math.max(task.remainingToDeclare, 1)));
   const numericQuantity = Number(quantity);
+  const activeBatches = task.batches.filter((batch) =>
+    [
+      "PENDING_OVERPRODUCTION",
+      "AWAITING_WAREHOUSE",
+      "WAREHOUSE_REVIEW",
+      "ACCEPTED_BY_WAREHOUSE",
+    ].includes(batch.status),
+  );
 
   useEffect(() => {
     setQuantity(String(Math.max(task.remainingToDeclare, 1)));
@@ -617,6 +690,25 @@ function ConfectionerWorkCard({
         <span>Передано: {task.declaredQuantity} шт.</span>
         <strong>Осталось: {task.remainingToDeclare} шт.</strong>
       </div>
+      <div className="production-confectioner-work__people">
+        <strong>Выполняют вместе</strong>
+        {task.assignments.map((assignment) => (
+          <span key={assignment.id}>
+            {assignment.employeeName}
+            {assignment.employeeId === session.employee.id ? " · вы" : ""}
+          </span>
+        ))}
+      </div>
+      {activeBatches.length > 0 ? (
+        <div className="production-confectioner-work__history">
+          <strong>Кто сколько произвёл</strong>
+          {activeBatches.map((batch) => (
+            <span key={batch.id}>
+              {batch.submittedByName} · произведено {batch.quantity} шт.
+            </span>
+          ))}
+        </div>
+      ) : null}
       {task.remainingToDeclare === 0 ? (
         <p className="production-confectioner-work__done">
           Всё количество передано и ожидает дальнейшей проверки склада.

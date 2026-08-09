@@ -4867,6 +4867,35 @@ select:focus {
   margin: 0;
 }
 
+.production-demand-product__people {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.production-demand-product__people strong {
+  color: var(--forest);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.production-demand-product__people span {
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.production-demand-product__people.is-contributions {
+  background: #edf2ed;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.production-demand-product__details .production-full-button {
+  margin-top: 14px;
+}
+
 .production-confectioner-work__summary {
   align-items: center;
   background: #edf2ed;
@@ -4929,6 +4958,32 @@ select:focus {
 
 .production-confectioner-work__progress strong {
   color: var(--forest);
+}
+
+.production-confectioner-work__people,
+.production-confectioner-work__history {
+  display: grid;
+  gap: 5px;
+  padding: 12px 16px 0;
+}
+
+.production-confectioner-work__people strong,
+.production-confectioner-work__history strong {
+  color: var(--forest);
+  font-size: 0.8rem;
+}
+
+.production-confectioner-work__people span,
+.production-confectioner-work__history span {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.production-confectioner-work__history {
+  background: #edf2ed;
+  margin: 12px 16px 0;
+  padding: 12px;
+  border-radius: 12px;
 }
 
 .production-confectioner-work__submit {

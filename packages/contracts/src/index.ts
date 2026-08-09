@@ -795,9 +795,17 @@ export interface ProductionNormDemandLineView {
   readonly productName: string;
   readonly quantity: number;
   readonly work: {
-    readonly claimedByEmployeeId: string;
-    readonly claimedByName: string;
+    readonly contributions: readonly {
+      readonly employeeId: string;
+      readonly employeeName: string;
+      readonly quantity: number;
+    }[];
     readonly declaredQuantity: number;
+    readonly participants: readonly {
+      readonly employeeId: string;
+      readonly employeeName: string;
+      readonly isLead: boolean;
+    }[];
     readonly remainingQuantity: number;
     readonly status: ProductionTaskView["status"];
     readonly targetQuantity: number;

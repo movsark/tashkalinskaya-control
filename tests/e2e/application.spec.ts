@@ -1358,17 +1358,19 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a confectioner claims today's product and reports a partial ready quantity", async ({
+  test("two confectioners share one product and see each other's ready quantity", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     const workshopId = "20000000-0000-4000-8000-000000000180";
     const confectionerId = "20000000-0000-4000-8000-000000000182";
+    const otherConfectionerId = "20000000-0000-4000-8000-000000000190";
     const taskId = "20000000-0000-4000-8000-000000000187";
     let requestedProductionDate = "";
     let claimed = false;
-    let declaredQuantity = 0;
-    let taskVersion = 1;
+    let currentDeclaredQuantity = 0;
+    const otherDeclaredQuantity = 4;
+    let taskVersion = 2;
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
         csrfToken: "csrf-confectioner-production",
@@ -1408,18 +1410,46 @@ test.describe("B20 browser and HTTP regression", () => {
               productId: "20000000-0000-4000-8000-000000000184",
               productName: "Торт тестовый",
               quantity: 12,
-              work: claimed
-                ? {
-                    claimedByEmployeeId: confectionerId,
-                    claimedByName: "Кондитер производства",
-                    declaredQuantity,
-                    remainingQuantity: 12 - declaredQuantity,
-                    status: "IN_PROGRESS",
-                    targetQuantity: 12,
-                    taskId,
-                    version: taskVersion,
-                  }
-                : null,
+              work: {
+                contributions: [
+                  {
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    quantity: otherDeclaredQuantity,
+                  },
+                  ...(currentDeclaredQuantity > 0
+                    ? [
+                        {
+                          employeeId: confectionerId,
+                          employeeName: "Кондитер производства",
+                          quantity: currentDeclaredQuantity,
+                        },
+                      ]
+                    : []),
+                ],
+                declaredQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
+                participants: [
+                  {
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    isLead: true,
+                  },
+                  ...(claimed
+                    ? [
+                        {
+                          employeeId: confectionerId,
+                          employeeName: "Кондитер производства",
+                          isLead: false,
+                        },
+                      ]
+                    : []),
+                ],
+                remainingQuantity: 12 - otherDeclaredQuantity - currentDeclaredQuantity,
+                status: "IN_PROGRESS",
+                targetQuantity: 12,
+                taskId,
+                version: taskVersion,
+              },
               workshopId,
               workshopName: "Кондитерский цех",
             },
@@ -1445,18 +1475,60 @@ test.describe("B20 browser and HTTP regression", () => {
                 acceptedQuantity: 0,
                 assignments: [
                   {
+                    assignedAt: "2026-08-09T09:00:00.000Z",
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    id: "20000000-0000-4000-8000-000000000191",
+                    isLead: true,
+                  },
+                  {
                     assignedAt: "2026-08-09T10:00:00.000Z",
                     employeeId: confectionerId,
                     employeeName: "Кондитер производства",
                     id: "20000000-0000-4000-8000-000000000188",
-                    isLead: true,
+                    isLead: false,
                   },
                 ],
-                awaitingWarehouseQuantity: declaredQuantity,
-                batches: [],
+                awaitingWarehouseQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
+                batches: [
+                  {
+                    id: "20000000-0000-4000-8000-000000000192",
+                    overproduction: false,
+                    overproductionComment: null,
+                    producedAt: "2026-08-09T09:30:00.000Z",
+                    productionDate: "2026-08-09",
+                    productionWindow: "DAY",
+                    quantity: otherDeclaredQuantity,
+                    replacementForBatchId: null,
+                    status: "AWAITING_WAREHOUSE",
+                    submittedAt: "2026-08-09T09:30:00.000Z",
+                    submittedById: otherConfectionerId,
+                    submittedByName: "Кондитер смены",
+                    version: 1,
+                  },
+                  ...(currentDeclaredQuantity > 0
+                    ? [
+                        {
+                          id: "20000000-0000-4000-8000-000000000189",
+                          overproduction: false,
+                          overproductionComment: null,
+                          producedAt: "2026-08-09T10:30:00.000Z",
+                          productionDate: "2026-08-09",
+                          productionWindow: "DAY",
+                          quantity: currentDeclaredQuantity,
+                          replacementForBatchId: null,
+                          status: "AWAITING_WAREHOUSE",
+                          submittedAt: "2026-08-09T10:30:00.000Z",
+                          submittedById: confectionerId,
+                          submittedByName: "Кондитер производства",
+                          version: 1,
+                        },
+                      ]
+                    : []),
+                ],
                 confirmedDefectQuantity: 0,
                 correctionOfTaskId: null,
-                declaredQuantity,
+                declaredQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
                 defects: [],
                 id: taskId,
                 overproductionQuantity: 0,
@@ -1468,7 +1540,7 @@ test.describe("B20 browser and HTTP regression", () => {
                 productionDate: "2026-08-09",
                 productionWindow: "DAY",
                 rejectedQuantity: 0,
-                remainingToDeclare: 12 - declaredQuantity,
+                remainingToDeclare: 12 - otherDeclaredQuantity - currentDeclaredQuantity,
                 shortfallQuantity: 12,
                 sourceKind: "DAILY_NORM_CLAIM",
                 sourceTransferId: null,
@@ -1488,11 +1560,12 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     await page.route("**/api/v1/production/days/*/products/*/claim", (route) => {
       claimed = true;
+      taskVersion += 1;
       return json(route, { id: taskId });
     });
     await page.route("**/api/v1/production/tasks/*/batches", async (route) => {
       const body = route.request().postDataJSON() as { quantity: number };
-      declaredQuantity += body.quantity;
+      currentDeclaredQuantity += body.quantity;
       taskVersion += 1;
       return json(route, { id: "20000000-0000-4000-8000-000000000189" });
     });
@@ -1519,17 +1592,26 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: /Торт тестовый/ }).click();
-    await page.getByRole("button", { name: "Взять в работу" }).click();
+    await expect(page.getByText("Кондитер смены произвёл 4 шт.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Присоединиться к работе" }).click();
     await expect(page.getByLabel("В работе")).toBeVisible();
     await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("1 поз. · 12 шт.");
-    await expect(page.getByText("Осталось: 12 шт.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Осталось: 8 шт.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Кондитер смены · произведено 4 шт.", { exact: true }),
+    ).toBeVisible();
 
-    await page.getByLabel("Сколько готово сейчас").fill("10");
+    await page.getByLabel("Сколько готово сейчас").fill("6");
     await page.getByRole("button", { name: "Передать готовое" }).click();
     await expect(page.getByText("Осталось: 2 шт.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Кондитер производства · произведено 6 шт.", { exact: true }),
+    ).toBeVisible();
 
     await page.getByRole("tab", { name: /План производства/ }).click();
-    await expect(page.getByText("У вас в работе · осталось 2 шт.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Вы в работе · вместе 2 · осталось 2 шт.", { exact: true }),
+    ).toBeVisible();
     expect(requestedProductionDate).toBe(moscowToday());
   });
 
