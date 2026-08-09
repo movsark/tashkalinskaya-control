@@ -414,6 +414,7 @@ function ProductionDemandBoard({
   session?: AuthenticatedUser;
   workspace: ProductionWorkspaceView;
 }) {
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const total = workspace.normDemand.lines.reduce((sum, line) => sum + line.quantity, 0);
   const dispatchDates =
@@ -444,6 +445,7 @@ function ProductionDemandBoard({
           : !isConfectioner
             ? " Пока действует правило: производство за день до вывоза."
             : null}
+        {isConfectioner ? " Нажмите группу, чтобы увидеть товары." : null}
       </p>
       {groups.length === 0 ? (
         <p className="logistics-empty">План производства ещё не рассчитан или равен нулю.</p>
@@ -451,15 +453,36 @@ function ProductionDemandBoard({
         <div className="production-demand-groups">
           {groups.map(([group, lines]) => (
             <article key={group}>
-              <header>
-                <h3>{group}</h3>
-                <span>
-                  {lines.length} поз. · {lines.reduce((sum, line) => sum + line.quantity, 0)} шт.
-                </span>
-              </header>
-              <div>
+              {isConfectioner ? (
+                <button
+                  aria-expanded={expandedGroup === group}
+                  className="production-demand-group__trigger"
+                  onClick={() => {
+                    setExpandedProductId(null);
+                    setExpandedGroup(expandedGroup === group ? null : group);
+                  }}
+                  type="button"
+                >
+                  <span>
+                    <h3>{group}</h3>
+                    <small>
+                      {lines.length} поз. · {lines.reduce((sum, line) => sum + line.quantity, 0)}{" "}
+                      шт.
+                    </small>
+                  </span>
+                  <i aria-hidden="true">{expandedGroup === group ? "−" : "+"}</i>
+                </button>
+              ) : (
+                <header>
+                  <h3>{group}</h3>
+                  <span>
+                    {lines.length} поз. · {lines.reduce((sum, line) => sum + line.quantity, 0)} шт.
+                  </span>
+                </header>
+              )}
+              <div hidden={isConfectioner && expandedGroup !== group}>
                 {lines.map((line) => {
-                  const expanded = expandedProductId === line.productId;
+                  const productExpanded = expandedProductId === line.productId;
                   const participants = line.work?.participants ?? [];
                   const contributions = line.work?.contributions ?? [];
                   const mine =
@@ -478,9 +501,11 @@ function ProductionDemandBoard({
                       key={line.productId}
                     >
                       <button
-                        aria-expanded={expanded}
+                        aria-expanded={productExpanded}
                         className="production-demand-product__trigger"
-                        onClick={() => setExpandedProductId(expanded ? null : line.productId)}
+                        onClick={() =>
+                          setExpandedProductId(productExpanded ? null : line.productId)
+                        }
                         type="button"
                       >
                         <span>
@@ -495,7 +520,7 @@ function ProductionDemandBoard({
                               : (line.workshopName ?? "Можно взять в работу")}
                           </small>
                         </span>
-                        <i aria-hidden="true">{expanded ? "−" : "+"}</i>
+                        <i aria-hidden="true">{productExpanded ? "−" : "+"}</i>
                         <span
                           aria-label={`План ${line.quantity} штук, произведено ${producedQuantity} штук, осталось ${remainingQuantity} штук`}
                           className="production-demand-product__numbers"
@@ -514,7 +539,7 @@ function ProductionDemandBoard({
                           </span>
                         </span>
                       </button>
-                      {expanded ? (
+                      {productExpanded ? (
                         <div className="production-demand-product__details">
                           {line.work === null ? (
                             isConfectioner && session && onAction && onReload ? (
