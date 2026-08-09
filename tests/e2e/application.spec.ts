@@ -1306,10 +1306,23 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "По водителям" })).toHaveCount(0);
     await expect(page.getByText("План производства по цехам", { exact: true })).toHaveCount(0);
+    const overviewDryGroup = page
+      .locator(".dispatch-overview__group-item")
+      .filter({ hasText: "Сухая выпечка" });
+    await overviewDryGroup.getByRole("button").click();
+    await expect(overviewDryGroup.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await expect(
+      overviewDryGroup.locator(".dispatch-overview__group-products").getByText("63 шт.", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
     await page.getByRole("button", { name: /Территория 3/ }).click();
     await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
-    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
+    await page
+      .locator(".territory-product-group-grid")
+      .getByRole("button", { name: /Сухая выпечка/ })
+      .click();
     await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
 
     await page.goto("/logistics");

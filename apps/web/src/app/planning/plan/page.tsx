@@ -339,8 +339,15 @@ function DispatchOverview({
   productGroups: PlanningSetupView["productGroups"];
   products: PlanningSetupView["products"];
 }) {
-  const productById = new Map(products.map((product) => [product.id, product]));
+  const [openGroupCode, setOpenGroupCode] = useState<string | null>(null);
   const lines = Object.values(norms).flatMap((item) => item.lines);
+  const quantityByProduct = new Map<string, number>();
+  for (const line of lines) {
+    quantityByProduct.set(
+      line.productId,
+      (quantityByProduct.get(line.productId) ?? 0) + line.quantity,
+    );
+  }
   const total = lines.reduce((sum, line) => sum + line.quantity, 0);
   return (
     <section className="dispatch-overview">
@@ -353,16 +360,44 @@ function DispatchOverview({
       </div>
       <div className="dispatch-overview__groups">
         {productGroups.map((group) => {
-          const quantity = lines.reduce(
-            (sum, line) =>
-              sum +
-              (productById.get(line.productId)?.categoryCode === group.code ? line.quantity : 0),
+          const groupProducts = products.filter((product) => product.categoryCode === group.code);
+          const quantity = groupProducts.reduce(
+            (sum, product) => sum + (quantityByProduct.get(product.id) ?? 0),
             0,
           );
+          const isOpen = openGroupCode === group.code;
           return (
-            <article key={group.code}>
-              <span>{group.name}</span>
-              <strong>{quantity} шт.</strong>
+            <article
+              className={`dispatch-overview__group-item${isOpen ? " is-open" : ""}`}
+              key={group.code}
+            >
+              <button
+                aria-expanded={isOpen}
+                className="dispatch-overview__group-toggle"
+                onClick={() => setOpenGroupCode(isOpen ? null : group.code)}
+                type="button"
+              >
+                <span>
+                  <b>{group.name}</b>
+                  <small>{productCountLabel(groupProducts.length)}</small>
+                </span>
+                <strong>{quantity} шт.</strong>
+                <i aria-hidden="true">{isOpen ? "−" : "+"}</i>
+              </button>
+              {isOpen ? (
+                <div className="dispatch-overview__group-products">
+                  {groupProducts.length ? (
+                    groupProducts.map((product) => (
+                      <p key={product.id}>
+                        <span>{product.name}</span>
+                        <strong>{quantityByProduct.get(product.id) ?? 0} шт.</strong>
+                      </p>
+                    ))
+                  ) : (
+                    <p>В этой группе пока нет товаров.</p>
+                  )}
+                </div>
+              ) : null}
             </article>
           );
         })}
