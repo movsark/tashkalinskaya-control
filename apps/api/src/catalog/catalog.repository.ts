@@ -420,7 +420,7 @@ export class CatalogRepository {
       );
       await client.query(
         `insert into audit.event (id,occurred_at,actor_employee_id,active_role,action,object_type,object_id,correlation_id,result,metadata)
-         values ($1,now(),$2,'ADMIN','PRODUCT_CREATED','PRODUCT',$3,$4,'SUCCESS',jsonb_build_object('productCode',$5))`,
+         values ($1,now(),$2,'ADMIN','PRODUCT_CREATED','PRODUCT',$3,$4,'SUCCESS',jsonb_build_object('productCode',$5::text))`,
         [
           randomUUID(),
           input.actorEmployeeId,
@@ -431,7 +431,7 @@ export class CatalogRepository {
       );
       await client.query(
         `insert into system.outbox_message (id,event_name,aggregate_type,aggregate_id,payload,occurred_at)
-         values ($1,'catalog.product.created.v1','PRODUCT',$2,jsonb_build_object('productCode',$3),now())`,
+         values ($1,'catalog.product.created.v1','PRODUCT',$2,jsonb_build_object('productCode',$3::text),now())`,
         [randomUUID(), product.id, product.product_code],
       );
       return {
