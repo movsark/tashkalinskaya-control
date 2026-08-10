@@ -874,7 +874,6 @@ test.describe("B20 browser and HTTP regression", () => {
     const occupiedTerritoryId = "20000000-0000-4000-8000-000000000063";
     let activeRoute: Record<string, unknown> | null = null;
     let activatedTerritoryId = "";
-    let endedRouteId = "";
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -968,17 +967,6 @@ test.describe("B20 browser and HTTP regression", () => {
       };
       await json(route, activeRoute);
     });
-    await page.route("**/api/v1/logistics/me/route/*/end", async (route) => {
-      endedRouteId = route.request().url().split("/").at(-2) ?? "";
-      const endedRoute = {
-        ...activeRoute,
-        endedAt: "2026-08-10T08:00:00.000Z",
-        status: "ENDED",
-        version: 2,
-      };
-      activeRoute = null;
-      await json(route, endedRoute);
-    });
     await page.route("**/api/v1/loading/driver/days/*", (route) =>
       json(route, {
         dispatchDate: "2026-08-10",
@@ -1022,12 +1010,20 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Торт после выхода", { exact: true })).toBeVisible();
     await expect(gate).toHaveCount(0);
     const activeRoutePanel = page.getByRole("region", { name: "Текущий рейс" });
-    await activeRoutePanel.getByRole("button", { name: "Закончил рейс" }).click();
-    await expect(activeRoutePanel.getByText("Вы закончили текущий рейс?")).toBeVisible();
-    await activeRoutePanel.getByRole("button", { name: "Да, закончить рейс" }).click();
-    await expect.poll(() => endedRouteId).toBe("20000000-0000-4000-8000-000000000069");
-    await expect(page.getByRole("region", { name: "Выход на рейс" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).not.toBeVisible();
+    const handoverButton = activeRoutePanel.getByRole("button", { name: "Передать рейс" });
+    const completeButton = activeRoutePanel.getByRole("button", { name: "Завершить рейс" });
+    await expect(handoverButton).toHaveCSS("font-size", "18px");
+    await expect(completeButton).toHaveCSS("font-size", "18px");
+    await expect(handoverButton).toHaveCSS("min-height", "64px");
+    await expect(completeButton).toHaveCSS("min-height", "64px");
+    const handoverBox = await handoverButton.boundingBox();
+    const completeBox = await completeButton.boundingBox();
+    expect(handoverBox).not.toBeNull();
+    expect(completeBox).not.toBeNull();
+    expect(Math.abs((handoverBox?.width ?? 0) - (completeBox?.width ?? 0))).toBeLessThanOrEqual(1);
+    expect(Math.abs((handoverBox?.height ?? 0) - (completeBox?.height ?? 0))).toBeLessThanOrEqual(
+      1,
+    );
   });
 
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({

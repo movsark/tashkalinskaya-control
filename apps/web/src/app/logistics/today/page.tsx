@@ -190,7 +190,7 @@ export default function DriverLogisticsPage() {
     (route) => route.territoryId === routeTerritoryChoice,
   );
   const today = todayMoscow();
-  const completedRoute = routes?.routeHistory.find(
+  const completedRoute = routes?.routeHistory?.find(
     (route) => route.driverEmployeeId === session?.employee.id && route.status === "ENDED",
   );
   const requiresRouteStart = Boolean(
@@ -406,14 +406,14 @@ export default function DriverLogisticsPage() {
           ) : (
             <div className="driver-route-duty__actions">
               <button
-                className="secondary-button"
+                className="driver-route-duty__action-button"
                 type="button"
                 onClick={() => setRouteHandoverConfirmation(true)}
               >
                 Передать рейс
               </button>
               <button
-                className="primary-action"
+                className="driver-route-duty__action-button"
                 type="button"
                 onClick={() => router.push("/returns")}
               >

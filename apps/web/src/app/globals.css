@@ -4330,8 +4330,33 @@ select:focus {
 
 .driver-route-duty__actions {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   grid-template-columns: 1fr 1fr;
+}
+
+.driver-route-duty__action-button {
+  display: flex;
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 20px;
+  border: 2px solid var(--forest);
+  border-radius: 16px;
+  color: var(--forest);
+  background: #fff;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.driver-route-duty__action-button:focus-visible {
+  outline: 3px solid rgb(23 60 52 / 22%);
+  outline-offset: 3px;
 }
 
 @media (max-width: 760px) {
