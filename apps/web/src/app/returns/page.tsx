@@ -429,12 +429,17 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     showGroupName = false,
   ) {
     const productKey = `spoilage:${territory.id}:${product.productId}`;
+    const quantities = summarizeDriverSpoilageRequests(
+      spoilage?.requests ?? [],
+      product.productId,
+      territory.number,
+    );
 
     return (
       <article key={productKey}>
         <button
           aria-haspopup="dialog"
-          className="driver-return-product__button"
+          className="driver-return-product__button driver-spoilage-product__button"
           onClick={() => {
             setError("");
             setSelectedReturnProduct(null);
@@ -454,6 +459,18 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               {showGroupName ? ` · ${product.productGroupName}` : ""}
             </small>
             <strong>{product.productName}</strong>
+          </span>
+          <span className="driver-spoilage-product__statuses">
+            {quantities.pending > 0 ? (
+              <small className="driver-spoilage-product__status is-pending">
+                Ожидает решения · {quantities.pending} шт.
+              </small>
+            ) : null}
+            {quantities.confirmed > 0 ? (
+              <small className="driver-spoilage-product__status is-confirmed">
+                Подтверждено · {quantities.confirmed} шт.
+              </small>
+            ) : null}
           </span>
           <i>+</i>
         </button>
@@ -945,11 +962,13 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 </div>
                 <div>
                   <b>
-                    {request.status === "SUBMITTED"
-                      ? "Ожидает решения"
-                      : request.status === "EXECUTED"
-                        ? "Списано"
-                        : "Отклонено"}
+                    {request.status === "EXECUTED"
+                      ? "Списано"
+                      : request.status === "REJECTED"
+                        ? "Отклонено"
+                        : request.receivedAt
+                          ? "Подтверждено складом"
+                          : "Ожидает решения"}
                   </b>
                 </div>
               </article>
@@ -1050,6 +1069,23 @@ function groupSpoilageProducts(
       products: products.filter((product) => product.productGroupCode === code),
     }))
     .filter((group) => group.products.length);
+}
+
+function summarizeDriverSpoilageRequests(
+  requests: DriverSpoilageWorkspaceView["requests"],
+  productId: string,
+  territoryNumber: number,
+) {
+  return requests.reduce(
+    (totals, request) => {
+      if (request.productId !== productId || request.sourceTerritoryNumber !== territoryNumber)
+        return totals;
+      if (request.receivedAt) totals.confirmed += request.quantity;
+      else if (request.status === "SUBMITTED") totals.pending += request.quantity;
+      return totals;
+    },
+    { confirmed: 0, pending: 0 },
+  );
 }
 
 interface DriverProductSearchable {

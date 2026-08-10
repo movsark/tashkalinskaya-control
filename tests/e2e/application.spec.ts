@@ -2879,6 +2879,62 @@ test.describe("B20 browser and HTTP regression", () => {
     let submitted: Record<string, unknown> | null = null;
     const submittedSpoilage: Record<string, unknown>[] = [];
     let requestCreated = false;
+    const existingSpoilageRequests = [
+      {
+        comment: "Заявлено водителем",
+        createdAt: "2026-08-10T14:00:00.000Z",
+        createdByName: "Водитель возврата",
+        decision: null,
+        externalCheck: null,
+        externalDocumentNumber: null,
+        id: "20000000-0000-4000-8000-000000000129",
+        photo: null,
+        physicalSourceKind: "DRIVER",
+        productCode: "SV-001",
+        productId: storeReturnProductId,
+        productName: "СВ Бакусы",
+        quantity: 2,
+        reasonCode: "OTHER",
+        reasonName: "Другое",
+        receivedAt: null,
+        receivedByName: null,
+        sourceBasis: "STORE_RETURN",
+        sourceDispatchDate: "2026-08-10",
+        sourceDriverName: "Водитель возврата",
+        sourceKind: "PHYSICAL_SPOILAGE",
+        sourceLabel: "Территория 2",
+        sourceTerritoryNumber: 2,
+        status: "SUBMITTED",
+        version: 1,
+      },
+      {
+        comment: "Заявлено водителем",
+        createdAt: "2026-08-10T13:00:00.000Z",
+        createdByName: "Водитель возврата",
+        decision: null,
+        externalCheck: null,
+        externalDocumentNumber: null,
+        id: "20000000-0000-4000-8000-000000000130",
+        photo: null,
+        physicalSourceKind: "DRIVER",
+        productCode: "SV-001",
+        productId: storeReturnProductId,
+        productName: "СВ Бакусы",
+        quantity: 1,
+        reasonCode: "OTHER",
+        reasonName: "Другое",
+        receivedAt: "2026-08-10T13:10:00.000Z",
+        receivedByName: "Тестовый Кладовщик",
+        sourceBasis: "STORE_RETURN",
+        sourceDispatchDate: "2026-08-10",
+        sourceDriverName: "Водитель возврата",
+        sourceKind: "PHYSICAL_SPOILAGE",
+        sourceLabel: "Территория 2",
+        sourceTerritoryNumber: 2,
+        status: "SUBMITTED",
+        version: 2,
+      },
+    ];
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
       const request = route.request();
@@ -2976,7 +3032,7 @@ test.describe("B20 browser and HTTP regression", () => {
               photoRequired: false,
             },
           ],
-          requests: [],
+          requests: existingSpoilageRequests,
           serverTime: "2026-08-10T15:00:00.000Z",
           territories: [
             {
@@ -3081,7 +3137,10 @@ test.describe("B20 browser and HTTP regression", () => {
     const spoilageSearchInput = page.getByLabel("Найти испорченный товар");
     await spoilageSearchInput.fill("бакус");
     const spoilageResults = spoilageSearch.locator(".driver-spoilage-search-results");
-    await expect(spoilageResults.getByRole("button", { name: /СВ Бакусы/u })).toBeVisible();
+    const searchedSpoilageProduct = spoilageResults.getByRole("button", { name: /СВ Бакусы/u });
+    await expect(searchedSpoilageProduct).toBeVisible();
+    await expect(searchedSpoilageProduct.getByText("Ожидает решения · 2 шт.")).toBeVisible();
+    await expect(searchedSpoilageProduct.getByText("Подтверждено · 1 шт.")).toBeVisible();
     await expect(page.getByRole("button", { name: /ТБ Рыжик/u })).toHaveCount(0);
     await expect(page.getByText("Порча · весь каталог", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Территория 2" })).toHaveCount(1);
@@ -3091,7 +3150,7 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(searchInputBox).not.toBeNull();
     expect(searchResultsBox).not.toBeNull();
     expect(searchResultsBox!.y - (searchInputBox!.y + searchInputBox!.height)).toBeLessThan(80);
-    await spoilageResults.getByRole("button", { name: /СВ Бакусы/u }).click();
+    await searchedSpoilageProduct.click();
     const spoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
     await expect(spoilageDialog).toBeVisible();
     await expect(spoilageDialog.getByText("SV-001 · Сухая выпечка")).toBeVisible();

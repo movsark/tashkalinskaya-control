@@ -9118,6 +9118,10 @@ select:focus {
   grid-template-columns: minmax(0, 1fr) auto 32px;
 }
 
+.driver-return-product__button.driver-spoilage-product__button {
+  grid-template-columns: minmax(0, 1fr) auto 24px;
+}
+
 .driver-return-product__dispatched {
   color: var(--forest);
   font-size: 0.9rem;
@@ -9146,6 +9150,29 @@ select:focus {
 
 .driver-return-product__counts {
   text-align: right;
+}
+
+.driver-spoilage-product__statuses {
+  justify-items: end;
+  text-align: right;
+}
+
+.driver-spoilage-product__status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.driver-return-product__button small.driver-spoilage-product__status.is-pending {
+  background: #fff1c9;
+  color: #7d5b00;
+}
+
+.driver-return-product__button small.driver-spoilage-product__status.is-confirmed {
+  background: #dff2e8;
+  color: #175f49;
 }
 
 .driver-return-products {
@@ -9288,6 +9315,10 @@ select:focus {
     grid-template-columns: minmax(0, 1fr) auto 32px;
   }
 
+  .driver-return-product__button.driver-spoilage-product__button {
+    grid-template-columns: minmax(0, 1fr) auto 24px;
+  }
+
   .driver-return-group__button > b,
   .driver-return-product__counts {
     grid-column: 1;
@@ -9297,6 +9328,11 @@ select:focus {
   .driver-return-group__button > i,
   .driver-return-product__button:not(.is-return-selector) > i {
     grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .driver-return-product__button.driver-spoilage-product__button > i {
+    grid-column: 3;
     grid-row: 1 / span 2;
   }
 
