@@ -1142,9 +1142,23 @@ export interface LoadingWarehouseDayView {
   readonly serverTime: string;
 }
 
+export interface LoadingDriverProductView {
+  readonly acceptedQuantity: number;
+  readonly awaitingAcceptanceQuantity: number;
+  readonly code: string;
+  readonly id: string;
+  readonly name: string;
+  readonly plannedQuantity: number;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+}
+
 export interface LoadingDriverDayView {
   readonly dispatchDate: string;
   readonly priorityReturns: readonly GoodReturnPriorityView[];
+  readonly products: readonly LoadingDriverProductView[];
   readonly serverTime: string;
   readonly sessions: readonly LoadingSessionView[];
 }

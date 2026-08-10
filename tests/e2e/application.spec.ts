@@ -953,6 +953,68 @@ test.describe("B20 browser and HTTP regression", () => {
       json(route, {
         dispatchDate: "2026-08-04",
         priorityReturns: [],
+        products: [
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 10,
+            code: "T-001",
+            id: "20000000-0000-4000-8000-000000000080",
+            name: "Торт тестовый",
+            plannedQuantity: 10,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 10,
+            sentQuantity: 10,
+          },
+          {
+            acceptedQuantity: 5,
+            awaitingAcceptanceQuantity: 0,
+            code: "TP-001",
+            id: "20000000-0000-4000-8000-000000000081",
+            name: "Торт Премиум тестовый",
+            plannedQuantity: 5,
+            productGroupCode: "PREMIUM_CAKES",
+            productGroupName: "Торты Премиум",
+            remainingQuantity: 0,
+            sentQuantity: 5,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "PI-001",
+            id: "20000000-0000-4000-8000-000000000082",
+            name: "Пирог тестовый",
+            plannedQuantity: 7,
+            productGroupCode: "PIES_AND_PASTRIES",
+            productGroupName: "Пироги",
+            remainingQuantity: 7,
+            sentQuantity: 0,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "DE-001",
+            id: "20000000-0000-4000-8000-000000000083",
+            name: "Десерт тестовый",
+            plannedQuantity: 8,
+            productGroupCode: "DESSERTS",
+            productGroupName: "Десерты",
+            remainingQuantity: 8,
+            sentQuantity: 0,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "SV-001",
+            id: "20000000-0000-4000-8000-000000000084",
+            name: "СВ Тестовая выпечка",
+            plannedQuantity: 7,
+            productGroupCode: "DRY_BAKERY",
+            productGroupName: "Сухая выпечка",
+            remainingQuantity: 7,
+            sentQuantity: 0,
+          },
+        ],
         serverTime: "2026-08-04T06:15:00.000Z",
         sessions: [
           {
@@ -1027,7 +1089,28 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
-    await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".driver-day-total").getByText("37 шт.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
+    const assortment = page.locator(".driver-assortment");
+    await expect(assortment).toContainText("Принято5 шт.");
+    await expect(assortment).toContainText("Ждёт подтверждения10 шт.");
+    await expect(assortment).toContainText("Осталось добрать32 шт.");
+    for (const group of ["Торты Базовые", "Торты Премиум", "Пироги", "Десерты", "Сухая выпечка"]) {
+      await expect(assortment.getByRole("button", { name: new RegExp(group, "u") })).toBeVisible();
+    }
+    await assortment.getByRole("button", { name: /Торты Базовые/u }).click();
+    const basicProduct = assortment.locator(".driver-assortment-product").filter({
+      hasText: "Торт тестовый",
+    });
+    await expect(basicProduct).toContainText("Норма 10");
+    await expect(basicProduct).toContainText("Принято 0");
+    await expect(basicProduct).toContainText("Ждёт 10");
+    await expect(basicProduct).toContainText("Осталось 10");
+    await assortment.getByRole("searchbox", { name: "Поиск товара" }).fill("SV-001");
+    await expect(assortment.getByText("СВ Тестовая выпечка", { exact: true })).toBeVisible();
+    await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Принять 10 шт." })).toBeVisible();
     await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();

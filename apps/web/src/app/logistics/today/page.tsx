@@ -8,7 +8,7 @@ import type {
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../../components/app-brand";
 import {
@@ -33,6 +33,8 @@ export default function DriverLogisticsPage() {
   const [loading, setLoading] = useState<LoadingDriverDayView | null>(null);
   const [dispatchDate, setDispatchDate] = useState(todayMoscow());
   const [replies, setReplies] = useState<Record<string, ReplyDraft>>({});
+  const [productSearch, setProductSearch] = useState("");
+  const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -92,6 +94,33 @@ export default function DriverLogisticsPage() {
     !session.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode))
       ? "Моя погрузка"
       : "Подтверждение водителем";
+  const products = loading?.products ?? [];
+  const productGroups = useMemo(() => {
+    const query = productSearch.trim().toLocaleLowerCase("ru-RU");
+    const filtered = query
+      ? products.filter((product) =>
+          `${product.code} ${product.name} ${product.productGroupName}`
+            .toLocaleLowerCase("ru-RU")
+            .includes(query),
+        )
+      : products;
+    return PRODUCT_GROUPS.map((group) => ({
+      ...group,
+      products: filtered.filter((product) => product.productGroupCode === group.code),
+    })).filter((group) => group.products.length > 0);
+  }, [productSearch, products]);
+  const productTotals = products.reduce(
+    (totals, product) => ({
+      accepted: totals.accepted + product.acceptedQuantity,
+      awaiting: totals.awaiting + product.awaitingAcceptanceQuantity,
+      planned: totals.planned + product.plannedQuantity,
+      remaining: totals.remaining + product.remainingQuantity,
+    }),
+    { accepted: 0, awaiting: 0, planned: 0, remaining: 0 },
+  );
+  const visibleExpandedGroups = productSearch.trim()
+    ? productGroups.map((group) => group.code)
+    : expandedProductGroups;
 
   return (
     <main className="workspace-layout logistics-role-layout driver-loading-workspace simple-workspace">
@@ -174,7 +203,152 @@ export default function DriverLogisticsPage() {
         </section>
       ) : null}
 
+      <section className="driver-assortment" aria-labelledby="driver-assortment-title">
+        <header className="driver-assortment__heading">
+          <div>
+            <p className="eyebrow">Ассортимент рейса</p>
+            <h2 id="driver-assortment-title">Что нужно взять сегодня</h2>
+            <p>Весь план территории, уже принятое и остаток, который ещё нужно добрать.</p>
+          </div>
+          {products.length ? <strong>{products.length} поз.</strong> : null}
+        </header>
+
+        {products.length ? (
+          <>
+            <div className="driver-assortment__totals">
+              <article>
+                <span>Норма</span>
+                <strong>{productTotals.planned} шт.</strong>
+              </article>
+              <article className="is-accepted">
+                <span>Принято</span>
+                <strong>{productTotals.accepted} шт.</strong>
+              </article>
+              <article className="is-awaiting">
+                <span>Ждёт подтверждения</span>
+                <strong>{productTotals.awaiting} шт.</strong>
+              </article>
+              <article className="is-remaining">
+                <span>Осталось добрать</span>
+                <strong>{productTotals.remaining} шт.</strong>
+              </article>
+            </div>
+
+            <div className="driver-assortment__tools">
+              <label>
+                <span>Поиск товара</span>
+                <input
+                  aria-label="Поиск товара"
+                  placeholder="Название или код"
+                  type="search"
+                  value={productSearch}
+                  onChange={(event) => setProductSearch(event.target.value)}
+                />
+              </label>
+              <div>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => setExpandedProductGroups(productGroups.map((group) => group.code))}
+                >
+                  Развернуть все
+                </button>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => setExpandedProductGroups([])}
+                >
+                  Свернуть все
+                </button>
+              </div>
+            </div>
+
+            <div className="driver-assortment__groups">
+              {productGroups.map((group) => {
+                const isExpanded = visibleExpandedGroups.includes(group.code);
+                const totals = group.products.reduce(
+                  (current, product) => ({
+                    accepted: current.accepted + product.acceptedQuantity,
+                    planned: current.planned + product.plannedQuantity,
+                    remaining: current.remaining + product.remainingQuantity,
+                  }),
+                  { accepted: 0, planned: 0, remaining: 0 },
+                );
+                return (
+                  <article className="driver-assortment-group" key={group.code}>
+                    <button
+                      aria-expanded={isExpanded}
+                      className="driver-assortment-group__summary"
+                      type="button"
+                      onClick={() =>
+                        setExpandedProductGroups((current) =>
+                          current.includes(group.code)
+                            ? current.filter((code) => code !== group.code)
+                            : [...current, group.code],
+                        )
+                      }
+                    >
+                      <span>
+                        <strong>{group.name}</strong>
+                        <small>
+                          {group.products.length} поз. · норма {totals.planned} шт.
+                        </small>
+                      </span>
+                      <span className="driver-assortment-group__progress">
+                        <small>Принято {totals.accepted}</small>
+                        <strong>Осталось {totals.remaining}</strong>
+                      </span>
+                      <b aria-hidden="true">{isExpanded ? "−" : "+"}</b>
+                    </button>
+                    {isExpanded ? (
+                      <div className="driver-assortment-products">
+                        {group.products.map((product) => (
+                          <div className="driver-assortment-product" key={product.id}>
+                            <div className="driver-assortment-product__name">
+                              <span>{product.code}</span>
+                              <strong>{product.name}</strong>
+                            </div>
+                            <div className="driver-assortment-product__metrics">
+                              <span>
+                                Норма <strong>{product.plannedQuantity}</strong>
+                              </span>
+                              <span className="is-accepted">
+                                Принято <strong>{product.acceptedQuantity}</strong>
+                              </span>
+                              <span className="is-awaiting">
+                                Ждёт <strong>{product.awaitingAcceptanceQuantity}</strong>
+                              </span>
+                              <span className="is-remaining">
+                                Осталось <strong>{product.remainingQuantity}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+              {!productGroups.length ? (
+                <p className="driver-assortment__empty">По этому запросу товары не найдены.</p>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="driver-assortment__empty">
+            <strong>Сначала приступите к рейсу территории</strong>
+            <span>После этого здесь появится весь ассортимент на выбранную дату.</span>
+          </div>
+        )}
+      </section>
+
       <section className="driver-loading-list">
+        {loading?.sessions.length ? (
+          <div className="driver-loading-list__heading">
+            <p className="eyebrow">Передано складом</p>
+            <h2>Подтверждение товара</h2>
+          </div>
+        ) : null}
         {loading?.sessions.length ? (
           loading.sessions.map((item) => (
             <article
@@ -476,3 +650,11 @@ function messageOf(caught: unknown, fallback: string): string {
 function todayMoscow(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }
+
+const PRODUCT_GROUPS = [
+  { code: "BASIC_CAKES", name: "Торты Базовые" },
+  { code: "PREMIUM_CAKES", name: "Торты Премиум" },
+  { code: "PIES_AND_PASTRIES", name: "Пироги" },
+  { code: "DESSERTS", name: "Десерты" },
+  { code: "DRY_BAKERY", name: "Сухая выпечка" },
+] as const;

@@ -455,8 +455,9 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
     });
 
     expect((await repository.driverDay(dispatchDate, drivers[3]!)).sessions).toHaveLength(0);
+    const replacementDay = await repository.driverDay(dispatchDate, replacementDriver);
     expect(
-      (await repository.driverDay(dispatchDate, replacementDriver)).sessions
+      replacementDay.sessions
         .flatMap((session) => session.lines)
         .find((line) => line.productId === directProductId),
     ).toMatchObject({
@@ -464,6 +465,15 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
       quantity: 3,
       status: "SENT_TO_DRIVER",
     });
+    expect(replacementDay.products.find((product) => product.id === directProductId)).toMatchObject(
+      {
+        acceptedQuantity: 2,
+        awaitingAcceptanceQuantity: 1,
+        plannedQuantity: 8,
+        remainingQuantity: 6,
+        sentQuantity: 3,
+      },
+    );
     const territorySessions = await database.query<{ count: number }>(
       `select count(*)::int count from loading.loading_session
        where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'`,

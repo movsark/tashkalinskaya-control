@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import type {
   LoadingDriverDayView,
+  LoadingDriverProductView,
   LoadingGroupStatus,
   LoadingGroupWorkspaceView,
   LoadingLineView,
@@ -118,6 +119,9 @@ interface TerritoryDemandRow extends QueryResultRow {
 interface EffectiveNormRow extends QueryResultRow {
   product_id: string;
   quantity: number;
+  territory_id: string;
+}
+interface ActiveDriverRouteRow extends QueryResultRow {
   territory_id: string;
 }
 interface PlanRow extends QueryResultRow {
@@ -260,6 +264,17 @@ export class LoadingRepository {
          order by t.territory_number,p.name`,
         [date, actor.employeeId],
       );
+      const activeRoute = await client.query<ActiveDriverRouteRow>(
+        `select territory_id
+         from logistics.driver_route_shift
+         where dispatch_date=$1 and driver_employee_id=$2 and status='ACTIVE'
+         order by started_at desc limit 1`,
+        [date, actor.employeeId],
+      );
+      const sessions = await loadSessions(client, date, actor.employeeId);
+      const products = activeRoute.rows[0]
+        ? await loadDriverProducts(client, date, activeRoute.rows[0].territory_id, sessions)
+        : [];
       return {
         dispatchDate: date,
         priorityReturns: priority.rows.map((row) => ({
@@ -274,8 +289,9 @@ export class LoadingRepository {
           territoryId: row.territory_id,
           territoryNumber: row.territory_number,
         })),
+        products,
         serverTime: new Date().toISOString(),
-        sessions: await loadSessions(client, date, actor.employeeId),
+        sessions,
       };
     });
   }
@@ -1314,6 +1330,73 @@ async function loadSessions(
       warehouseFinalAt: session.warehouse_final_at?.toISOString() ?? null,
     };
   });
+}
+
+async function loadDriverProducts(
+  client: PoolClient,
+  date: string,
+  territoryId: string,
+  sessions: LoadingSessionView[],
+): Promise<LoadingDriverProductView[]> {
+  const [products, norms] = await Promise.all([
+    client.query<ProductRow>(
+      `select p.id,p.product_code,p.name,c.code product_group_code,
+         case c.code
+           when 'BASIC_CAKES' then 'Торты Базовые'
+           when 'PREMIUM_CAKES' then 'Торты Премиум'
+           when 'PIES_AND_PASTRIES' then 'Пироги'
+           when 'DESSERTS' then 'Десерты'
+           when 'DRY_BAKERY' then 'Сухая выпечка'
+           else c.name
+         end product_group_name,
+         0::int free_quantity,
+         '{}'::text[] barcodes
+       from catalog.product p
+       join catalog.category c on c.id=p.category_id
+       where p.status='ACTIVE'
+         and c.code in ('BASIC_CAKES','PREMIUM_CAKES','PIES_AND_PASTRIES','DESSERTS','DRY_BAKERY')
+       order by case c.code
+         when 'BASIC_CAKES' then 1 when 'PREMIUM_CAKES' then 2
+         when 'PIES_AND_PASTRIES' then 3 when 'DESSERTS' then 4
+         when 'DRY_BAKERY' then 5 else 6 end,p.name`,
+    ),
+    client.query<EffectiveNormRow>(
+      `select territory_id,product_id,quantity::int
+       from planning.effective_territory_norms($1::date,array[$2::uuid])
+       where quantity>0`,
+      [date, territoryId],
+    ),
+  ]);
+  const territorySessions = sessions.filter(
+    (session) => session.territoryId === territoryId && session.status !== "CANCELLED",
+  );
+  return products.rows
+    .map((product) => {
+      const plannedQuantity =
+        norms.rows.find((norm) => norm.product_id === product.id)?.quantity ?? 0;
+      const lines = territorySessions.flatMap((session) =>
+        session.lines.filter((line) => line.productId === product.id),
+      );
+      const sentQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+      const acceptedQuantity = lines.reduce(
+        (sum, line) =>
+          sum + Math.max(0, ...line.acceptances.map((acceptance) => acceptance.quantity)),
+        0,
+      );
+      return {
+        acceptedQuantity,
+        awaitingAcceptanceQuantity: Math.max(0, sentQuantity - acceptedQuantity),
+        code: product.product_code,
+        id: product.id,
+        name: product.name,
+        plannedQuantity,
+        productGroupCode: product.product_group_code,
+        productGroupName: product.product_group_name,
+        remainingQuantity: Math.max(0, plannedQuantity - acceptedQuantity),
+        sentQuantity,
+      };
+    })
+    .filter((product) => product.plannedQuantity > 0 || product.sentQuantity > 0);
 }
 
 function mapGroup(
