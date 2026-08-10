@@ -1263,7 +1263,7 @@ test.describe("B20 browser and HTTP regression", () => {
         name: "Территория 3",
       }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Закончил рейс" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Завершить рейс" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Открыть «Мою норму»" })).toHaveCount(0);
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
@@ -1290,11 +1290,21 @@ test.describe("B20 browser and HTTP regression", () => {
     const basicProduct = assortment.locator(".driver-assortment-product").filter({
       hasText: "Торт тестовый",
     });
-    await expect(basicProduct).toContainText("Норма 10");
     await expect(basicProduct).toContainText("Принято 0");
-    await expect(basicProduct).toContainText("Ждёт 10");
     await expect(basicProduct).toContainText("Осталось 10");
     await expect(basicProduct).toContainText("Ждёт вашего подтверждения 10 шт.");
+    const productMetrics = basicProduct.locator(".driver-assortment-product__metrics");
+    await expect(productMetrics).toHaveCount(0);
+    const collapsedProductBox = await basicProduct.boundingBox();
+    expect(collapsedProductBox).not.toBeNull();
+    expect(collapsedProductBox?.height ?? 0).toBeLessThanOrEqual(100);
+    await basicProduct.getByRole("button", { name: /Торт тестовый/u }).click();
+    await expect(productMetrics).toBeVisible();
+    await expect(productMetrics).toContainText("Норма 10");
+    await expect(productMetrics).toContainText("Ждёт 10");
+    const expandedProductBox = await basicProduct.boundingBox();
+    expect(expandedProductBox).not.toBeNull();
+    expect(expandedProductBox?.height ?? 0).toBeGreaterThan(collapsedProductBox?.height ?? 0);
     await assortment.getByRole("button", { name: /^Принято 5 шт\.$/u }).click();
     await assortment.getByRole("button", { name: /Торты Премиум/u }).click();
     const premiumProduct = assortment.locator(".driver-assortment-product").filter({

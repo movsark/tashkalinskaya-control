@@ -39,6 +39,7 @@ export default function DriverLogisticsPage() {
   const [productSearch, setProductSearch] = useState("");
   const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
+  const [expandedProductId, setExpandedProductId] = useState("");
   const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
   const [routeHandoverConfirmation, setRouteHandoverConfirmation] = useState(false);
   const [busyId, setBusyId] = useState("");
@@ -507,7 +508,10 @@ export default function DriverLogisticsPage() {
                   className={productFilter === filter.value ? "is-active" : undefined}
                   key={filter.value}
                   type="button"
-                  onClick={() => setProductFilter(filter.value)}
+                  onClick={() => {
+                    setProductFilter(filter.value);
+                    setExpandedProductId("");
+                  }}
                 >
                   <span>{filter.label}</span>
                   <strong>{productFilterCounts[filter.value]} шт.</strong>
@@ -523,21 +527,30 @@ export default function DriverLogisticsPage() {
                   placeholder="Название или код"
                   type="search"
                   value={productSearch}
-                  onChange={(event) => setProductSearch(event.target.value)}
+                  onChange={(event) => {
+                    setProductSearch(event.target.value);
+                    setExpandedProductId("");
+                  }}
                 />
               </label>
               <div>
                 <button
                   className="text-button"
                   type="button"
-                  onClick={() => setExpandedProductGroups(productGroups.map((group) => group.code))}
+                  onClick={() => {
+                    setExpandedProductGroups(productGroups.map((group) => group.code));
+                    setExpandedProductId("");
+                  }}
                 >
                   Развернуть все
                 </button>
                 <button
                   className="text-button"
                   type="button"
-                  onClick={() => setExpandedProductGroups([])}
+                  onClick={() => {
+                    setExpandedProductGroups([]);
+                    setExpandedProductId("");
+                  }}
                 >
                   Свернуть все
                 </button>
@@ -561,13 +574,14 @@ export default function DriverLogisticsPage() {
                       aria-expanded={isExpanded}
                       className="driver-assortment-group__summary"
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setExpandedProductId("");
                         setExpandedProductGroups((current) =>
                           current.includes(group.code)
                             ? current.filter((code) => code !== group.code)
                             : [...current, group.code],
-                        )
-                      }
+                        );
+                      }}
                     >
                       <span>
                         <strong>{group.name}</strong>
@@ -583,29 +597,55 @@ export default function DriverLogisticsPage() {
                     </button>
                     {isExpanded ? (
                       <div className="driver-assortment-products">
-                        {group.products.map((product) => (
-                          <div className="driver-assortment-product" key={product.id}>
-                            <div className="driver-assortment-product__name">
-                              <span>{product.code}</span>
-                              <strong>{product.name}</strong>
-                              <ProductTransferStatus product={product} />
+                        {group.products.map((product) => {
+                          const isProductExpanded = expandedProductId === product.id;
+                          return (
+                            <div
+                              className={`driver-assortment-product${isProductExpanded ? " is-expanded" : ""}`}
+                              key={product.id}
+                            >
+                              <button
+                                aria-expanded={isProductExpanded}
+                                className="driver-assortment-product__summary"
+                                type="button"
+                                onClick={() =>
+                                  setExpandedProductId(isProductExpanded ? "" : product.id)
+                                }
+                              >
+                                <span className="driver-assortment-product__name">
+                                  <span>{product.code}</span>
+                                  <strong>{product.name}</strong>
+                                  <ProductTransferStatus product={product} />
+                                </span>
+                                <span className="driver-assortment-product__compact-progress">
+                                  <small>
+                                    Принято <strong>{product.acceptedQuantity}</strong>
+                                  </small>
+                                  <small className="is-remaining">
+                                    Осталось <strong>{product.remainingQuantity}</strong>
+                                  </small>
+                                </span>
+                                <b aria-hidden="true">{isProductExpanded ? "−" : "+"}</b>
+                              </button>
+                              {isProductExpanded ? (
+                                <div className="driver-assortment-product__metrics">
+                                  <span>
+                                    Норма <strong>{product.plannedQuantity}</strong>
+                                  </span>
+                                  <span className="is-accepted">
+                                    Принято <strong>{product.acceptedQuantity}</strong>
+                                  </span>
+                                  <span className="is-awaiting">
+                                    Ждёт <strong>{product.awaitingAcceptanceQuantity}</strong>
+                                  </span>
+                                  <span className="is-remaining">
+                                    Осталось <strong>{product.remainingQuantity}</strong>
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="driver-assortment-product__metrics">
-                              <span>
-                                Норма <strong>{product.plannedQuantity}</strong>
-                              </span>
-                              <span className="is-accepted">
-                                Принято <strong>{product.acceptedQuantity}</strong>
-                              </span>
-                              <span className="is-awaiting">
-                                Ждёт <strong>{product.awaitingAcceptanceQuantity}</strong>
-                              </span>
-                              <span className="is-remaining">
-                                Осталось <strong>{product.remainingQuantity}</strong>
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </article>
