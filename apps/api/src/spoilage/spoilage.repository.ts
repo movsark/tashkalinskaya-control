@@ -147,17 +147,11 @@ export class SpoilageRepository {
            r.product_id,
            r.product_code_snapshot product_code,
            r.product_name_snapshot product_name,
-           sum(r.quantity)::int total_quantity,
-           coalesce(sum(r.quantity) filter(
-             where receipt.id is null and r.request_movement_document_id is null
-               and r.status='SUBMITTED'
-           ),0)::int pending_quantity,
-           coalesce(sum(r.quantity) filter(
-             where receipt.id is not null or r.request_movement_document_id is not null
-           ),0)::int received_quantity
+           sum(r.quantity)::int quantity
          from spoilage.writeoff_request r
          left join spoilage.driver_spoilage_receipt receipt on receipt.request_id=r.id
          where r.source_territory_number_snapshot is not null
+           and (receipt.id is not null or r.request_movement_document_id is not null)
            and ($1::date is null or coalesce(r.source_dispatch_date,r.business_date)>=$1::date)
            and ($2::date is null or coalesce(r.source_dispatch_date,r.business_date)<=$2::date)
          group by r.source_territory_number_snapshot,r.product_id,
@@ -173,32 +167,20 @@ export class SpoilageRepository {
         ]);
       }
       const territoryViews = [...territories.entries()].map(([territoryNumber, rows]) => ({
-        pendingQuantity: rows.reduce((sum, row) => sum + row.pending_quantity, 0),
         products: rows.map((row) => ({
-          pendingQuantity: row.pending_quantity,
           productCode: row.product_code,
           productId: row.product_id,
           productName: row.product_name,
-          receivedQuantity: row.received_quantity,
-          totalQuantity: row.total_quantity,
+          quantity: row.quantity,
         })),
-        receivedQuantity: rows.reduce((sum, row) => sum + row.received_quantity, 0),
+        quantity: rows.reduce((sum, row) => sum + row.quantity, 0),
         territoryNumber,
-        totalQuantity: rows.reduce((sum, row) => sum + row.total_quantity, 0),
       }));
       return {
         fromDate,
-        pendingQuantity: territoryViews.reduce(
-          (sum, territory) => sum + territory.pendingQuantity,
-          0,
-        ),
-        receivedQuantity: territoryViews.reduce(
-          (sum, territory) => sum + territory.receivedQuantity,
-          0,
-        ),
         territories: territoryViews,
         toDate,
-        totalQuantity: territoryViews.reduce((sum, territory) => sum + territory.totalQuantity, 0),
+        totalQuantity: territoryViews.reduce((sum, territory) => sum + territory.quantity, 0),
       };
     });
   }
@@ -691,13 +673,11 @@ interface CheckCommand {
   readonly result: "MATCHED" | "MISMATCH";
 }
 interface SpoilageSummaryRow {
-  readonly pending_quantity: number;
   readonly product_code: string;
   readonly product_id: string;
   readonly product_name: string;
-  readonly received_quantity: number;
+  readonly quantity: number;
   readonly territory_number: number;
-  readonly total_quantity: number;
 }
 interface LockedRequest {
   readonly actor_role: "ADMIN" | "DRIVER" | "WAREHOUSE_KEEPER";

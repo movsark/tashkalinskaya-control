@@ -25,8 +25,6 @@ import {
   getSpoilageWorkspace,
 } from "../../lib/api";
 
-type SpoilagePeriod = "ALL" | "DAY" | "MONTH";
-
 interface SpoilageStockGroup {
   readonly dispatchDate: string | null;
   readonly driverName: string;
@@ -61,9 +59,8 @@ export default function SpoilagePage() {
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [data, setData] = useState<SpoilageWorkspaceView | null>(null);
   const [summary, setSummary] = useState<SpoilageSummaryView | null>(null);
-  const [period, setPeriod] = useState<SpoilagePeriod>("DAY");
-  const [selectedDate, setSelectedDate] = useState(moscowDate());
-  const [selectedMonth, setSelectedMonth] = useState(moscowDate().slice(0, 7));
+  const [fromDate, setFromDate] = useState(firstDayOfMoscowMonth());
+  const [toDate, setToDate] = useState(moscowDate());
   const [returnPendingCount, setReturnPendingCount] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -79,7 +76,7 @@ export default function SpoilagePage() {
     const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
       getSpoilageWorkspace(),
       getGoodReturnsWorkspace(moscowDate()),
-      getSpoilageSummary(spoilagePeriodRange(period, selectedDate, selectedMonth)),
+      getSpoilageSummary({ fromDate, toDate }),
     ]);
     setData(nextSpoilage);
     setSummary(nextSummary);
@@ -94,7 +91,7 @@ export default function SpoilagePage() {
         const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
           getSpoilageWorkspace(),
           getGoodReturnsWorkspace(moscowDate()),
-          getSpoilageSummary(spoilagePeriodRange(period, selectedDate, selectedMonth)),
+          getSpoilageSummary({ fromDate, toDate }),
         ]);
         if (!active) return;
         setData(nextSpoilage);
@@ -123,7 +120,19 @@ export default function SpoilagePage() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [period, router, selectedDate, selectedMonth]);
+  }, [fromDate, router, toDate]);
+
+  function changeFromDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return;
+    setFromDate(value);
+    if (value > toDate) setToDate(value);
+  }
+
+  function changeToDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return;
+    setToDate(value);
+    if (value < fromDate) setFromDate(value);
+  }
 
   async function acceptGroup(group: PendingSpoilageGroup) {
     if (!session) return;
@@ -198,7 +207,7 @@ export default function SpoilagePage() {
           <h1>Склад порчи</h1>
           <p>
             Порча хранится отдельно от обычного склада. Здесь можно принять её от водителя и
-            проверить итоги за день, месяц или всё время.
+            проверить принятое количество за любой выбранный период.
           </p>
         </div>
         <div className="spoilage-summary">
@@ -224,67 +233,34 @@ export default function SpoilagePage() {
         <div className="spoilage-period-heading">
           <div>
             <p className="eyebrow">Контроль отдельно от обычного склада</p>
-            <h2>{spoilagePeriodTitle(period, selectedDate, selectedMonth)}</h2>
+            <h2>Принятая порча за период</h2>
           </div>
           <div className="spoilage-period-controls">
-            <div
-              aria-label="Период отчёта по порче"
-              className="spoilage-period-switch"
-              role="group"
-            >
-              {(
-                [
-                  ["DAY", "За день"],
-                  ["MONTH", "За месяц"],
-                  ["ALL", "За всё время"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  aria-pressed={period === value}
-                  className={period === value ? "is-active" : undefined}
-                  key={value}
-                  onClick={() => setPeriod(value)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {period === "DAY" ? (
-              <label>
-                Дата
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value)}
-                />
-              </label>
-            ) : null}
-            {period === "MONTH" ? (
-              <label>
-                Месяц
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                />
-              </label>
-            ) : null}
+            <label>
+              С
+              <input
+                max={toDate}
+                type="date"
+                value={fromDate}
+                onChange={(event) => changeFromDate(event.target.value)}
+              />
+            </label>
+            <label>
+              По
+              <input
+                min={fromDate}
+                type="date"
+                value={toDate}
+                onChange={(event) => changeToDate(event.target.value)}
+              />
+            </label>
           </div>
         </div>
 
-        <div className="spoilage-period-totals">
+        <div className="spoilage-period-total">
           <article>
-            <span>Общая порча · все территории</span>
+            <span>Принято от водителей · все территории</span>
             <strong>{summary.totalQuantity} шт.</strong>
-          </article>
-          <article>
-            <span>Принято в склад порчи</span>
-            <strong>{summary.receivedQuantity} шт.</strong>
-          </article>
-          <article>
-            <span>Ожидает приёмки</span>
-            <strong>{summary.pendingQuantity} шт.</strong>
           </article>
         </div>
 
@@ -294,12 +270,9 @@ export default function SpoilagePage() {
               <summary>
                 <span>
                   <strong>Территория {territory.territoryNumber}</strong>
-                  <small>
-                    Принято {territory.receivedQuantity} шт. · ожидает {territory.pendingQuantity}
-                    {" шт."}
-                  </small>
+                  <small>Принято от водителей</small>
                 </span>
-                <b>{territory.totalQuantity} шт.</b>
+                <b>{territory.quantity} шт.</b>
               </summary>
               <div className="spoilage-territory-products">
                 {territory.products.map((product) => (
@@ -309,10 +282,8 @@ export default function SpoilagePage() {
                       <strong>{product.productName}</strong>
                     </span>
                     <div>
-                      <b>{product.totalQuantity} шт.</b>
-                      <small>
-                        Принято {product.receivedQuantity} · ожидает {product.pendingQuantity}
-                      </small>
+                      <b>{product.quantity} шт.</b>
+                      <small>Принято</small>
                     </div>
                   </div>
                 ))}
@@ -512,45 +483,12 @@ function formatDate(value: string) {
   });
 }
 
-function spoilagePeriodRange(
-  period: SpoilagePeriod,
-  selectedDate: string,
-  selectedMonth: string,
-): { fromDate: string; toDate: string } | null {
-  if (period === "ALL") return null;
-  if (period === "DAY") {
-    const date = /^\d{4}-\d{2}-\d{2}$/u.test(selectedDate) ? selectedDate : moscowDate();
-    return { fromDate: date, toDate: date };
-  }
-  const month = /^\d{4}-\d{2}$/u.test(selectedMonth) ? selectedMonth : moscowDate().slice(0, 7);
-  const [year, monthNumber] = month.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(year!, monthNumber!, 0)).getUTCDate();
-  return {
-    fromDate: `${month}-01`,
-    toDate: `${month}-${String(lastDay).padStart(2, "0")}`,
-  };
-}
-
-function spoilagePeriodTitle(period: SpoilagePeriod, selectedDate: string, selectedMonth: string) {
-  if (period === "ALL") return "Порча за всё время";
-  if (period === "DAY") {
-    const date = spoilagePeriodRange(period, selectedDate, selectedMonth)!.fromDate;
-    return `Порча за ${new Date(`${date}T12:00:00+03:00`).toLocaleDateString("ru-RU", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    })}`;
-  }
-  const month = spoilagePeriodRange(period, selectedDate, selectedMonth)!.fromDate.slice(0, 7);
-  const label = new Date(`${month}-01T12:00:00+03:00`).toLocaleDateString("ru-RU", {
-    month: "long",
-    year: "numeric",
-  });
-  return `Порча за ${label}`;
-}
-
 function moscowDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+}
+
+function firstDayOfMoscowMonth() {
+  return `${moscowDate().slice(0, 7)}-01`;
 }
 
 function messageOf(value: unknown) {

@@ -9820,6 +9820,7 @@ select:focus {
 .spoilage-period-controls {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
   justify-items: end;
 }
 
@@ -9839,37 +9840,7 @@ select:focus {
   padding: 9px 12px;
 }
 
-.spoilage-period-switch {
-  background: #eef2ef;
-  border-radius: 14px;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-}
-
-.spoilage-period-switch button {
-  background: transparent;
-  border: 0;
-  border-radius: 10px;
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 800;
-  min-height: 44px;
-  padding: 8px 14px;
-}
-
-.spoilage-period-switch button.is-active {
-  background: var(--forest);
-  color: white;
-}
-
-.spoilage-period-totals {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.spoilage-period-totals article {
+.spoilage-period-total article {
   background: #f4f7f5;
   border: 1px solid #d9e1dc;
   border-radius: 16px;
@@ -9878,13 +9849,13 @@ select:focus {
   padding: 16px;
 }
 
-.spoilage-period-totals span {
+.spoilage-period-total span {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
 }
 
-.spoilage-period-totals strong {
+.spoilage-period-total strong {
   color: var(--forest);
   font-size: 1.55rem;
 }
@@ -10285,25 +10256,12 @@ select:focus {
   }
 
   .spoilage-period-controls {
+    grid-template-columns: 1fr;
     justify-items: stretch;
   }
 
   .spoilage-period-controls > label {
     min-width: 0;
-  }
-
-  .spoilage-period-switch {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .spoilage-period-switch button {
-    font-size: 0.78rem;
-    padding: 7px 5px;
-  }
-
-  .spoilage-period-totals {
-    grid-template-columns: 1fr;
   }
 
   .spoilage-panel {

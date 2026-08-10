@@ -1398,21 +1398,15 @@ export interface SpoilageWorkspaceView {
 
 export interface SpoilageSummaryView {
   readonly fromDate: string | null;
-  readonly pendingQuantity: number;
-  readonly receivedQuantity: number;
   readonly territories: readonly {
-    readonly pendingQuantity: number;
     readonly products: readonly {
-      readonly pendingQuantity: number;
       readonly productCode: string;
       readonly productId: string;
       readonly productName: string;
-      readonly receivedQuantity: number;
-      readonly totalQuantity: number;
+      readonly quantity: number;
     }[];
-    readonly receivedQuantity: number;
+    readonly quantity: number;
     readonly territoryNumber: number;
-    readonly totalQuantity: number;
   }[];
   readonly toDate: string | null;
   readonly totalQuantity: number;

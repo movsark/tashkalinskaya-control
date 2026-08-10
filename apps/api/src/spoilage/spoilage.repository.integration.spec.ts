@@ -309,21 +309,18 @@ describe.runIf(hasDatabase)("SpoilageRepository with PostgreSQL", () => {
 
     const summary = await repository.summary(businessDate, businessDate, admin);
     expect(summary.territories).toContainEqual({
-      pendingQuantity: 2,
       products: [
         {
-          pendingQuantity: 2,
           productCode: "B16-SUMMARY",
           productId,
           productName: "Торт для сводки B16",
-          receivedQuantity: 3,
-          totalQuantity: 5,
+          quantity: 3,
         },
       ],
-      receivedQuantity: 3,
+      quantity: 3,
       territoryNumber: summaryTerritoryNumber,
-      totalQuantity: 5,
     });
+    expect(summary.totalQuantity).toBe(3);
     expect(() => repository.summary(businessDate, null, admin)).toThrow(
       "Укажите начало и конец периода",
     );

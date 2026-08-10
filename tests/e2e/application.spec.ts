@@ -2779,45 +2779,23 @@ test.describe("B20 browser and HTTP regression", () => {
       if (path.endsWith("/spoilage/summary")) {
         summaryQueries.push(new URL(route.request().url()).search);
         return json(route, {
-          fromDate: "2026-08-10",
-          pendingQuantity: 3,
-          receivedQuantity: 4,
+          fromDate: "2026-08-01",
           territories: [
             {
-              pendingQuantity: 0,
               products: [
                 {
-                  pendingQuantity: 0,
                   productCode: "T-001",
                   productId,
                   productName: "Торт тестовый",
-                  receivedQuantity: 4,
-                  totalQuantity: 4,
+                  quantity: 4,
                 },
               ],
-              receivedQuantity: 4,
+              quantity: 4,
               territoryNumber: 1,
-              totalQuantity: 4,
-            },
-            {
-              pendingQuantity: 3,
-              products: [
-                {
-                  pendingQuantity: 3,
-                  productCode: "T-001",
-                  productId,
-                  productName: "Торт тестовый",
-                  receivedQuantity: 0,
-                  totalQuantity: 3,
-                },
-              ],
-              receivedQuantity: 0,
-              territoryNumber: 2,
-              totalQuantity: 3,
             },
           ],
           toDate: "2026-08-10",
-          totalQuantity: 7,
+          totalQuantity: 4,
         });
       }
       if (path.endsWith("/notifications/workspace")) {
@@ -2873,24 +2851,27 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     await expect(spoilageSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
     await expect(spoilageSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
-    await expect(page.getByRole("heading", { name: "Порча за 10 августа 2026 г." })).toBeVisible();
-    const periodTotals = page.locator(".spoilage-period-totals");
-    await expect(periodTotals).toContainText("Общая порча · все территории");
-    await expect(periodTotals).toContainText("7 шт.");
-    await expect(page.locator(".spoilage-territory-group")).toHaveCount(2);
-    const territoryTwo = page.locator(".spoilage-territory-group").filter({
-      hasText: "Территория 2",
+    const periodPanel = page.locator(".spoilage-period-panel");
+    await expect(
+      periodPanel.getByRole("heading", { name: "Принятая порча за период" }),
+    ).toBeVisible();
+    await expect(periodPanel).toContainText("Принято от водителей · все территории");
+    await expect(periodPanel).toContainText("4 шт.");
+    await expect(periodPanel.getByText("Общая порча · все территории")).toHaveCount(0);
+    await expect(periodPanel.getByText("Ожидает приёмки", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".spoilage-territory-group")).toHaveCount(1);
+    const territoryOne = page.locator(".spoilage-territory-group").filter({
+      hasText: "Территория 1",
     });
-    await expect(territoryTwo).toContainText("3 шт.");
-    await territoryTwo.locator("summary").click();
-    await expect(territoryTwo).toContainText("Принято 0 · ожидает 3");
-    await page.getByRole("button", { name: "За месяц" }).click();
-    await expect(page.getByRole("heading", { name: "Порча за август 2026 г." })).toBeVisible();
+    await expect(territoryOne).toContainText("4 шт.");
+    await territoryOne.locator("summary").click();
+    await expect(territoryOne).toContainText("Торт тестовый");
     await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-01");
-    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-31");
-    await page.getByRole("button", { name: "За всё время" }).click();
-    await expect(page.getByRole("heading", { name: "Порча за всё время" })).toBeVisible();
-    await expect.poll(() => summaryQueries.at(-1)).toBe("");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-10");
+    await periodPanel.getByLabel("С", { exact: true }).fill("2026-08-05");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-05");
+    await periodPanel.getByLabel("По", { exact: true }).fill("2026-08-06");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-06");
     const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
     await expect(pendingSpoilage).toHaveCount(1);
     await expect(pendingSpoilage).toContainText("Территория 2");
