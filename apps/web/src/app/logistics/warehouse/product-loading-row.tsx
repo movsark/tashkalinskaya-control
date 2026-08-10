@@ -374,9 +374,6 @@ function TerritorySendDialog({
             ×
           </button>
         </header>
-        <p className="loading-territory-dialog__driver">
-          {territory.driverName ?? "Водитель не выбран"}
-        </p>
         <p className="loading-territory-dialog__limit">
           Можно передать сейчас: <strong>{maximum} шт.</strong>
         </p>

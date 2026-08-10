@@ -1507,7 +1507,10 @@ test.describe("B20 browser and HTTP regression", () => {
       name: /Передать товар.*Территория 1/u,
     });
     await expect(unavailableDialog).toBeVisible();
-    await expect(unavailableDialog.getByText("Водитель не выбран")).toBeVisible();
+    await expect(unavailableDialog.getByText("Водитель не выбран")).toHaveCount(0);
+    await expect(
+      unavailableDialog.getByText(/водитель ещё не нажал «Приступил к рейсу»/u),
+    ).toBeVisible();
     await expect(unavailableDialog.getByRole("spinbutton")).toBeDisabled();
     await unavailableDialog.getByRole("button", { name: "Закрыть окно передачи" }).click();
     await productRow.getByRole("button", { name: /Территория 2/u }).click();
