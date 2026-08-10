@@ -312,9 +312,11 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
        where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
       [requestProductId],
     );
-    expect(
-      Object.fromEntries(requestBalance.rows.map((row) => [row.bucket, row.quantity])),
-    ).toMatchObject({ RETURN_EXTERNAL: -10, RETURN_POOL: 10 });
+    const requestBalances = Object.fromEntries(
+      requestBalance.rows.map((row) => [row.bucket, row.quantity]),
+    );
+    expect(requestBalances).toMatchObject({ FREE_STOCK: 10, RETURN_EXTERNAL: -10 });
+    expect(requestBalances.RETURN_POOL).toBeUndefined();
     const workspace = await repository.workspace(dispatchDate, keeper);
     expect(workspace.requests.find((request) => request.id === created.requestId)).toMatchObject({
       comment: "Не продано, упаковка целая",

@@ -15,9 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../components/app-brand";
 import {
   acceptGoodReturnRequest,
-  allocateGoodReturn,
   ApiRequestError,
-  cancelGoodReturnAllocation,
   createDriverSpoilageRequest,
   endDriverRoute,
   getDriverGoodReturnsWorkspace,
@@ -25,8 +23,6 @@ import {
   getDriverSpoilageWorkspace,
   getGoodReturnsWorkspace,
   getSession,
-  receiveGoodReturn,
-  reviseGoodReturnAllocation,
   submitGoodReturnRequest,
   uploadDriverSpoilagePhoto,
 } from "../../lib/api";
@@ -72,21 +68,6 @@ export default function GoodReturnsPage() {
 function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const [date, setDate] = useState(moscowDate());
   const [data, setData] = useState<GoodReturnsWorkspaceView | null>(null);
-  const [receipt, setReceipt] = useState({
-    comment: "",
-    driverId: "",
-    productId: "",
-    quantity: "",
-  });
-  const [allocation, setAllocation] = useState({
-    productId: "",
-    quantity: "",
-    reason: "",
-    territoryId: "",
-  });
-  const [revisions, setRevisions] = useState<Record<string, { quantity: string; reason: string }>>(
-    {},
-  );
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -95,7 +76,6 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     [session],
   );
   const canChange = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
-  const isAdmin = roles.has("ADMIN");
 
   async function reload(nextDate = date, message?: string) {
     setData(await getGoodReturnsWorkspace(nextDate));
@@ -141,11 +121,6 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       </main>
     );
 
-  const poolTotal = data.pool.reduce((sum, line) => sum + line.availableQuantity, 0);
-  const assignedTotal = data.allocations
-    .filter((item) => item.status !== "CANCELLED")
-    .reduce((sum, item) => sum + item.allocatedQuantity - item.consumedQuantity, 0);
-
   return (
     <main className="workspace-layout returns-page simple-workspace">
       <header className="workspace-header">
@@ -163,7 +138,10 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         <div>
           <p className="eyebrow">Склад</p>
           <h1>Годный возврат</h1>
-          <p>Примите товар от водителя, затем отдельно назначьте его территории и дате вывоза.</p>
+          <p>
+            Подтвердите физический возврат водителя. После приёмки товар сразу добавится в общий
+            свободный остаток склада.
+          </p>
         </div>
         <label>
           Дата вывоза
@@ -178,12 +156,6 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         <Link href="/spoilage">Порча и списание</Link>
       </nav>
 
-      {data.planPublished ? (
-        <p className="returns-warning">
-          План на эту дату уже опубликован. Новое распределение или изменение выполняет только
-          администратор с причиной.
-        </p>
-      ) : null}
       {error ? <p className="form-error returns-notice">{error}</p> : null}
       {success ? <p className="logistics-success returns-notice">{success}</p> : null}
 
@@ -232,7 +204,7 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                               { idempotencyKey: crypto.randomUUID(), version: item.version },
                               csrf(),
                             ),
-                          "Возврат принят и добавлен в возвратный остаток.",
+                          "Возврат принят и добавлен в общий остаток склада.",
                         )
                       }
                     >
@@ -246,404 +218,6 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
           )}
         </div>
       </section>
-
-      <section className="warehouse-metrics returns-metrics">
-        <Metric label="Свободно в пуле" value={poolTotal} />
-        <Metric label="Назначено на дату" value={assignedTotal} />
-        <Metric label="Приёмок за 14 дней" value={data.receipts.length} />
-      </section>
-
-      {canChange ? (
-        <section className="returns-forms">
-          <form
-            className="returns-panel"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void command(
-                "receive",
-                async () => {
-                  await receiveGoodReturn(
-                    {
-                      businessDate: moscowDate(),
-                      ...(receipt.comment ? { comment: receipt.comment } : {}),
-                      idempotencyKey: crypto.randomUUID(),
-                      lines: [
-                        { productId: receipt.productId, quantity: positive(receipt.quantity) },
-                      ],
-                      sourceDriverId: receipt.driverId,
-                    },
-                    csrf(),
-                  );
-                  setReceipt({ comment: "", driverId: "", productId: "", quantity: "" });
-                },
-                "Возврат принят в общий пул.",
-              );
-            }}
-          >
-            <div>
-              <p className="eyebrow">Шаг 1</p>
-              <h2>Принять возврат</h2>
-            </div>
-            <label>
-              Водитель-источник
-              <select
-                required
-                value={receipt.driverId}
-                onChange={(event) => setReceipt({ ...receipt, driverId: event.target.value })}
-              >
-                <option value="">Выберите водителя</option>
-                {data.drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Товар
-              <select
-                required
-                value={receipt.productId}
-                onChange={(event) => setReceipt({ ...receipt, productId: event.target.value })}
-              >
-                <option value="">Выберите товар</option>
-                {data.products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.code} · {product.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Количество
-              <input
-                min="1"
-                required
-                type="number"
-                value={receipt.quantity}
-                onChange={(event) => setReceipt({ ...receipt, quantity: event.target.value })}
-              />
-            </label>
-            <label>
-              Комментарий
-              <input
-                placeholder="Необязательно"
-                value={receipt.comment}
-                onChange={(event) => setReceipt({ ...receipt, comment: event.target.value })}
-              />
-            </label>
-            <button className="primary-button" disabled={busy === "receive"}>
-              Принять в пул
-            </button>
-          </form>
-          <details className="returns-panel workspace-more returns-allocation-form">
-            <summary>
-              <span>Распределить возврат</span>
-              <small>По территории и дате вывоза</small>
-            </summary>
-            <form
-              className="returns-inline-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void command(
-                  "allocate",
-                  async () => {
-                    await allocateGoodReturn(
-                      {
-                        dispatchDate: date,
-                        idempotencyKey: crypto.randomUUID(),
-                        productId: allocation.productId,
-                        quantity: positive(allocation.quantity),
-                        ...(allocation.reason ? { reason: allocation.reason } : {}),
-                        territoryId: allocation.territoryId,
-                      },
-                      csrf(),
-                    );
-                    setAllocation({ productId: "", quantity: "", reason: "", territoryId: "" });
-                  },
-                  "Возврат назначен территории.",
-                );
-              }}
-            >
-              <div>
-                <p className="eyebrow">Распределение</p>
-                <h2>Распределить пул</h2>
-              </div>
-              <label>
-                Товар
-                <select
-                  required
-                  value={allocation.productId}
-                  onChange={(event) =>
-                    setAllocation({ ...allocation, productId: event.target.value })
-                  }
-                >
-                  <option value="">Выберите из пула</option>
-                  {data.pool
-                    .filter((line) => line.availableQuantity > 0)
-                    .map((line) => (
-                      <option key={line.productId} value={line.productId}>
-                        {line.productCode} · {line.productName} · доступно {line.availableQuantity}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Территория
-                <select
-                  required
-                  value={allocation.territoryId}
-                  onChange={(event) =>
-                    setAllocation({ ...allocation, territoryId: event.target.value })
-                  }
-                >
-                  <option value="">Выберите территорию</option>
-                  {data.territories.map((territory) => (
-                    <option key={territory.id} value={territory.id}>
-                      № {territory.number} · {territory.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Количество
-                <input
-                  min="1"
-                  required
-                  type="number"
-                  value={allocation.quantity}
-                  onChange={(event) =>
-                    setAllocation({ ...allocation, quantity: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Причина после публикации
-                <input
-                  required={data.planPublished}
-                  placeholder={data.planPublished ? "Обязательно" : "Необязательно"}
-                  value={allocation.reason}
-                  onChange={(event) => setAllocation({ ...allocation, reason: event.target.value })}
-                />
-              </label>
-              <button
-                className="primary-button"
-                disabled={busy === "allocate" || (data.planPublished && !isAdmin)}
-              >
-                Назначить территории
-              </button>
-            </form>
-          </details>
-        </section>
-      ) : null}
-
-      <section className="returns-panel">
-        <div className="returns-heading">
-          <div>
-            <p className="eyebrow">Остаток</p>
-            <h2>Общий пул по товарам</h2>
-          </div>
-          <b>{poolTotal} шт.</b>
-        </div>
-        <div className="returns-pool">
-          {data.pool.length ? (
-            data.pool.map((line) => (
-              <article key={line.productId}>
-                <div>
-                  <span>{line.productCode}</span>
-                  <strong>{line.productName}</strong>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Свободно</dt>
-                    <dd>{line.availableQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Назначено</dt>
-                    <dd>{line.allocatedQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Всего</dt>
-                    <dd>{line.totalQuantity}</dd>
-                  </div>
-                </dl>
-                {line.sources.length ? (
-                  <div className="returns-pool-sources">
-                    <strong>Откуда поступил возврат</strong>
-                    {line.sources.map((source) => (
-                      <span
-                        key={`${source.territoryNumber ?? "manual"}-${source.sourceDriverName}`}
-                      >
-                        {source.territoryNumber
-                          ? `Территория ${source.territoryNumber}`
-                          : "Ручная приёмка"}
-                        : {source.quantity} шт. · {source.sourceDriverName}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            ))
-          ) : (
-            <p className="logistics-empty">Общий пул пуст.</p>
-          )}
-        </div>
-      </section>
-
-      <details className="returns-panel workspace-more">
-        <summary>
-          <span>Назначения территориям</span>
-          <small>
-            {formatDate(date)} · {data.allocations.length}
-          </small>
-        </summary>
-        <div className="returns-allocations">
-          {data.allocations.length ? (
-            data.allocations.map((item) => {
-              const draft = revisions[item.id] ?? {
-                quantity: String(item.allocatedQuantity),
-                reason: "",
-              };
-              const locked =
-                item.reservedQuantity > 0 ||
-                item.consumedQuantity > 0 ||
-                item.status === "CANCELLED";
-              return (
-                <article className={`is-${item.status.toLocaleLowerCase()}`} key={item.id}>
-                  <header>
-                    <div>
-                      <span>
-                        Территория {item.territoryNumber} · {item.productCode}
-                      </span>
-                      <strong>{item.productName}</strong>
-                    </div>
-                    <b>{statusLabel(item.status)}</b>
-                  </header>
-                  <div className="returns-allocation-counts">
-                    <span>
-                      Назначено <b>{item.allocatedQuantity}</b>
-                    </span>
-                    <span>
-                      В погрузке <b>{item.reservedQuantity}</b>
-                    </span>
-                    <span>
-                      Вывезено <b>{item.consumedQuantity}</b>
-                    </span>
-                  </div>
-                  {canChange && item.status !== "CANCELLED" ? (
-                    <div className="returns-revision">
-                      <input
-                        min={item.reservedQuantity + item.consumedQuantity || 1}
-                        type="number"
-                        value={draft.quantity}
-                        onChange={(event) =>
-                          setRevisions({
-                            ...revisions,
-                            [item.id]: { ...draft, quantity: event.target.value },
-                          })
-                        }
-                      />
-                      <input
-                        placeholder="Причина изменения"
-                        value={draft.reason}
-                        onChange={(event) =>
-                          setRevisions({
-                            ...revisions,
-                            [item.id]: { ...draft, reason: event.target.value },
-                          })
-                        }
-                      />
-                      <button
-                        className="secondary-button"
-                        disabled={busy === item.id || (data.planPublished && !isAdmin)}
-                        onClick={() =>
-                          void command(
-                            item.id,
-                            () =>
-                              reviseGoodReturnAllocation(
-                                item.id,
-                                {
-                                  idempotencyKey: crypto.randomUUID(),
-                                  quantity: positive(draft.quantity),
-                                  reason: draft.reason,
-                                  version: item.version,
-                                },
-                                csrf(),
-                              ),
-                            "Распределение изменено.",
-                          )
-                        }
-                      >
-                        Изменить
-                      </button>
-                      <button
-                        className="text-button is-danger"
-                        disabled={locked || busy === item.id || (data.planPublished && !isAdmin)}
-                        onClick={() =>
-                          void command(
-                            item.id,
-                            () =>
-                              cancelGoodReturnAllocation(
-                                item.id,
-                                {
-                                  idempotencyKey: crypto.randomUUID(),
-                                  reason: draft.reason,
-                                  version: item.version,
-                                },
-                                csrf(),
-                              ),
-                            "Распределение отменено, товар возвращён в пул.",
-                          )
-                        }
-                      >
-                        Отменить
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })
-          ) : (
-            <p className="logistics-empty">На выбранную дату возврат территориям не назначен.</p>
-          )}
-        </div>
-      </details>
-
-      <details className="returns-panel workspace-more">
-        <summary>
-          <span>Последние приёмки</span>
-          <small>{data.receipts.length} записей</small>
-        </summary>
-        <div className="returns-receipts">
-          {data.receipts.map((item) => (
-            <article key={item.id}>
-              <div>
-                <span>
-                  {formatDate(item.businessDate)} · {timeLabel(item.receivedAt)}
-                </span>
-                <strong>{item.sourceDriverName}</strong>
-                {item.sourceTerritoryNumber ? (
-                  <small>
-                    Территория {item.sourceTerritoryNumber}
-                    {item.sourceDispatchDate
-                      ? ` · вывоз ${formatDate(item.sourceDispatchDate)}`
-                      : ""}
-                  </small>
-                ) : null}
-                <small>Принял: {item.receivedByName}</small>
-              </div>
-              <div>
-                {item.lines.map((line) => (
-                  <span key={line.productId}>
-                    {line.productName} · <b>{line.quantity}</b>
-                  </span>
-                ))}
-              </div>
-              <b>{item.totalQuantity} шт.</b>
-            </article>
-          ))}
-        </div>
-      </details>
     </main>
   );
 }
@@ -1568,15 +1142,6 @@ function filterDriverProductGroups<T extends DriverProductSearchable>(
     .filter((group) => group.products.length > 0);
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <article>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>шт.</small>
-    </article>
-  );
-}
 function positive(value: string) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1)
@@ -1591,22 +1156,6 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "long",
   });
-}
-function timeLabel(value: string) {
-  return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-}
-function statusLabel(value: string) {
-  return (
-    (
-      {
-        ACTIVE: "Назначено",
-        RESERVED: "В погрузке",
-        PARTIALLY_CONSUMED: "Частично вывезено",
-        CONSUMED: "Вывезено",
-        CANCELLED: "Отменено",
-      } as Record<string, string>
-    )[value] ?? value
-  );
 }
 function messageOf(value: unknown) {
   return value instanceof Error ? value.message : "Операция не выполнена";

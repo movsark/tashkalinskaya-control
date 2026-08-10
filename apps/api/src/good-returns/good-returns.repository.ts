@@ -374,7 +374,7 @@ export class GoodReturnsRepository {
           documentId,
           line.product_id,
           "RETURN_EXTERNAL",
-          "RETURN_POOL",
+          "FREE_STOCK",
           line.quantity,
           current.business_date,
         );

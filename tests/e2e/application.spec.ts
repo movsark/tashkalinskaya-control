@@ -2653,8 +2653,12 @@ test.describe("B20 browser and HTTP regression", () => {
     const returnRequestLines = page.locator(".returns-request-lines");
     await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
     await expect(returnRequestLines.getByText("3 шт.")).toBeVisible();
-    await expect(page.locator(".returns-allocation-form")).not.toHaveAttribute("open");
-    await expect(page.locator(".returns-receipts")).not.toBeVisible();
+    await expect(page.getByText(/сразу добавится в общий свободный остаток склада/u)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Принять возврат" })).toHaveCount(0);
+    await expect(page.getByText("Распределить возврат", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Общий пул по товарам" })).toHaveCount(0);
+    await expect(page.getByText("Назначения территориям", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Последние приёмки", { exact: true })).toHaveCount(0);
 
     await page.goto("/spoilage");
     await expect(page.getByRole("heading", { name: "Порча и запросы на списание" })).toBeVisible();
