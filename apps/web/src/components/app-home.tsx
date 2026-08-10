@@ -4,7 +4,12 @@ import type { AuthenticatedUser, WarehouseQueueItemView } from "@tashkalinskaya/
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { getGoodReturnsWorkspace, getSession, getWarehouseWorkspace } from "../lib/api";
+import {
+  getGoodReturnsWorkspace,
+  getSession,
+  getSpoilageWorkspace,
+  getWarehouseWorkspace,
+} from "../lib/api";
 import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
 import { AccountMenu } from "./account-menu";
@@ -66,10 +71,14 @@ export function AppHome() {
     let active = true;
     const refresh = async () => {
       try {
-        const workspace = await getGoodReturnsWorkspace(moscowDate());
+        const [returns, spoilage] = await Promise.all([
+          getGoodReturnsWorkspace(moscowDate()),
+          getSpoilageWorkspace(),
+        ]);
         if (active) {
           setReturnAttentionCount(
-            workspace.requests.filter((request) => request.status === "PENDING").length,
+            returns.requests.filter((request) => request.status === "PENDING").length +
+              spoilage.requests.filter((request) => request.awaitingReceipt).length,
           );
         }
       } catch {
@@ -182,7 +191,7 @@ function WarehouseAttentionBadge({ count }: { count: number }) {
 
 function ReturnAttentionBadge({ count }: { count: number }) {
   if (count === 0) return null;
-  return <AttentionBadge count={count} label={formatPendingReturns(count)} />;
+  return <AttentionBadge count={count} label={`Ожидают приёмки: ${count}`} />;
 }
 
 function AttentionBadge({ count, label }: { count: number; label: string }) {
@@ -213,15 +222,6 @@ function formatWaitingProducts(count: number): string {
   if (last === 1) return `ожидает ${count} товар`;
   if (last >= 2 && last <= 4) return `ожидают ${count} товара`;
   return `ожидают ${count} товаров`;
-}
-
-function formatPendingReturns(count: number): string {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return `Ожидают подтверждения ${count} возвратов`;
-  if (last === 1) return `Ожидает подтверждения ${count} возврат`;
-  if (last >= 2 && last <= 4) return `Ожидают подтверждения ${count} возврата`;
-  return `Ожидают подтверждения ${count} возвратов`;
 }
 
 function moscowDate(): string {

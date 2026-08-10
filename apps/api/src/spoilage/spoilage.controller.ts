@@ -20,6 +20,7 @@ import type { Response } from "express";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  AcceptDriverSpoilageRequestDto,
   CheckExternalDocumentDto,
   CreateDriverSpoilageRequestDto,
   CreateWriteoffRequestDto,
@@ -110,6 +111,16 @@ export class SpoilageController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.decide(id, dto, actor(request), correlationId(request));
+  }
+
+  @Post("requests/:id/acceptance")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  acceptDriverSpoilage(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AcceptDriverSpoilageRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.acceptDriverSpoilage(id, dto, actor(request), correlationId(request));
   }
 
   @Post("requests/:id/external-checks")

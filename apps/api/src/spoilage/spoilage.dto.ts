@@ -46,6 +46,11 @@ export class DecideWriteoffRequestDto {
   @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 
+export class AcceptDriverSpoilageRequestDto {
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+  @IsInt() @Min(1) version!: number;
+}
+
 export class CheckExternalDocumentDto {
   @IsIn(["MATCHED", "MISMATCH"]) result!: "MATCHED" | "MISMATCH";
   @IsString() @Length(1, 100) externalDocumentNumber!: string;

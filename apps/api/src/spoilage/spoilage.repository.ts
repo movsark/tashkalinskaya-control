@@ -31,7 +31,9 @@ const writeoffWorkspaceSelect = `select
   r.product_id,r.product_code_snapshot,r.product_name_snapshot,r.quantity,
   r.reason_snapshot->>'code' reason_code,r.reason_snapshot->>'displayName' reason_name,
   r.comment,r.external_document_number,r.status,r.created_at,r.business_date::text,r.version,
+  r.actor_role,r.request_movement_document_id,
   creator.full_name created_by_name,
+  receipt.id receipt_id,receipt.accepted_at,receiver.full_name accepted_by_name,
   d.decision,d.comment decision_comment,d.decided_at,decider.full_name decided_by_name,
   ph.id photo_id,ph.original_file_name,ph.content_type,ph.stored_size,ph.width,ph.height,
   ec.id external_check_id,ec.revision_no,ec.result external_check_result,
@@ -39,6 +41,8 @@ const writeoffWorkspaceSelect = `select
   ec.checked_at,checker.full_name checked_by_name
 from spoilage.writeoff_request r
 join identity.employee creator on creator.id=r.created_by
+left join spoilage.driver_spoilage_receipt receipt on receipt.request_id=r.id
+left join identity.employee receiver on receiver.id=receipt.accepted_by
 left join spoilage.writeoff_decision d on d.request_id=r.id
 left join identity.employee decider on decider.id=d.decided_by
 left join spoilage.photo_upload ph on ph.id=r.photo_upload_id
@@ -253,25 +257,28 @@ export class SpoilageRepository {
         throw new ConflictException(`Для причины «${reason.display_name}» обязательна фотография`);
 
       const requestId = randomUUID();
-      const documentId = randomUUID();
-      await createDocument(client, {
-        actor: command.actor,
-        businessDate: command.businessDate,
-        correlationId: command.correlationId,
-        documentId,
-        idempotencyKey: command.idempotencyKey,
-        sourceId: requestId,
-        type: "WRITEOFF_REQUEST",
-      });
-      await move(
-        client,
-        documentId,
-        command.productId,
-        command.sourceKind === "RETURN_POOL" ? "RETURN_POOL" : "SPOILAGE_EXTERNAL",
-        "BLOCKED_FOR_WRITEOFF",
-        command.quantity,
-        command.businessDate,
-      );
+      const waitsForReceipt = activeRole(command.actor) === "DRIVER";
+      const documentId = waitsForReceipt ? null : randomUUID();
+      if (documentId) {
+        await createDocument(client, {
+          actor: command.actor,
+          businessDate: command.businessDate,
+          correlationId: command.correlationId,
+          documentId,
+          idempotencyKey: command.idempotencyKey,
+          sourceId: requestId,
+          type: "WRITEOFF_REQUEST",
+        });
+        await move(
+          client,
+          documentId,
+          command.productId,
+          command.sourceKind === "RETURN_POOL" ? "RETURN_POOL" : "SPOILAGE_EXTERNAL",
+          "BLOCKED_FOR_WRITEOFF",
+          command.quantity,
+          command.businessDate,
+        );
+      }
       await client.query(
         `insert into spoilage.writeoff_request(
            id,warehouse_id,source_kind,physical_source_kind,source_driver_id,source_driver_name_snapshot,
@@ -335,8 +342,94 @@ export class SpoilageRepository {
       await outbox(client, "spoilage.writeoff.requested", requestId, {
         businessDate: command.businessDate,
         quantity: command.quantity,
+        sourceDriverId: command.sourceDriverId,
       });
       return { requestId };
+    });
+  }
+
+  acceptDriverSpoilage(command: AcceptDriverSpoilageCommand) {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ id: string; request_id: string }>(
+        `select id,request_id from spoilage.driver_spoilage_receipt
+         where accepted_by=$1 and idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0])
+        return { receiptId: repeated.rows[0].id, requestId: repeated.rows[0].request_id };
+
+      const request = await lockRequest(client, command.requestId);
+      if (request.version !== command.version) throw versionConflict();
+      if (request.status !== "SUBMITTED") throw new ConflictException("Заявка уже рассмотрена");
+      if (
+        request.actor_role !== "DRIVER" ||
+        request.source_kind !== "PHYSICAL_SPOILAGE" ||
+        !request.source_driver_id
+      )
+        throw new ConflictException("Эта заявка не является порчей от водителя");
+      if (request.request_movement_document_id)
+        throw new ConflictException("Порча уже принята на склад порчи");
+
+      const documentId = randomUUID();
+      const receiptId = randomUUID();
+      await createDocument(client, {
+        actor: command.actor,
+        businessDate: request.business_date,
+        correlationId: command.correlationId,
+        documentId,
+        idempotencyKey: command.idempotencyKey,
+        sourceId: request.id,
+        type: "WRITEOFF_REQUEST",
+      });
+      await move(
+        client,
+        documentId,
+        request.product_id,
+        "SPOILAGE_EXTERNAL",
+        "BLOCKED_FOR_WRITEOFF",
+        request.quantity,
+        request.business_date,
+      );
+      await client.query(
+        `insert into spoilage.driver_spoilage_receipt(
+           id,request_id,movement_document_id,accepted_by,accepted_actor_role,
+           idempotency_key,correlation_id)
+         values($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          receiptId,
+          request.id,
+          documentId,
+          command.actor.employeeId,
+          activeRole(command.actor),
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      await client.query(
+        `update spoilage.writeoff_request
+         set request_movement_document_id=$2,version=version+1
+         where id=$1`,
+        [request.id, documentId],
+      );
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "DRIVER_SPOILAGE_RECEIVED",
+        request.id,
+        {
+          productId: request.product_id,
+          quantity: request.quantity,
+          sourceDriverId: request.source_driver_id,
+        },
+      );
+      await outbox(client, "spoilage.writeoff.received", request.id, {
+        businessDate: request.business_date,
+        quantity: request.quantity,
+        sourceDriverId: request.source_driver_id,
+      });
+      return { receiptId, requestId: request.id };
     });
   }
 
@@ -351,6 +444,8 @@ export class SpoilageRepository {
       const request = await lockRequest(client, command.requestId);
       if (request.version !== command.version) throw versionConflict();
       if (request.status !== "SUBMITTED") throw new ConflictException("Заявка уже рассмотрена");
+      if (request.actor_role === "DRIVER" && !request.request_movement_document_id)
+        throw new ConflictException("Сначала примите порчу от водителя");
 
       const documentId = randomUUID();
       await createDocument(client, {
@@ -509,6 +604,13 @@ interface DecisionCommand {
   readonly requestId: string;
   readonly version: number;
 }
+interface AcceptDriverSpoilageCommand {
+  readonly actor: SpoilageActor;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+  readonly requestId: string;
+  readonly version: number;
+}
 interface CheckCommand {
   readonly actor: SpoilageActor;
   readonly comment: string | null;
@@ -519,15 +621,21 @@ interface CheckCommand {
   readonly result: "MATCHED" | "MISMATCH";
 }
 interface LockedRequest {
+  readonly actor_role: "ADMIN" | "DRIVER" | "WAREHOUSE_KEEPER";
   readonly business_date: string;
   readonly id: string;
   readonly product_id: string;
   readonly quantity: number;
+  readonly request_movement_document_id: string | null;
+  readonly source_driver_id: string | null;
   readonly source_kind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly status: "EXECUTED" | "REJECTED" | "SUBMITTED";
   readonly version: number;
 }
 interface WriteoffWorkspaceRow {
+  readonly accepted_at: Date | null;
+  readonly accepted_by_name: string | null;
+  readonly actor_role: "ADMIN" | "DRIVER" | "WAREHOUSE_KEEPER";
   readonly business_date: string;
   readonly checked_at: Date | null;
   readonly checked_by_name: string | null;
@@ -555,6 +663,8 @@ interface WriteoffWorkspaceRow {
   readonly quantity: number;
   readonly reason_code: string;
   readonly reason_name: string;
+  readonly receipt_id: string | null;
+  readonly request_movement_document_id: string | null;
   readonly revision_no: number | null;
   readonly source_driver_name_snapshot: string | null;
   readonly source_dispatch_date: string | null;
@@ -570,6 +680,11 @@ interface WriteoffWorkspaceRow {
 
 function mapRequest(row: WriteoffWorkspaceRow): WriteoffRequestView {
   return {
+    awaitingReceipt:
+      row.actor_role === "DRIVER" &&
+      !row.receipt_id &&
+      !row.request_movement_document_id &&
+      row.status === "SUBMITTED",
     businessDate: row.business_date,
     comment: row.comment,
     createdAt: row.created_at.toISOString(),
@@ -623,6 +738,8 @@ function mapRequest(row: WriteoffWorkspaceRow): WriteoffRequestView {
     productId: row.product_id,
     productName: row.product_name_snapshot,
     quantity: row.quantity,
+    receivedAt: row.accepted_at?.toISOString() ?? null,
+    receivedByName: row.accepted_by_name,
     reasonCode: row.reason_code,
     reasonName: row.reason_name,
     sourceDriverName: row.source_driver_name_snapshot,
@@ -819,7 +936,8 @@ async function lockPhoto(client: PoolClient, id: string, employeeId: string) {
 }
 async function lockRequest(client: PoolClient, id: string): Promise<LockedRequest> {
   const result = await client.query<LockedRequest>(
-    `select id,product_id,quantity,source_kind,status,version,business_date::text
+    `select id,product_id,quantity,source_kind,status,version,business_date::text,
+       actor_role,source_driver_id,request_movement_document_id
      from spoilage.writeoff_request where id=$1 for update`,
     [id],
   );

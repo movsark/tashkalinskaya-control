@@ -1320,6 +1320,7 @@ export interface ExternalDocumentCheckView {
 }
 
 export interface WriteoffRequestView {
+  readonly awaitingReceipt: boolean;
   readonly businessDate: string;
   readonly comment: string;
   readonly createdAt: string;
@@ -1339,6 +1340,8 @@ export interface WriteoffRequestView {
   readonly productId: string;
   readonly productName: string;
   readonly quantity: number;
+  readonly receivedAt: string | null;
+  readonly receivedByName: string | null;
   readonly reasonCode: string;
   readonly reasonName: string;
   readonly sourceDriverName: string | null;

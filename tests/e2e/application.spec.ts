@@ -2583,7 +2583,7 @@ test.describe("B20 browser and HTTP regression", () => {
       if (path.endsWith("/returns/workspace")) {
         return json(route, {
           allocations: [],
-          dispatchDate: "2026-08-05",
+          dispatchDate: "2026-08-10",
           drivers: [],
           planPublished: false,
           pool: [],
@@ -2594,7 +2594,7 @@ test.describe("B20 browser and HTTP regression", () => {
               acceptedAt: null,
               acceptedByName: null,
               comment: null,
-              dispatchDate: "2026-08-05",
+              dispatchDate: "2026-08-10",
               id: "20000000-0000-4000-8000-000000000115",
               lines: [
                 {
@@ -2620,11 +2620,70 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/spoilage/workspace")) {
         return json(route, {
-          blockedQuantity: 0,
+          blockedQuantity: 4,
           drivers: [],
           products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
           reasons: [],
-          requests: [],
+          requests: [
+            {
+              awaitingReceipt: true,
+              businessDate: "2026-08-10",
+              comment: "Вернулась порча",
+              createdAt: "2026-08-05T15:00:00.000Z",
+              createdByName: "Водитель Территории 2",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-000000000118",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 2,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: null,
+              receivedByName: null,
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 2",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 2,
+              status: "SUBMITTED",
+              version: 1,
+            },
+            {
+              awaitingReceipt: false,
+              businessDate: "2026-08-10",
+              comment: "Принято отдельно",
+              createdAt: "2026-08-05T14:00:00.000Z",
+              createdByName: "Водитель Территории 1",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-000000000119",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 4,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: "2026-08-05T14:10:00.000Z",
+              receivedByName: "Тестовый кладовщик",
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 1",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 1,
+              status: "SUBMITTED",
+              version: 2,
+            },
+          ],
           returnPool: [],
           serverTime: "2026-08-04T08:00:00+03:00",
           writtenOffQuantity: 0,
@@ -2643,7 +2702,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
-    await expect(page.getByText("Территория 2 · вывоз 05 августа")).toBeVisible();
+    await expect(page.getByText("Территория 2 · вывоз 10 августа")).toBeVisible();
     await expect(page.getByText("Водитель Территории 2")).toBeVisible();
     const pendingReturn = page.locator(".returns-request-list > article.is-pending");
     await expect(pendingReturn).toBeVisible();
@@ -2661,8 +2720,25 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Последние приёмки", { exact: true })).toHaveCount(0);
 
     await page.goto("/spoilage");
-    await expect(page.getByRole("heading", { name: "Порча и запросы на списание" })).toBeVisible();
-    await expect(page.locator(".spoilage-panel.workspace-more")).not.toHaveAttribute("open");
+    await expect(page.getByRole("heading", { name: "Приёмка и склад порчи" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Порча от водителей" })).toBeVisible();
+    const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
+    await expect(pendingSpoilage).toContainText("Территория 2");
+    await expect(pendingSpoilage).toContainText("Водитель Территории 2");
+    await expect(pendingSpoilage).toContainText("Торт тестовый");
+    await expect(pendingSpoilage).toContainText("2 шт.");
+    expect(
+      await pendingSpoilage.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgb(255, 247, 221)");
+    await expect(page.getByRole("button", { name: "Принять порчу" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
+    const spoilageStock = page.locator(".spoilage-stock-group");
+    await expect(spoilageStock).toContainText("Территория 1");
+    await expect(spoilageStock).toContainText("Водитель Территории 1");
+    await expect(spoilageStock).toContainText("4 шт.");
+    await expect(page.getByRole("heading", { name: "Зафиксировать порчу" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Очередь администратора" })).toHaveCount(0);
+    await expect(page.getByText("Решения и сверка документов", { exact: true })).toHaveCount(0);
 
     await page.goto("/notifications");
     await expect(page.getByRole("heading", { name: "Уведомления" })).toBeVisible();

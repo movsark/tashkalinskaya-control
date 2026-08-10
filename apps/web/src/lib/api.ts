@@ -1711,6 +1711,18 @@ export async function createWriteoffRequest(
   });
 }
 
+export async function acceptDriverSpoilageRequest(
+  requestId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ receiptId: string; requestId: string }> {
+  return request(`/spoilage/requests/${requestId}/acceptance`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function decideWriteoffRequest(
   requestId: string,
   input: {

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  AcceptDriverSpoilageRequestDto,
   CheckExternalDocumentDto,
   CreateDriverSpoilageRequestDto,
   CreateWriteoffRequestDto,
@@ -55,6 +56,20 @@ export class SpoilageService {
       quantity: dto.quantity,
       reasonId: dto.reasonId,
       territoryId: dto.territoryId,
+    });
+  }
+  acceptDriverSpoilage(
+    id: string,
+    dto: AcceptDriverSpoilageRequestDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ) {
+    return this.repository.acceptDriverSpoilage({
+      actor: toActor(actor),
+      correlationId,
+      idempotencyKey: dto.idempotencyKey,
+      requestId: id,
+      version: dto.version,
     });
   }
   decide(

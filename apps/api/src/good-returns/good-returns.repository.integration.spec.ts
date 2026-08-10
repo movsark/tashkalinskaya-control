@@ -393,6 +393,65 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
       }),
     ).resolves.toEqual(created);
 
+    const pendingRequest = (
+      await spoilageRepository.driverWorkspace(dispatchDate, driver)
+    ).requests.find((request) => request.id === created.requestId);
+    expect(pendingRequest).toMatchObject({
+      awaitingReceipt: true,
+      quantity: 4,
+      receivedAt: null,
+      sourceBasis: "TODAY_ROUTE",
+      sourceDispatchDate: dispatchDate,
+      sourceTerritoryNumber: 1,
+      status: "SUBMITTED",
+    });
+    expect(await productBalances(requestProductId)).not.toHaveProperty("BLOCKED_FOR_WRITEOFF");
+    expect(await productBalances(requestProductId)).not.toHaveProperty("SPOILAGE_EXTERNAL");
+    await expect(
+      spoilageRepository.decide({
+        actor: admin,
+        comment: "Нельзя списать до физической приёмки",
+        correlationId: randomUUID(),
+        decision: "APPROVE",
+        idempotencyKey: `driver-spoilage-early-decision-${seed}`,
+        requestId: created.requestId,
+        version: 1,
+      }),
+    ).rejects.toThrow("Сначала примите порчу от водителя");
+
+    const receiptAttempts = await Promise.allSettled([
+      spoilageRepository.acceptDriverSpoilage({
+        actor: keeper,
+        correlationId: randomUUID(),
+        idempotencyKey: `driver-spoilage-accept-keeper-${seed}`,
+        requestId: created.requestId,
+        version: 1,
+      }),
+      spoilageRepository.acceptDriverSpoilage({
+        actor: admin,
+        correlationId: randomUUID(),
+        idempotencyKey: `driver-spoilage-accept-admin-${seed}`,
+        requestId: created.requestId,
+        version: 1,
+      }),
+    ]);
+    if (receiptAttempts.every((result) => result.status === "rejected"))
+      throw new Error(
+        receiptAttempts
+          .map((result) =>
+            result.status === "rejected" && result.reason instanceof Error
+              ? result.reason.message
+              : String(result),
+          )
+          .join(" | "),
+      );
+    expect(receiptAttempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(receiptAttempts.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(await productBalances(requestProductId)).toMatchObject({
+      BLOCKED_FOR_WRITEOFF: 4,
+      SPOILAGE_EXTERNAL: -4,
+    });
+
     const after = await spoilageRepository.driverWorkspace(dispatchDate, driver);
     expect(after.territories[0]?.products).toContainEqual(
       expect.objectContaining({
@@ -402,7 +461,9 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
       }),
     );
     expect(after.requests.find((request) => request.id === created.requestId)).toMatchObject({
+      awaitingReceipt: false,
       quantity: 4,
+      receivedAt: expect.any(String),
       sourceBasis: "TODAY_ROUTE",
       sourceDispatchDate: dispatchDate,
       sourceTerritoryNumber: 1,
@@ -456,6 +517,15 @@ async function balances() {
     `select bucket,quantity from warehouse.stock_balance
      where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
     [productId],
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
+}
+
+async function productBalances(selectedProductId: string) {
+  const result = await database.query<{ bucket: string; quantity: number }>(
+    `select bucket,quantity from warehouse.stock_balance
+     where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
+    [selectedProductId],
   );
   return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
 }
