@@ -1094,6 +1094,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       page.locator(".driver-day-total").getByText("37 шт.", { exact: true }),
     ).toBeVisible();
+    await expect(page.getByText(/Рейсов:/u)).toHaveCount(0);
+    await expect(page.getByText(/Машина:/u)).toHaveCount(0);
+    await expect(page.getByText("Газель 03", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
     const assortment = page.locator(".driver-assortment");
     await expect(assortment).toContainText("Принято5 шт.");

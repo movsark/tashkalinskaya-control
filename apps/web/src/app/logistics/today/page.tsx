@@ -168,12 +168,6 @@ export default function DriverLogisticsPage() {
           <span>Общая норма</span>
           <strong>{routes?.totalNormQuantity ?? 0} шт.</strong>
         </div>
-        <strong>Рейсов: {routes?.runs.length ?? 0}</strong>
-        <span>
-          {routes?.runs[0]?.vehicleName
-            ? `Машина: ${routes.runs[0].vehicleName}`
-            : "Машина уточняется"}
-        </span>
         <span>Обновлено {loading ? timeLabel(loading.serverTime) : "—"}</span>
       </section>
       {error ? <p className="form-error loading-message">{error}</p> : null}
@@ -398,7 +392,6 @@ export default function DriverLogisticsPage() {
                     Группа {item.groupNo} · рейс {item.runNo}
                   </p>
                   <h2>Территория {item.territoryNumber}</h2>
-                  <p>{item.vehicleName}</p>
                 </div>
                 <div className="loading-session-total">
                   <span>{sessionStatus(item.status)}</span>
@@ -536,7 +529,7 @@ export default function DriverLogisticsPage() {
                         >
                           {reply.type === "COUNTER" ? (
                             <label>
-                              Фактически в машине
+                              Фактически получено
                               <input
                                 min="1"
                                 inputMode="numeric"
