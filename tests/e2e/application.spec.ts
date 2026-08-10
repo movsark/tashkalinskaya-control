@@ -874,6 +874,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const occupiedTerritoryId = "20000000-0000-4000-8000-000000000063";
     let activeRoute: Record<string, unknown> | null = null;
     let activatedTerritoryId = "";
+    let endedRouteId = "";
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -967,6 +968,17 @@ test.describe("B20 browser and HTTP regression", () => {
       };
       await json(route, activeRoute);
     });
+    await page.route("**/api/v1/logistics/me/route/*/end", async (route) => {
+      endedRouteId = route.request().url().split("/").at(-2) ?? "";
+      const endedRoute = {
+        ...activeRoute,
+        endedAt: "2026-08-10T08:00:00.000Z",
+        status: "ENDED",
+        version: 2,
+      };
+      activeRoute = null;
+      await json(route, endedRoute);
+    });
     await page.route("**/api/v1/loading/driver/days/*", (route) =>
       json(route, {
         dispatchDate: "2026-08-10",
@@ -1009,6 +1021,13 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByRole("button", { name: /Торты Базовые/u }).click();
     await expect(page.getByText("Торт после выхода", { exact: true })).toBeVisible();
     await expect(gate).toHaveCount(0);
+    const activeRoutePanel = page.getByRole("region", { name: "Текущий рейс" });
+    await activeRoutePanel.getByRole("button", { name: "Закончил рейс" }).click();
+    await expect(activeRoutePanel.getByText("Вы закончили текущий рейс?")).toBeVisible();
+    await activeRoutePanel.getByRole("button", { name: "Да, закончить рейс" }).click();
+    await expect.poll(() => endedRouteId).toBe("20000000-0000-4000-8000-000000000069");
+    await expect(page.getByRole("region", { name: "Выход на рейс" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).not.toBeVisible();
   });
 
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
@@ -1244,14 +1263,12 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
     await expect(page.getByText("Вы на рейсе", { exact: true })).toBeVisible();
     await expect(
-      page.locator(".driver-territory-request").getByRole("heading", { name: "Территория 3" }),
+      page.getByRole("region", { name: "Текущий рейс" }).getByRole("heading", {
+        name: "Территория 3",
+      }),
     ).toBeVisible();
-    const planningLink = page.getByRole("link", { name: "Открыть «Мою норму»" });
-    await expect(planningLink).toHaveAttribute("href", "/planning");
-    await expect(planningLink).toHaveCSS("align-items", "center");
-    await expect(planningLink).toHaveCSS("justify-content", "center");
-    await expect(planningLink).toHaveCSS("font-size", "18px");
-    await expect(planningLink).toHaveCSS("text-decoration-line", "none");
+    await expect(page.getByRole("button", { name: "Закончил рейс" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть «Мою норму»" })).toHaveCount(0);
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
     await expect(
@@ -1516,7 +1533,6 @@ test.describe("B20 browser and HTTP regression", () => {
     const productId = "20000000-0000-4000-8000-000000000091";
     const dryProductId = "20000000-0000-4000-8000-000000000097";
     let driverRequests: Array<Record<string, unknown>> = [];
-    let activeRoute: Record<string, unknown> | null = null;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -1545,7 +1561,7 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
-        activeRoutes: activeRoute ? [activeRoute] : [],
+        activeRoutes: [],
         availableTerritoryIds: [territoryId],
         dispatchDate: "2026-08-10",
         driverProfileVersion: 1,
@@ -1556,29 +1572,6 @@ test.describe("B20 browser and HTTP regression", () => {
         totalNormQuantity: 0,
       }),
     );
-    await page.route("**/api/v1/logistics/me/route/activate", async (route) => {
-      const input = route.request().postDataJSON() as { territoryId: string };
-      activeRoute = {
-        dispatchDate: "2026-08-10",
-        driverEmployeeId: "20000000-0000-4000-8000-000000000093",
-        driverName: "Водитель нормы",
-        endedAt: null,
-        endReason: null,
-        id: "20000000-0000-4000-8000-000000000089",
-        startedAt: "2026-08-10T04:00:00.000Z",
-        status: "ACTIVE",
-        territoryId: input.territoryId,
-        territoryName: "Территория 3",
-        territoryNumber: 3,
-        version: 1,
-      };
-      await json(route, activeRoute);
-    });
-    await page.route("**/api/v1/logistics/me/route/*/end", async (route) => {
-      const ended = { ...activeRoute, endedAt: "2026-08-10T08:00:00.000Z", status: "ENDED" };
-      activeRoute = null;
-      await json(route, ended);
-    });
     await page.route("**/api/v1/planning/setup", (route) =>
       json(route, {
         productGroups: [
@@ -1704,15 +1697,7 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
-    const routePanel = page.getByRole("region", { name: "Рейс сегодня" });
-    await expect(routePanel.getByText("Территория свободна")).toBeVisible();
-    await routePanel.getByRole("button", { name: "Приступил к рейсу" }).click();
-    await routePanel.getByRole("button", { name: "Да, подтверждаю" }).click();
-    await expect(routePanel.getByText("Вы на рейсе", { exact: true })).toBeVisible();
-    await expect(routePanel.getByText("Территория 3", { exact: true })).toBeVisible();
-    await routePanel.getByRole("button", { name: "Закончил рейс" }).click();
-    await routePanel.getByRole("button", { name: "Да, подтверждаю" }).click();
-    await expect(routePanel.getByText("Рейс не начат", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Рейс сегодня" })).toHaveCount(0);
     const weekdayButtons = page.locator(".driver-weekday-accordion__trigger");
     const monday = weekdayButtons.filter({ hasText: "Понедельник" });
     const tuesday = weekdayButtons.filter({ hasText: "Вторник" });

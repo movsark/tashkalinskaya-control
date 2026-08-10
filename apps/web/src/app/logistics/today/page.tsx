@@ -6,7 +6,6 @@ import type {
   LoadingDriverDayView,
   LoadingLineView,
 } from "@tashkalinskaya/contracts";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -15,6 +14,7 @@ import {
   activateDriverRoute,
   ApiRequestError,
   confirmLoadingByDriver,
+  endDriverRoute,
   getDriverLogisticsDay,
   getLoadingDriverDay,
   getSession,
@@ -40,6 +40,7 @@ export default function DriverLogisticsPage() {
   const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
   const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
+  const [routeEndConfirmation, setRouteEndConfirmation] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -128,6 +129,29 @@ export default function DriverLogisticsPage() {
       );
     } catch (caught) {
       setError(messageOf(caught, "Не удалось начать рейс"));
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function finishRoute() {
+    if (!session || !myActiveRoute) return;
+    setBusyId("route-end");
+    setError("");
+    setSuccess("");
+    try {
+      await endDriverRoute(
+        myActiveRoute.id,
+        { idempotencyKey: crypto.randomUUID(), version: myActiveRoute.version },
+        session.csrfToken,
+      );
+      setRouteEndConfirmation(false);
+      await reload();
+      setSuccess(
+        "Рейс завершён. Территория и уже загруженный ассортимент готовы для следующего водителя.",
+      );
+    } catch (caught) {
+      setError(messageOf(caught, "Не удалось завершить рейс"));
     } finally {
       setBusyId("");
     }
@@ -323,15 +347,51 @@ export default function DriverLogisticsPage() {
       </section>
 
       {myActiveRoute ? (
-        <section className="driver-territory-request">
-          <div>
-            <p className="eyebrow">Вы на рейсе</p>
-            <h2>Территория {myActiveRoute.territoryNumber}</h2>
-            <p>Погрузка открыта. Все новые передачи склада поступают вам.</p>
+        <section className="driver-route-duty" aria-label="Текущий рейс">
+          <div className="driver-route-duty__heading">
+            <div>
+              <p className="eyebrow">Вы на рейсе</p>
+              <h2>Территория {myActiveRoute.territoryNumber}</h2>
+              <p>Погрузка открыта. Все новые передачи склада поступают вам.</p>
+            </div>
+            <span className="driver-route-duty__active">Рейс активен</span>
           </div>
-          <Link className="primary-button driver-territory-request__link" href="/planning">
-            Открыть «Мою норму»
-          </Link>
+
+          {routeEndConfirmation ? (
+            <div className="driver-route-duty__confirmation">
+              <strong>Вы закончили текущий рейс?</strong>
+              <p>
+                Территория освободится. Весь уже загруженный товар останется в рейсе территории и
+                перейдёт следующему водителю.
+              </p>
+              <div className="driver-route-duty__actions">
+                <button
+                  className="secondary-button"
+                  disabled={busyId === "route-end"}
+                  type="button"
+                  onClick={() => setRouteEndConfirmation(false)}
+                >
+                  Нет
+                </button>
+                <button
+                  className="primary-action"
+                  disabled={busyId === "route-end"}
+                  type="button"
+                  onClick={() => void finishRoute()}
+                >
+                  {busyId === "route-end" ? "Завершаем рейс…" : "Да, закончить рейс"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setRouteEndConfirmation(true)}
+            >
+              Закончил рейс
+            </button>
+          )}
         </section>
       ) : null}
 

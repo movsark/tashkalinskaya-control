@@ -2,7 +2,6 @@
 
 import type {
   AuthenticatedUser,
-  DriverRouteShiftView,
   NormChangeRequestView,
   PlanningSetupView,
   TerritoryNormWeekView,
@@ -15,12 +14,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
-  activateDriverRoute,
   ApiRequestError,
   createNormChangeRequest,
   createPlanningCalendarLink,
   decideNormChangeRequest,
-  endDriverRoute,
   getDriverLogisticsDay,
   getPlanningSetup,
   getSession,
@@ -47,10 +44,6 @@ export default function PlanningPage() {
   const [homeTerritoryId, setHomeTerritoryId] = useState("");
   const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
   const [expandedDriverDate, setExpandedDriverDate] = useState("");
-  const [activeRoutes, setActiveRoutes] = useState<readonly DriverRouteShiftView[]>([]);
-  const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
-  const [routeConfirmation, setRouteConfirmation] = useState<"END" | "START" | null>(null);
-  const today = useMemo(() => moscowToday(), []);
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -81,12 +74,6 @@ export default function PlanningPage() {
     );
   }, [driverTerritoryIds, session, setup]);
   const selectedTerritory = availableTerritories.find((item) => item.id === territoryId);
-  const myActiveRoute = activeRoutes.find(
-    (route) => route.driverEmployeeId === session?.employee.id,
-  );
-  const selectedActiveRoute = activeRoutes.find(
-    (route) => route.territoryId === routeTerritoryChoice,
-  );
   const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
   const decidedRequests = requests.filter(
     (request) =>
@@ -130,11 +117,6 @@ export default function PlanningPage() {
           (role) => role.roleCode === "DRIVER",
         );
         const driverDay = hasDriverRole ? await getDriverLogisticsDay(selectedDate) : null;
-        const routeDay = hasDriverRole
-          ? selectedDate === today
-            ? driverDay
-            : await getDriverLogisticsDay(today)
-          : null;
         const effectiveAllowed = [...allowed, ...(driverDay?.availableTerritoryIds ?? [])];
         const firstTerritory = currentSetup.territories.find(
           (territory) => privileged || effectiveAllowed.includes(territory.id),
@@ -144,17 +126,8 @@ export default function PlanningPage() {
         setDriverTerritoryIds(driverDay?.availableTerritoryIds ?? []);
         setDriverProfileVersion(driverDay?.driverProfileVersion ?? 1);
         setHomeTerritoryId(driverDay?.homeTerritoryId ?? "");
-        setActiveRoutes(routeDay?.activeRoutes ?? []);
         setHomeTerritoryChoice(
           driverDay?.homeTerritoryId ??
-            currentSetup.territories.find((item) => item.status === "ACTIVE")?.id ??
-            "",
-        );
-        setRouteTerritoryChoice(
-          routeDay?.activeRoutes.find(
-            (route) => route.driverEmployeeId === currentSession.employee.id,
-          )?.territoryId ??
-            driverDay?.homeTerritoryId ??
             currentSetup.territories.find((item) => item.status === "ACTIVE")?.id ??
             "",
         );
@@ -171,7 +144,7 @@ export default function PlanningPage() {
       }
     }
     void load();
-  }, [router, today]);
+  }, [router]);
 
   useEffect(() => {
     if (!isDriver || session === null) return;
@@ -181,7 +154,6 @@ export default function PlanningPage() {
         setDriverProfileVersion(day.driverProfileVersion);
         setHomeTerritoryId(day.homeTerritoryId ?? "");
         setHomeTerritoryChoice((current) => current || day.homeTerritoryId || "");
-        if (selectedDate === today) setActiveRoutes(day.activeRoutes);
         setTerritoryId((current) =>
           day.availableTerritoryIds.includes(current)
             ? current
@@ -189,7 +161,7 @@ export default function PlanningPage() {
         );
       })
       .catch((caught) => setError(messageOf(caught)));
-  }, [isDriver, selectedDate, session, today]);
+  }, [isDriver, selectedDate, session]);
 
   useEffect(() => {
     if (territoryId === "") return;
@@ -215,18 +187,6 @@ export default function PlanningPage() {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function refreshRouteDay() {
-    const day = await getDriverLogisticsDay(today);
-    setActiveRoutes(day.activeRoutes);
-    setDriverTerritoryIds(day.availableTerritoryIds);
-    const active = day.activeRoutes.find(
-      (route) => route.driverEmployeeId === session?.employee.id,
-    );
-    setRouteTerritoryChoice(
-      (current) => (active?.territoryId ?? current) || day.homeTerritoryId || "",
-    );
   }
 
   return (
@@ -336,140 +296,6 @@ export default function PlanningPage() {
           >
             {homeTerritoryId ? "Сменить территорию" : "Сохранить территорию"}
           </button>
-        </section>
-      ) : null}
-
-      {isDriver && setup && session ? (
-        <section className="driver-route-duty" aria-label="Рейс сегодня">
-          <div className="driver-route-duty__heading">
-            <div>
-              <p className="eyebrow">Сегодня · {longDate(today)}</p>
-              <h2>Кто вышел на рейс</h2>
-              <p>
-                Склад передаёт продукцию только водителю, который активировал территорию сегодня.
-              </p>
-            </div>
-            {myActiveRoute ? (
-              <span className="driver-route-duty__active">Вы на рейсе</span>
-            ) : (
-              <span className="driver-route-duty__inactive">Рейс не начат</span>
-            )}
-          </div>
-
-          <label>
-            Территория рейса
-            <select
-              disabled={Boolean(myActiveRoute)}
-              value={myActiveRoute?.territoryId ?? routeTerritoryChoice}
-              onChange={(event) => {
-                setRouteTerritoryChoice(event.target.value);
-                setRouteConfirmation(null);
-              }}
-            >
-              {setup.territories
-                .filter((item) => item.status === "ACTIVE")
-                .map((item) => {
-                  const active = activeRoutes.find((route) => route.territoryId === item.id);
-                  return (
-                    <option key={item.id} value={item.id}>
-                      Территория {item.number}
-                      {active ? ` · ${active.driverName}` : " · свободна"}
-                    </option>
-                  );
-                })}
-            </select>
-          </label>
-
-          {myActiveRoute ? (
-            <div className="driver-route-duty__status">
-              <strong>Территория {myActiveRoute.territoryNumber}</strong>
-              <span>На рейсе с {routeTime(myActiveRoute.startedAt)}</span>
-            </div>
-          ) : selectedActiveRoute ? (
-            <div className="driver-route-duty__status is-occupied">
-              <strong>Сейчас на рейсе: {selectedActiveRoute.driverName}</strong>
-              <span>Новые передачи склада направляются этому водителю.</span>
-            </div>
-          ) : (
-            <div className="driver-route-duty__status">
-              <strong>Территория свободна</strong>
-              <span>После подтверждения новые передачи склада будут приходить вам.</span>
-            </div>
-          )}
-
-          {routeConfirmation === null ? (
-            selectedActiveRoute && !myActiveRoute ? (
-              <p className="driver-route-duty__occupied-note">
-                Сначала текущий водитель должен нажать «Закончил рейс».
-              </p>
-            ) : (
-              <button
-                className="primary-action"
-                disabled={busy || routeTerritoryChoice === ""}
-                type="button"
-                onClick={() => setRouteConfirmation(myActiveRoute ? "END" : "START")}
-              >
-                {myActiveRoute ? "Закончил рейс" : "Приступил к рейсу"}
-              </button>
-            )
-          ) : (
-            <div className="driver-route-duty__confirmation">
-              <strong>
-                {routeConfirmation === "START"
-                  ? "Подтвердите, что вы приступили к рейсу"
-                  : "Вы закончили текущий рейс?"}
-              </strong>
-              <p>
-                {routeConfirmation === "END"
-                  ? "Территория освободится. Весь уже загруженный товар останется в рейсе территории и перейдёт следующему водителю."
-                  : "Вы увидите весь ассортимент рейса. Склад сможет направлять вам новые товары этой территории."}
-              </p>
-              <div className="driver-route-duty__actions">
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  type="button"
-                  onClick={() => setRouteConfirmation(null)}
-                >
-                  Нет
-                </button>
-                <button
-                  className="primary-action"
-                  disabled={busy}
-                  type="button"
-                  onClick={() =>
-                    action(async () => {
-                      if (routeConfirmation === "END" && myActiveRoute) {
-                        await endDriverRoute(
-                          myActiveRoute.id,
-                          { idempotencyKey: crypto.randomUUID(), version: myActiveRoute.version },
-                          session.csrfToken,
-                        );
-                        await refreshRouteDay();
-                        setMessage(
-                          "Рейс завершён. Территория и весь её ассортимент готовы для следующего водителя.",
-                        );
-                      } else {
-                        await activateDriverRoute(
-                          {
-                            idempotencyKey: crypto.randomUUID(),
-                            territoryId: routeTerritoryChoice,
-                          },
-                          session.csrfToken,
-                        );
-                        await refreshRouteDay();
-                        setTerritoryId(routeTerritoryChoice);
-                        setMessage("Вы приступили к рейсу и видите весь ассортимент территории.");
-                      }
-                      setRouteConfirmation(null);
-                    })
-                  }
-                >
-                  Да, подтверждаю
-                </button>
-              </div>
-            </div>
-          )}
         </section>
       ) : null}
 
@@ -1109,18 +935,6 @@ function currentMonday(): string {
   const day = now.getUTCDay() || 7;
   now.setUTCDate(now.getUTCDate() - day + 1);
   return now.toISOString().slice(0, 10);
-}
-
-function moscowToday(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
-}
-
-function routeTime(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Moscow",
-  }).format(new Date(value));
 }
 
 function initialDriverSelection(): { date: string; weekStart: string } {
