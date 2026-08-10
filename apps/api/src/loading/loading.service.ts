@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  CancelLoadingLineDto,
   ConfirmLoadingSessionDto,
   CreateLoadingLineDto,
   OpenLoadingGroupDto,
   ReassignLoadingLineDto,
+  ReassignTerritoryLoadingLineDto,
   RespondLoadingLineDto,
   ReviseLoadingLineDto,
   SendTerritoryLoadingLineDto,
@@ -74,6 +76,32 @@ export class LoadingService {
       lineId: id,
       reason: dto.reason.trim(),
       targetSessionId: dto.targetSessionId,
+      version: dto.version,
+    });
+  }
+  reassignLineToTerritory(
+    id: string,
+    dto: ReassignTerritoryLoadingLineDto,
+    actor: AuthenticatedActor,
+    cid: string,
+  ) {
+    return this.repository.reassignLineToTerritory({
+      actor: toActor(actor),
+      correlationId: cid,
+      idempotencyKey: dto.idempotencyKey,
+      lineId: id,
+      reason: dto.reason.trim(),
+      targetTerritoryId: dto.targetTerritoryId,
+      version: dto.version,
+    });
+  }
+  cancelLine(id: string, dto: CancelLoadingLineDto, actor: AuthenticatedActor, cid: string) {
+    return this.repository.cancelLine({
+      actor: toActor(actor),
+      correlationId: cid,
+      idempotencyKey: dto.idempotencyKey,
+      lineId: id,
+      reason: dto.reason.trim(),
       version: dto.version,
     });
   }

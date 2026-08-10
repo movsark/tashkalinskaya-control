@@ -44,6 +44,19 @@ export class ReassignLoadingLineDto {
   @IsString() @Length(3, 500) reason!: string;
 }
 
+export class ReassignTerritoryLoadingLineDto {
+  @IsUUID() targetTerritoryId!: string;
+  @IsInt() @Min(1) version!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+  @IsString() @Length(3, 500) reason!: string;
+}
+
+export class CancelLoadingLineDto {
+  @IsInt() @Min(1) version!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+  @IsString() @Length(3, 500) reason!: string;
+}
+
 export class RespondLoadingLineDto {
   @IsUUID() revisionId!: string;
   @IsIn(["CONFIRM", "COUNTER", "REJECT"])

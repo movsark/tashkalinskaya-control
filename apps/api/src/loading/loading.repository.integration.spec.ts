@@ -296,6 +296,95 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
     expect(driverDay.sessions[0]?.lines).toMatchObject([
       { productId: directProductId, quantity: 5, status: "SENT_TO_DRIVER" },
     ]);
+
+    let directLine = driverDay.sessions[0]!.lines[0]!;
+    await repository.reviseLine({
+      actor: keeper,
+      comment: "Исправлено до приёмки водителем",
+      correlationId: randomUUID(),
+      idempotencyKey: `direct-revise-${seed}`,
+      lineId: directLine.id,
+      quantity: 4,
+      version: directLine.version,
+    });
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 8, RESERVED_FOR_LOADING: 4 });
+
+    directLine = (await repository.driverDay(dispatchDate, drivers[3]!)).sessions[0]!.lines[0]!;
+    const transferKey = `direct-territory-${seed}`;
+    const reassigned = await repository.reassignLineToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: transferKey,
+      lineId: directLine.id,
+      reason: "Исправлена территория до приёмки водителем",
+      targetTerritoryId: territoryIds[0]!,
+      version: directLine.version,
+    });
+    const reassignedAgain = await repository.reassignLineToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: transferKey,
+      lineId: directLine.id,
+      reason: "Исправлена территория до приёмки водителем",
+      targetTerritoryId: territoryIds[0]!,
+      version: directLine.version,
+    });
+    expect(reassignedAgain).toEqual(reassigned);
+    expect(
+      (await repository.driverDay(dispatchDate, drivers[3]!)).sessions.flatMap(
+        (session) => session.lines,
+      ),
+    ).toHaveLength(0);
+    directLine = (await repository.driverDay(dispatchDate, drivers[0]!)).sessions
+      .flatMap((session) => session.lines)
+      .find((line) => line.productId === directProductId)!;
+    expect(directLine).toMatchObject({ quantity: 4, status: "SENT_TO_DRIVER" });
+
+    const cancelKey = `direct-cancel-${seed}`;
+    const cancelled = await repository.cancelLine({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: cancelKey,
+      lineId: directLine.id,
+      reason: "Отменено складом до приёмки водителем",
+      version: directLine.version,
+    });
+    const cancelledAgain = await repository.cancelLine({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: cancelKey,
+      lineId: directLine.id,
+      reason: "Отменено складом до приёмки водителем",
+      version: directLine.version,
+    });
+    expect(cancelledAgain).toEqual(cancelled);
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 12, RESERVED_FOR_LOADING: 0 });
+    expect(
+      (await repository.warehouseDay(dispatchDate, keeper)).products.find(
+        (product) => product.id === directProductId,
+      ),
+    ).toMatchObject({ freeQuantity: 12, remainingQuantity: 8, sentQuantity: 0 });
+    const cancellationCount = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_line_cancellation where loading_line_id=$1`,
+      [directLine.id],
+    );
+    expect(cancellationCount.rows[0]?.count).toBe(1);
+    const history = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_line_revision where loading_line_id=$1`,
+      [directLine.id],
+    );
+    expect(history.rows[0]?.count).toBe(4);
+
+    await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `direct-after-cancel-${seed}`,
+      productId: directProductId,
+      quantity: 2,
+      territoryId: territoryIds[3]!,
+    });
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 10, RESERVED_FOR_LOADING: 2 });
   });
 
   it("preserves revisions and writes off stock only after both confirmations", async () => {
@@ -463,6 +552,15 @@ async function balances() {
     `select bucket,quantity from warehouse.stock_balance
      where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
     [productId],
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
+}
+
+async function directBalances() {
+  const result = await database.query<{ bucket: string; quantity: number }>(
+    `select bucket,quantity from warehouse.stock_balance
+     where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
+    [directProductId],
   );
   return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
 }

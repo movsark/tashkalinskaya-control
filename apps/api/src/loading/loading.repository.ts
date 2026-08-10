@@ -496,7 +496,8 @@ export class LoadingRepository {
         [session.id, command.productId],
       );
       const line = existing.rows[0] ?? null;
-      const previous = line ? await currentRevision(client, line) : null;
+      const previous =
+        line && line.status !== "CANCELLED" ? await currentRevision(client, line) : null;
       const lineId = line?.id ?? randomUUID();
       const revisionId = randomUUID();
       const revisionNo = line ? line.current_revision_no + 1 : 1;
@@ -589,6 +590,9 @@ export class LoadingRepository {
       if (repeated) return { lineId: repeated };
       const line = await lockLine(client, command.lineId);
       if (line.version !== command.version) throw versionConflict();
+      if (line.status === "CONFIRMED")
+        throw new ConflictException("Принятую водителем передачу изменять нельзя");
+      if (line.status === "CANCELLED") throw new ConflictException("Передача уже отменена");
       const session = await lockSession(client, line.loading_session_id);
       if (session.status !== "IN_PROGRESS")
         throw new ConflictException("Сессия уже зафиксирована складом");
@@ -668,6 +672,9 @@ export class LoadingRepository {
       if (repeated.rows[0]) return { lineId: repeated.rows[0].loading_line_id };
       const line = await lockLine(client, command.lineId);
       if (line.version !== command.version) throw versionConflict();
+      if (line.status === "CONFIRMED")
+        throw new ConflictException("Принятую водителем передачу переносить нельзя");
+      if (line.status === "CANCELLED") throw new ConflictException("Передача уже отменена");
       if (line.loading_session_id === command.targetSessionId)
         throw new ConflictException("Строка уже на этой территории");
       const sessions = await client.query<LockedSessionRow>(
@@ -765,6 +772,203 @@ export class LoadingRepository {
     });
   }
 
+  reassignLineToTerritory(command: {
+    actor: LoadingActor;
+    correlationId: string;
+    idempotencyKey: string;
+    lineId: string;
+    reason: string;
+    targetTerritoryId: string;
+    version: number;
+  }) {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ loading_line_id: string }>(
+        `select loading_line_id from loading.loading_line_transfer where transferred_by=$1 and idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) return { lineId: repeated.rows[0].loading_line_id };
+      const line = await lockLine(client, command.lineId);
+      if (line.version !== command.version) throw versionConflict();
+      if (line.status === "CONFIRMED")
+        throw new ConflictException("Принятую водителем передачу переносить нельзя");
+      if (line.status === "CANCELLED") throw new ConflictException("Передача уже отменена");
+      const source = await lockSession(client, line.loading_session_id);
+      if (source.status !== "IN_PROGRESS")
+        throw new ConflictException("Сессия уже зафиксирована складом");
+      if (source.territory_id === command.targetTerritoryId)
+        throw new ConflictException("Строка уже на этой территории");
+      const target = await ensureTerritoryLoadingSession(client, {
+        actor: command.actor,
+        correlationId: command.correlationId,
+        dispatchDate: source.dispatch_date,
+        territoryId: command.targetTerritoryId,
+      });
+      if (target.status !== "IN_PROGRESS" || target.dispatch_date !== source.dispatch_date)
+        throw new ConflictException("Целевая территория недоступна для этой даты");
+      if (
+        (
+          await client.query(
+            `select 1 from loading.loading_line where loading_session_id=$1 and product_id=$2`,
+            [target.id, line.product_id],
+          )
+        ).rowCount
+      )
+        throw new ConflictException("Товар уже передан на целевую территорию");
+      const previous = await currentRevision(client, line);
+      const revisionId = randomUUID();
+      const revisionNo = line.current_revision_no + 1;
+      const plan = await planSnapshot(
+        client,
+        target.dispatch_date,
+        target.territory_id,
+        line.product_id,
+      );
+      const reservation = await reserveForTerritory(client, {
+        actor: command.actor,
+        businessDate: target.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous,
+        productId: line.product_id,
+        quantity: previous.quantity,
+        sourceId: revisionId,
+        territoryId: target.territory_id,
+      });
+      await insertRevision(client, {
+        actor: command.actor,
+        comment: command.reason,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        lineId: command.lineId,
+        plan,
+        quantity: previous.quantity,
+        reservationDocumentId: reservation.documentId,
+        reservedFreeQuantity: reservation.freeQuantity,
+        reservedReturnQuantity: reservation.returnQuantity,
+        returnAllocationId: reservation.allocationId,
+        revisionId,
+        revisionNo,
+      });
+      await client.query(
+        `update loading.loading_line set loading_session_id=$2,current_revision_no=$3,status='SENT_TO_DRIVER',updated_at=now(),version=version+1 where id=$1`,
+        [command.lineId, target.id, revisionNo],
+      );
+      await client.query(
+        `insert into loading.loading_line_transfer(id,loading_line_id,from_session_id,to_session_id,new_revision_id,reason,transferred_by,idempotency_key,correlation_id)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          randomUUID(),
+          command.lineId,
+          source.id,
+          target.id,
+          revisionId,
+          command.reason,
+          command.actor.employeeId,
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      await client.query(
+        `update loading.loading_session set version=version+1 where id=any($1::uuid[])`,
+        [[source.id, target.id]],
+      );
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "LOADING_LINE_REASSIGNED",
+        "LOADING_LINE",
+        command.lineId,
+        { fromTerritoryId: source.territory_id, toTerritoryId: target.territory_id },
+      );
+      await outbox(client, "loading.line.reassigned", command.lineId, {
+        toSessionId: target.id,
+        toTerritoryId: target.territory_id,
+      });
+      return { lineId: command.lineId };
+    });
+  }
+
+  cancelLine(command: {
+    actor: LoadingActor;
+    correlationId: string;
+    idempotencyKey: string;
+    lineId: string;
+    reason: string;
+    version: number;
+  }) {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ loading_line_id: string }>(
+        `select loading_line_id from loading.loading_line_cancellation where cancelled_by=$1 and idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) return { lineId: repeated.rows[0].loading_line_id };
+      const line = await lockLine(client, command.lineId);
+      if (line.version !== command.version) throw versionConflict();
+      if (line.status === "CONFIRMED")
+        throw new ConflictException("Принятую водителем передачу отменить нельзя");
+      if (line.status === "CANCELLED") throw new ConflictException("Передача уже отменена");
+      const session = await lockSession(client, line.loading_session_id);
+      if (session.status !== "IN_PROGRESS")
+        throw new ConflictException("Сессия уже зафиксирована складом");
+      const previous = await currentRevision(client, line);
+      const cancellationId = randomUUID();
+      const movementDocumentId = await releaseReservation(client, {
+        actor: command.actor,
+        businessDate: session.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous,
+        productId: line.product_id,
+        sourceId: cancellationId,
+      });
+      await client.query(
+        `insert into loading.loading_line_cancellation(
+           id,loading_line_id,cancelled_revision_id,reason,released_free_quantity,
+           released_return_quantity,return_allocation_id,movement_document_id,cancelled_by,
+           actor_role,idempotency_key,correlation_id
+         ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [
+          cancellationId,
+          command.lineId,
+          previous.id,
+          command.reason,
+          previous.reserved_free_quantity,
+          previous.reserved_return_quantity,
+          previous.return_allocation_id,
+          movementDocumentId,
+          command.actor.employeeId,
+          activeRole(command.actor),
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      await client.query(
+        `update loading.loading_line set status='CANCELLED',updated_at=now(),version=version+1 where id=$1`,
+        [command.lineId],
+      );
+      await client.query(`update loading.loading_session set version=version+1 where id=$1`, [
+        session.id,
+      ]);
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "LOADING_LINE_CANCELLED",
+        "LOADING_LINE",
+        command.lineId,
+        { quantity: previous.quantity, territoryId: session.territory_id },
+      );
+      await outbox(client, "loading.line.cancelled", command.lineId, {
+        quantity: previous.quantity,
+        sessionId: session.id,
+      });
+      return { lineId: command.lineId };
+    });
+  }
+
   respondLine(command: {
     actor: LoadingActor;
     correlationId: string;
@@ -786,6 +990,7 @@ export class LoadingRepository {
       if (repeated.rows[0]) return { lineId: repeated.rows[0].loading_line_id };
       const line = await lockLine(client, command.lineId);
       if (line.version !== command.version) throw versionConflict();
+      if (line.status === "CANCELLED") throw new ConflictException("Передача отменена складом");
       const session = await lockSession(client, line.loading_session_id);
       if (session.status !== "IN_PROGRESS")
         throw new ConflictException("Склад уже зафиксировал итог");
@@ -1052,7 +1257,7 @@ async function loadSessions(
          from loading.loading_line l join catalog.product p on p.id=l.product_id
          join loading.loading_line_revision r on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
          left join loading.loading_line_response x on x.loading_line_revision_id=r.id
-         where l.loading_session_id=any($1::uuid[]) order by p.name`,
+         where l.loading_session_id=any($1::uuid[]) and l.status<>'CANCELLED' order by p.name`,
         [ids],
       )
     : { rows: [] as LineRow[] };
@@ -1394,7 +1599,8 @@ async function confirmedLines(client: PoolClient, sessionId: string, lock: boole
     `select l.id,l.product_id,l.status,r.id revision_id,r.quantity,r.reserved_free_quantity,
        r.reserved_return_quantity,r.return_allocation_id from loading.loading_line l
      join loading.loading_line_revision r on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
-     where l.loading_session_id=$1 order by l.product_id ${lock ? "for update of l" : ""}`,
+     where l.loading_session_id=$1 and l.status<>'CANCELLED'
+     order by l.product_id ${lock ? "for update of l" : ""}`,
     [sessionId],
   );
   if (!result.rowCount) throw new ConflictException("Нельзя завершить пустую погрузку");
@@ -1605,6 +1811,66 @@ async function reserveForTerritory(
     freeQuantity,
     returnQuantity,
   };
+}
+
+async function releaseReservation(
+  client: PoolClient,
+  input: {
+    actor: LoadingActor;
+    businessDate: string;
+    correlationId: string;
+    idempotencyKey: string;
+    previous: CurrentRevisionRow;
+    productId: string;
+    sourceId: string;
+  },
+) {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `loading-reserve:${warehouseId}:${input.productId}`,
+  ]);
+  const documentId = randomUUID();
+  await client.query(
+    `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,source_id,
+       actor_id,actor_role,correlation_id,idempotency_key)
+     values($1,$2,'RESERVE_RELEASE',$3,'LOADING_LINE_CANCELLATION',$4,$5,$6,$7,$8)`,
+    [
+      documentId,
+      warehouseId,
+      input.businessDate,
+      input.sourceId,
+      input.actor.employeeId,
+      activeRole(input.actor),
+      input.correlationId,
+      input.idempotencyKey,
+    ],
+  );
+  if (input.previous.reserved_free_quantity > 0)
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "RESERVED_FOR_LOADING",
+      "FREE_STOCK",
+      input.previous.reserved_free_quantity,
+      input.businessDate,
+    );
+  if (input.previous.reserved_return_quantity > 0 && input.previous.return_allocation_id) {
+    await moveWithDocument(
+      client,
+      documentId,
+      input.productId,
+      "RETURN_RESERVED_FOR_LOADING",
+      "RETURN_ALLOCATED",
+      input.previous.reserved_return_quantity,
+      input.businessDate,
+    );
+    await changeAllocationReservation(
+      client,
+      input.previous.return_allocation_id,
+      -input.previous.reserved_return_quantity,
+    );
+  }
+  return documentId;
 }
 
 async function changeAllocationReservation(

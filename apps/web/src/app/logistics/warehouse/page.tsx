@@ -2,7 +2,6 @@
 
 import type {
   AuthenticatedUser,
-  LoadingProductView,
   LoadingSessionView,
   LoadingWarehouseDayView,
 } from "@tashkalinskaya/contracts";
@@ -13,12 +12,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
+  cancelLoadingLine,
   confirmLoadingByWarehouse,
   getLoadingWarehouseDay,
   getSession,
+  reassignLoadingLineToTerritory,
   reviseLoadingLine,
   sendLoadingToTerritory,
 } from "../../../lib/api";
+import { ProductLoadingRow } from "./product-loading-row";
 
 interface RevisionDraft {
   comment: string;
@@ -40,6 +42,7 @@ export default function WarehouseLogisticsPage() {
   const [dispatchDate, setDispatchDate] = useState(todayMoscow());
   const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [openProductId, setOpenProductId] = useState<string | null>(null);
+  const [openProductMode, setOpenProductMode] = useState<"send" | "sent">("send");
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
@@ -91,7 +94,9 @@ export default function WarehouseLogisticsPage() {
     return session.csrfToken;
   }
 
-  const sessions = loading?.groups.flatMap((group) => group.sessions) ?? [];
+  const sessions = (loading?.groups.flatMap((group) => group.sessions) ?? []).filter(
+    (item) => item.lines.length > 0,
+  );
   const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
   const filteredProducts = useMemo(
     () =>
@@ -280,13 +285,73 @@ export default function WarehouseLogisticsPage() {
                               `${product.name}: ${quantity} шт. отправлено водителю`,
                             ).then(() => setDrafts((current) => ({ ...current, [key]: "" })));
                           }}
-                          onToggle={() =>
-                            setOpenProductId((current) =>
-                              current === product.id ? null : product.id,
+                          onCancel={(line) =>
+                            command(
+                              `cancel-${line.id}`,
+                              () =>
+                                cancelLoadingLine(
+                                  line.id,
+                                  {
+                                    reason: "Отменено складом до приёмки водителем",
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Передача отменена, товар возвращён на склад",
                             )
                           }
+                          onReassign={(line, territoryId) =>
+                            command(
+                              `territory-${line.id}`,
+                              () =>
+                                reassignLoadingLineToTerritory(
+                                  line.id,
+                                  {
+                                    reason: "Исправлена территория до приёмки водителем",
+                                    targetTerritoryId: territoryId,
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Территория передачи изменена",
+                            )
+                          }
+                          onRevise={(line, quantity) =>
+                            command(
+                              `quantity-${line.id}`,
+                              () =>
+                                reviseLoadingLine(
+                                  line.id,
+                                  {
+                                    comment: "Исправлено до приёмки водителем",
+                                    quantity,
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Количество передачи изменено",
+                            )
+                          }
+                          onShowSent={() => {
+                            setOpenProductMode("sent");
+                            setOpenProductId((current) =>
+                              current === product.id && openProductMode === "sent"
+                                ? null
+                                : product.id,
+                            );
+                          }}
+                          onToggle={() => {
+                            setOpenProductMode("send");
+                            setOpenProductId((current) =>
+                              current === product.id && openProductMode === "send"
+                                ? null
+                                : product.id,
+                            );
+                          }}
                           open={openProductId === product.id}
+                          openMode={openProductMode}
                           product={product}
+                          sessions={sessions}
                         />
                       ))
                     ) : (
@@ -330,136 +395,6 @@ export default function WarehouseLogisticsPage() {
         </div>
       </section>
     </main>
-  );
-}
-
-function ProductLoadingRow({
-  busyId,
-  draftFor,
-  onDraft,
-  onSend,
-  onToggle,
-  open,
-  product,
-}: {
-  busyId: string;
-  draftFor: (territoryId: string) => string;
-  onDraft: (territoryId: string, value: string) => void;
-  onSend: (territoryId: string, quantity: number) => Promise<void>;
-  onToggle: () => void;
-  open: boolean;
-  product: LoadingProductView;
-}) {
-  const shortageQuantity = Math.max(0, product.remainingQuantity - product.freeQuantity);
-  return (
-    <article className={`loading-product${open ? " is-open" : ""}`}>
-      <button
-        aria-expanded={open}
-        className="loading-product__summary"
-        onClick={onToggle}
-        type="button"
-      >
-        <span className="loading-product__identity">
-          <small>{product.code}</small>
-          <strong>{product.name}</strong>
-        </span>
-        <span className="loading-product__metrics">
-          <span className="loading-product__metric">
-            <small>На складе</small>
-            <b>{product.freeQuantity} шт.</b>
-          </span>
-          <span className="loading-product__metric">
-            <small>Передано</small>
-            <b>{product.sentQuantity} шт.</b>
-          </span>
-          <span className="loading-product__metric is-remaining">
-            <small>Осталось</small>
-            <b>
-              {shortageQuantity > 0 ? (
-                <em
-                  aria-label={`Не хватает ${shortageQuantity} шт.`}
-                  className="loading-product__shortage"
-                >
-                  −{shortageQuantity}
-                </em>
-              ) : null}
-              <span>{product.remainingQuantity} шт.</span>
-            </b>
-          </span>
-        </span>
-        <i aria-hidden="true">{open ? "−" : "+"}</i>
-      </button>
-      {open ? (
-        <div className="loading-territory-list">
-          {product.territories.map((territory) => {
-            const draft = draftFor(territory.territoryId);
-            const quantity = Number(draft);
-            const maximum = Math.min(product.freeQuantity, territory.remainingQuantity);
-            const valid = Number.isInteger(quantity) && quantity > 0 && quantity <= maximum;
-            const key = `${product.id}:${territory.territoryId}`;
-            return (
-              <form
-                className="loading-territory-row"
-                key={territory.territoryId}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (valid) void onSend(territory.territoryId, quantity);
-                }}
-              >
-                <div className="loading-territory-row__title">
-                  <strong>Территория {territory.territoryNumber}</strong>
-                  <small>{territory.driverName ?? "Водитель не выбран"}</small>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Норма</dt>
-                    <dd>{territory.plannedQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Передано</dt>
-                    <dd>{territory.sentQuantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Осталось</dt>
-                    <dd>{territory.remainingQuantity}</dd>
-                  </div>
-                </dl>
-                <label>
-                  <span>Передать сейчас</span>
-                  <input
-                    disabled={!territory.canSend || maximum < 1}
-                    inputMode="numeric"
-                    max={maximum}
-                    min="1"
-                    onChange={(event) => onDraft(territory.territoryId, event.target.value)}
-                    placeholder="0"
-                    type="number"
-                    value={draft}
-                  />
-                </label>
-                <button
-                  className="primary-button"
-                  disabled={!territory.canSend || !valid || busyId === key}
-                  type="submit"
-                >
-                  {busyId === key ? "Отправляем…" : "Отправить водителю"}
-                </button>
-                {!territory.canSend ? (
-                  <p>
-                    Сначала водитель должен выбрать эту территорию как постоянную или получить
-                    назначение.
-                  </p>
-                ) : territory.remainingQuantity === 0 ? (
-                  <p>Норма этой территории уже передана.</p>
-                ) : product.freeQuantity === 0 ? (
-                  <p>На складе пока нет доступного количества.</p>
-                ) : null}
-              </form>
-            );
-          })}
-        </div>
-      ) : null}
-    </article>
   );
 }
 

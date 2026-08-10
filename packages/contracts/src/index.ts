@@ -1032,7 +1032,7 @@ export interface LoadingLineView extends LoadingPlanSnapshotView {
   readonly quantity: number;
   readonly responseReason: string | null;
   readonly responseType: "CONFIRM" | "COUNTER" | "REJECT" | null;
-  readonly status: "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
+  readonly status: "CANCELLED" | "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
   readonly version: number;
 }
 

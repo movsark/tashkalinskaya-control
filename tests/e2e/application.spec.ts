@@ -1075,6 +1075,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const territoryTwoId = "20000000-0000-4000-8000-000000000084";
     let sentQuantity = 0;
     let sentPayload: Record<string, unknown> | null = null;
+    let cancelled = false;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -1104,7 +1105,52 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.route("**/api/v1/loading/warehouse/days/*", (route) =>
       json(route, {
         dispatchDate: "2026-08-10",
-        groups: [],
+        groups:
+          sentQuantity > 0
+            ? [
+                {
+                  sessions: [
+                    {
+                      dispatchDate: "2026-08-10",
+                      driverName: "Тестовый Водитель",
+                      groupId: "20000000-0000-4000-8000-000000000091",
+                      id: "20000000-0000-4000-8000-000000000089",
+                      lines: [
+                        {
+                          allocatedFreeStock: sentQuantity,
+                          allocatedGoodReturn: 0,
+                          comment: null,
+                          counterQuantity: null,
+                          currentRevisionId: "20000000-0000-4000-8000-000000000092",
+                          currentRevisionNo: 1,
+                          id: "20000000-0000-4000-8000-000000000088",
+                          isOverPlan: false,
+                          newProduction: 0,
+                          oneOffQuantity: null,
+                          plannedQuantity: 10,
+                          productCode: "TB-015",
+                          productId,
+                          productName: "ТБ Рыжик (0,8кг)",
+                          quantity: sentQuantity,
+                          responseReason: null,
+                          responseType: null,
+                          status: "SENT_TO_DRIVER",
+                          version: 1,
+                          weeklyNormQuantity: 10,
+                        },
+                      ],
+                      status: "IN_PROGRESS",
+                      territoryId: territoryTwoId,
+                      territoryName: "Территория 2",
+                      territoryNumber: 2,
+                      totalQuantity: sentQuantity,
+                      unresolvedLines: 1,
+                      version: 1,
+                    },
+                  ],
+                },
+              ]
+            : [],
         products: [
           {
             barcodes: [],
@@ -1152,6 +1198,11 @@ test.describe("B20 browser and HTTP regression", () => {
         sessionId: "20000000-0000-4000-8000-000000000089",
       });
     });
+    await page.route("**/api/v1/loading/lines/*/cancel", async (route) => {
+      cancelled = true;
+      sentQuantity = 0;
+      await json(route, { lineId: "20000000-0000-4000-8000-000000000088" });
+    });
 
     await page.goto("/logistics/warehouse");
     await expect(page.getByRole("heading", { name: "Управление погрузкой" })).toBeVisible();
@@ -1160,7 +1211,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(baseGroup).toContainText("На складе27 шт.");
     await expect(baseGroup).toContainText("Осталось28 шт.");
     await expect(baseGroup).toContainText("Не хватает−1 шт.");
-    const productRow = page.getByRole("button", { name: /TB-015 ТБ Рыжик/u });
+    const productRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
     await expect(productRow).toContainText("На складе27 шт.");
     await expect(productRow.locator(".loading-product__shortage")).toHaveAttribute(
       "aria-label",
@@ -1170,18 +1221,42 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
       "28 шт.",
     );
-    await productRow.click();
-    const territoryOne = page.locator(".loading-territory-row").filter({ hasText: "Территория 1" });
-    const territoryTwo = page.locator(".loading-territory-row").filter({ hasText: "Территория 2" });
-    await expect(territoryOne.getByText("Водитель не выбран")).toBeVisible();
-    await expect(territoryOne.getByRole("spinbutton")).toBeDisabled();
-    await territoryTwo.getByRole("spinbutton").fill("3");
-    await territoryTwo.getByRole("button", { name: "Отправить водителю" }).click();
+    expect(
+      await baseGroup.evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThan(70);
+    expect(
+      await productRow
+        .locator(".loading-product__summary")
+        .evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThan(80);
+    await productRow.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    await expect(productRow.locator(".loading-territory-panel")).toHaveCount(1);
+    await productRow.getByRole("button", { name: /Территория 1/u }).click();
+    await expect(productRow.getByText("Водитель не выбран")).toBeVisible();
+    await expect(productRow.getByRole("spinbutton")).toBeDisabled();
+    await productRow.getByRole("button", { name: /Территория 2/u }).click();
+    const territoryPanel = productRow.locator(".loading-territory-panel");
+    await territoryPanel.getByRole("spinbutton").fill("28");
+    await expect(territoryPanel.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
+    await expect(territoryPanel.getByText("Можно передать не более 10 шт.")).toBeVisible();
+    await territoryPanel.getByRole("spinbutton").fill("3");
+    await territoryPanel.getByRole("button", { name: "Отправить водителю" }).click();
     await expect.poll(() => sentPayload?.quantity).toBe(3);
-    await expect(page.getByRole("button", { name: /ТБ Рыжик.*На складе 24 шт\./u })).toBeVisible();
-    await expect(page.getByRole("button", { name: /ТБ Рыжик.*Передано 3 шт\./u })).toBeVisible();
-    await expect(page.getByRole("button", { name: /ТБ Рыжик.*Осталось.*25 шт\./u })).toBeVisible();
-    await expect(territoryTwo.getByText("7", { exact: true })).toBeVisible();
+    await expect(productRow).toContainText("На складе24 шт.");
+    await expect(productRow.getByRole("button", { name: /Передано.*3 шт\./u })).toBeVisible();
+    await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
+      "25 шт.",
+    );
+    await productRow.getByRole("button", { name: /Передано.*3 шт\./u }).click();
+    await expect(
+      productRow.locator(".loading-transfer-item > header strong", { hasText: "Территория 2" }),
+    ).toBeVisible();
+    await expect(productRow.getByText("Ждём приёмку")).toBeVisible();
+    await productRow.getByRole("button", { name: "Отменить передачу" }).click();
+    await productRow.getByRole("button", { name: "Да, отменить" }).click();
+    await expect.poll(() => cancelled).toBe(true);
+    await expect(productRow).toContainText("На складе27 шт.");
+    await expect(productRow.getByRole("button", { name: /Передано.*0 шт\./u })).toBeDisabled();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

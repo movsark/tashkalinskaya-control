@@ -870,6 +870,30 @@ export async function reassignLoadingLine(
   });
 }
 
+export async function reassignLoadingLineToTerritory(
+  lineId: string,
+  input: { reason: string; targetTerritoryId: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/reassign-territory`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function cancelLoadingLine(
+  lineId: string,
+  input: { reason: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/cancel`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function respondLoadingLine(
   lineId: string,
   input: {
