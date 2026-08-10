@@ -103,6 +103,9 @@ export class ActivateDriverRouteDto {
 }
 
 export class EndDriverRouteDto {
+  @IsIn(["HANDOVER", "COMPLETE"])
+  action!: "HANDOVER" | "COMPLETE";
+
   @IsString()
   @Length(8, 100)
   idempotencyKey!: string;

@@ -40,7 +40,7 @@ export default function DriverLogisticsPage() {
   const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
   const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
-  const [routeEndConfirmation, setRouteEndConfirmation] = useState(false);
+  const [routeHandoverConfirmation, setRouteHandoverConfirmation] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -90,6 +90,17 @@ export default function DriverLogisticsPage() {
     return () => window.clearInterval(timer);
   }, [dispatchDate, router]);
 
+  useEffect(() => {
+    let knownToday = todayMoscow();
+    const timer = window.setInterval(() => {
+      const nextToday = todayMoscow();
+      if (nextToday === knownToday) return;
+      setDispatchDate((current) => (current === knownToday ? nextToday : current));
+      knownToday = nextToday;
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   async function command(id: string, operation: () => Promise<void>, message: string) {
     setBusyId(id);
     setError("");
@@ -134,7 +145,7 @@ export default function DriverLogisticsPage() {
     }
   }
 
-  async function finishRoute() {
+  async function handOverRoute() {
     if (!session || !myActiveRoute) return;
     setBusyId("route-end");
     setError("");
@@ -142,13 +153,17 @@ export default function DriverLogisticsPage() {
     try {
       await endDriverRoute(
         myActiveRoute.id,
-        { idempotencyKey: crypto.randomUUID(), version: myActiveRoute.version },
+        {
+          action: "HANDOVER",
+          idempotencyKey: crypto.randomUUID(),
+          version: myActiveRoute.version,
+        },
         session.csrfToken,
       );
-      setRouteEndConfirmation(false);
+      setRouteHandoverConfirmation(false);
       await reload();
       setSuccess(
-        "Рейс завершён. Территория и уже загруженный ассортимент готовы для следующего водителя.",
+        "Рейс передан. Территория и весь уже загруженный ассортимент готовы для следующего водителя.",
       );
     } catch (caught) {
       setError(messageOf(caught, "Не удалось завершить рейс"));
@@ -175,7 +190,12 @@ export default function DriverLogisticsPage() {
     (route) => route.territoryId === routeTerritoryChoice,
   );
   const today = todayMoscow();
-  const requiresRouteStart = Boolean(isDriverOnly && routes && !myActiveRoute);
+  const completedRoute = routes?.routeHistory.find(
+    (route) => route.driverEmployeeId === session?.employee.id && route.status === "ENDED",
+  );
+  const requiresRouteStart = Boolean(
+    isDriverOnly && routes && dispatchDate === today && !myActiveRoute && !completedRoute,
+  );
   const products = loading?.products ?? [];
   const productGroups = useMemo(() => {
     const query = productSearch.trim().toLocaleLowerCase("ru-RU");
@@ -357,19 +377,19 @@ export default function DriverLogisticsPage() {
             <span className="driver-route-duty__active">Рейс активен</span>
           </div>
 
-          {routeEndConfirmation ? (
+          {routeHandoverConfirmation ? (
             <div className="driver-route-duty__confirmation">
-              <strong>Вы закончили текущий рейс?</strong>
+              <strong>Передать рейс другому водителю?</strong>
               <p>
-                Территория освободится. Весь уже загруженный товар останется в рейсе территории и
-                перейдёт следующему водителю.
+                Территория освободится, но рабочий день не закроется. Весь уже принятый товар
+                останется у территории и будет виден следующему водителю.
               </p>
               <div className="driver-route-duty__actions">
                 <button
                   className="secondary-button"
                   disabled={busyId === "route-end"}
                   type="button"
-                  onClick={() => setRouteEndConfirmation(false)}
+                  onClick={() => setRouteHandoverConfirmation(false)}
                 >
                   Нет
                 </button>
@@ -377,21 +397,46 @@ export default function DriverLogisticsPage() {
                   className="primary-action"
                   disabled={busyId === "route-end"}
                   type="button"
-                  onClick={() => void finishRoute()}
+                  onClick={() => void handOverRoute()}
                 >
-                  {busyId === "route-end" ? "Завершаем рейс…" : "Да, закончить рейс"}
+                  {busyId === "route-end" ? "Передаём рейс…" : "Да, передать рейс"}
                 </button>
               </div>
             </div>
           ) : (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setRouteEndConfirmation(true)}
-            >
-              Закончил рейс
-            </button>
+            <div className="driver-route-duty__actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setRouteHandoverConfirmation(true)}
+              >
+                Передать рейс
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => router.push("/returns")}
+              >
+                Завершить рейс
+              </button>
+            </div>
           )}
+        </section>
+      ) : null}
+
+      {!myActiveRoute && completedRoute ? (
+        <section className="driver-route-duty" aria-label="Завершённый рейс">
+          <div className="driver-route-duty__heading">
+            <div>
+              <p className="eyebrow">Рейс завершён</p>
+              <h2>Территория {completedRoute.territoryNumber}</h2>
+              <p>
+                Записи дня сохранены. Остаток, не оформленный возвратом или порчей, в MVP считается
+                реализованным без отдельной операции продажи.
+              </p>
+            </div>
+            <span className="driver-route-duty__inactive">День закрыт</span>
+          </div>
         </section>
       ) : null}
 

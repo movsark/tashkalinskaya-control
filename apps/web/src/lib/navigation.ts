@@ -112,17 +112,10 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/returns",
-    label: "Годный возврат",
+    label: "Возвраты и порча",
     roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
-    shortLabel: "Возврат",
+    shortLabel: "Возвраты",
     symbol: "В",
-  },
-  {
-    href: "/spoilage",
-    label: "Порча и списания",
-    roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
-    shortLabel: "Порча",
-    symbol: "С",
   },
   {
     href: "/catalog",

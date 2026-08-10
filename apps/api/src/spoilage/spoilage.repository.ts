@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type {
+  DriverSpoilageWorkspaceView,
   RoleAssignmentView,
   RoleCode,
   SpoilageWorkspaceView,
@@ -23,6 +24,29 @@ export interface SpoilageActor {
 }
 
 const warehouseId = "15000000-0000-4000-8000-000000000001";
+
+const writeoffWorkspaceSelect = `select
+  r.id,r.source_kind,r.physical_source_kind,r.source_driver_name_snapshot,r.source_label,
+  r.source_dispatch_date::text,r.source_territory_number_snapshot,
+  r.product_id,r.product_code_snapshot,r.product_name_snapshot,r.quantity,
+  r.reason_snapshot->>'code' reason_code,r.reason_snapshot->>'displayName' reason_name,
+  r.comment,r.external_document_number,r.status,r.created_at,r.business_date::text,r.version,
+  creator.full_name created_by_name,
+  d.decision,d.comment decision_comment,d.decided_at,decider.full_name decided_by_name,
+  ph.id photo_id,ph.original_file_name,ph.content_type,ph.stored_size,ph.width,ph.height,
+  ec.id external_check_id,ec.revision_no,ec.result external_check_result,
+  ec.external_document_number checked_document_number,ec.comment external_check_comment,
+  ec.checked_at,checker.full_name checked_by_name
+from spoilage.writeoff_request r
+join identity.employee creator on creator.id=r.created_by
+left join spoilage.writeoff_decision d on d.request_id=r.id
+left join identity.employee decider on decider.id=d.decided_by
+left join spoilage.photo_upload ph on ph.id=r.photo_upload_id
+left join lateral (
+  select * from spoilage.external_document_check x where x.request_id=r.id
+  order by x.revision_no desc limit 1
+) ec on true
+left join identity.employee checker on checker.id=ec.checked_by`;
 
 @Injectable()
 export class SpoilageRepository {
@@ -72,26 +96,7 @@ export class SpoilageRepository {
           [warehouseId],
         ),
         client.query<WriteoffWorkspaceRow>(
-          `select r.id,r.source_kind,r.physical_source_kind,r.source_driver_name_snapshot,r.source_label,
-             r.product_id,r.product_code_snapshot,r.product_name_snapshot,r.quantity,
-             r.reason_snapshot->>'code' reason_code,r.reason_snapshot->>'displayName' reason_name,
-             r.comment,r.external_document_number,r.status,r.created_at,r.business_date::text,r.version,
-             creator.full_name created_by_name,
-             d.decision,d.comment decision_comment,d.decided_at,decider.full_name decided_by_name,
-             ph.id photo_id,ph.original_file_name,ph.content_type,ph.stored_size,ph.width,ph.height,
-             ec.id external_check_id,ec.revision_no,ec.result external_check_result,
-             ec.external_document_number checked_document_number,ec.comment external_check_comment,
-             ec.checked_at,checker.full_name checked_by_name
-           from spoilage.writeoff_request r
-           join identity.employee creator on creator.id=r.created_by
-           left join spoilage.writeoff_decision d on d.request_id=r.id
-           left join identity.employee decider on decider.id=d.decided_by
-           left join spoilage.photo_upload ph on ph.id=r.photo_upload_id
-           left join lateral (
-             select * from spoilage.external_document_check x where x.request_id=r.id
-             order by x.revision_no desc limit 1
-           ) ec on true
-           left join identity.employee checker on checker.id=ec.checked_by
+          `${writeoffWorkspaceSelect}
            order by (r.status='SUBMITTED') desc,r.created_at desc limit 250`,
         ),
       ]);
@@ -123,10 +128,98 @@ export class SpoilageRepository {
     });
   }
 
+  driverWorkspace(
+    dispatchDate: string,
+    actor: SpoilageActor,
+  ): Promise<DriverSpoilageWorkspaceView> {
+    assertRole(actor, ["DRIVER"]);
+    requireDate(dispatchDate);
+    return this.database.transaction(async (client) => {
+      const [territories, reasons, products, requests] = await Promise.all([
+        client.query<{ id: string; name: string; territory_number: number }>(
+          `select distinct t.id,t.name,t.territory_number
+           from logistics.driver_route_shift s
+           join logistics.territory t on t.id=s.territory_id
+           where s.driver_employee_id=$1 and s.dispatch_date=$2
+           order by t.territory_number`,
+          [actor.employeeId, dispatchDate],
+        ),
+        client.query<{
+          code: string;
+          display_name: string;
+          id: string;
+          photo_required: boolean;
+        }>(
+          `select distinct on(code) id,code,display_name,photo_required from spoilage.reason
+           where status='ACTIVE' and valid_from<=$1
+             and (valid_until is null or valid_until>=$1)
+           order by code,valid_from desc`,
+          [dispatchDate],
+        ),
+        loadDriverSpoilageProducts(client, actor.employeeId, dispatchDate),
+        client.query<WriteoffWorkspaceRow>(
+          `${writeoffWorkspaceSelect}
+           where r.source_driver_id=$1 and r.source_dispatch_date=$2
+           order by r.created_at desc`,
+          [actor.employeeId, dispatchDate],
+        ),
+      ]);
+      return {
+        dispatchDate,
+        reasons: reasons.rows.map((item) => ({
+          code: item.code,
+          displayName: item.display_name,
+          id: item.id,
+          photoRequired: item.photo_required,
+        })),
+        requests: requests.rows.map(mapRequest),
+        serverTime: new Date().toISOString(),
+        territories: territories.rows.map((territory) => ({
+          id: territory.id,
+          name: territory.name,
+          number: territory.territory_number,
+          products: products
+            .filter((product) => product.territory_id === territory.id)
+            .map((product) => ({
+              alreadyClassifiedQuantity: product.classified_quantity,
+              availableSpoilageQuantity: Math.max(
+                product.dispatched_quantity - product.classified_quantity,
+                0,
+              ),
+              dispatchedQuantity: product.dispatched_quantity,
+              productCode: product.product_code,
+              productGroupCode: product.product_group_code,
+              productGroupName: product.product_group_name,
+              productId: product.product_id,
+              productName: product.product_name,
+            })),
+        })),
+      };
+    });
+  }
+
   create(command: CreateCommand) {
     assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
     requireDate(command.businessDate);
     validateSource(command);
+    return this.persistRequest(command);
+  }
+
+  createDriver(command: DriverCreateCommand) {
+    assertRole(command.actor, ["DRIVER"]);
+    requireDate(command.businessDate);
+    return this.persistRequest({
+      ...command,
+      physicalSourceKind: "DRIVER",
+      sourceDispatchDate: command.businessDate,
+      sourceDriverId: command.actor.employeeId,
+      sourceKind: "PHYSICAL_SPOILAGE",
+      sourceLabel: null,
+      sourceTerritoryId: command.territoryId,
+    });
+  }
+
+  private persistRequest(command: CreateCommand) {
     return this.database.transaction(async (client) => {
       const repeated = await client.query<{ id: string }>(
         `select id from spoilage.writeoff_request where created_by=$1 and idempotency_key=$2`,
@@ -137,6 +230,15 @@ export class SpoilageRepository {
       await client.query("select pg_advisory_xact_lock(hashtext($1))", [
         `writeoff:${warehouseId}:${command.productId}`,
       ]);
+      const sourceRoute = command.sourceTerritoryId
+        ? await requireActiveDriverRoute(client, {
+            dispatchDate: command.sourceDispatchDate!,
+            driverId: command.actor.employeeId,
+            productId: command.productId,
+            quantity: command.quantity,
+            territoryId: command.sourceTerritoryId,
+          })
+        : null;
       const product = await requireProduct(client, command.productId);
       const reason = await requireReason(client, command.reasonId, command.businessDate);
       const driverName = command.sourceDriverId
@@ -171,10 +273,11 @@ export class SpoilageRepository {
       await client.query(
         `insert into spoilage.writeoff_request(
            id,warehouse_id,source_kind,physical_source_kind,source_driver_id,source_driver_name_snapshot,
-           source_label,product_id,product_code_snapshot,product_name_snapshot,quantity,reason_id,
+           source_label,source_territory_id,source_territory_number_snapshot,source_dispatch_date,
+           product_id,product_code_snapshot,product_name_snapshot,quantity,reason_id,
            reason_snapshot,comment,external_document_number,photo_upload_id,request_movement_document_id,
            created_by,actor_role,idempotency_key,correlation_id,business_date)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
         [
           requestId,
           warehouseId,
@@ -183,6 +286,9 @@ export class SpoilageRepository {
           command.sourceDriverId,
           driverName,
           command.sourceLabel,
+          command.sourceTerritoryId ?? null,
+          sourceRoute?.territoryNumber ?? null,
+          command.sourceDispatchDate ?? null,
           command.productId,
           product.product_code,
           product.name,
@@ -371,8 +477,23 @@ interface CreateCommand {
   readonly quantity: number;
   readonly reasonId: string;
   readonly sourceDriverId: string | null;
+  readonly sourceDispatchDate?: string | null;
   readonly sourceKind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly sourceLabel: string | null;
+  readonly sourceTerritoryId?: string | null;
+}
+interface DriverCreateCommand {
+  readonly actor: SpoilageActor;
+  readonly businessDate: string;
+  readonly comment: string;
+  readonly correlationId: string;
+  readonly externalDocumentNumber: null;
+  readonly idempotencyKey: string;
+  readonly photoUploadId: string | null;
+  readonly productId: string;
+  readonly quantity: number;
+  readonly reasonId: string;
+  readonly territoryId: string;
 }
 interface DecisionCommand {
   readonly actor: SpoilageActor;
@@ -431,8 +552,10 @@ interface WriteoffWorkspaceRow {
   readonly reason_name: string;
   readonly revision_no: number | null;
   readonly source_driver_name_snapshot: string | null;
+  readonly source_dispatch_date: string | null;
   readonly source_kind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly source_label: string | null;
+  readonly source_territory_number_snapshot: number | null;
   readonly status: "EXECUTED" | "REJECTED" | "SUBMITTED";
   readonly stored_size: number | null;
   readonly version: number;
@@ -497,11 +620,120 @@ function mapRequest(row: WriteoffWorkspaceRow): WriteoffRequestView {
     reasonCode: row.reason_code,
     reasonName: row.reason_name,
     sourceDriverName: row.source_driver_name_snapshot,
+    sourceDispatchDate: row.source_dispatch_date,
     sourceKind: row.source_kind,
     sourceLabel: row.source_label,
+    sourceTerritoryNumber: row.source_territory_number_snapshot,
     status: row.status,
     version: row.version,
   };
+}
+
+interface DriverSpoilageProductRow {
+  readonly classified_quantity: number;
+  readonly dispatched_quantity: number;
+  readonly product_code: string;
+  readonly product_group_code: string;
+  readonly product_group_name: string;
+  readonly product_id: string;
+  readonly product_name: string;
+  readonly territory_id: string;
+}
+
+async function loadDriverSpoilageProducts(
+  client: PoolClient,
+  driverId: string,
+  dispatchDate: string,
+): Promise<DriverSpoilageProductRow[]> {
+  const result = await client.query<DriverSpoilageProductRow>(
+    `with route_territories as (
+       select distinct territory_id
+       from logistics.driver_route_shift
+       where driver_employee_id=$1 and dispatch_date=$2
+     ), dispatched as (
+       select s.territory_id,l.product_id,sum(r.quantity)::int dispatched_quantity
+       from route_territories rt
+       join loading.loading_session s on s.territory_id=rt.territory_id and s.dispatch_date=$2
+       join loading.loading_line l on l.loading_session_id=s.id and l.status<>'CANCELLED'
+       join loading.loading_line_revision r
+         on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+       join loading.loading_line_response x
+         on x.loading_line_revision_id=r.id and x.response_type='CONFIRM'
+       group by s.territory_id,l.product_id
+     ), classified as (
+       select q.territory_id,l.product_id,sum(l.quantity)::int quantity
+       from returns.good_return_request q
+       join returns.good_return_request_line l on l.request_id=q.id
+       where q.source_driver_id=$1 and q.dispatch_date=$2 and q.status in ('PENDING','ACCEPTED')
+       group by q.territory_id,l.product_id
+       union all
+       select w.source_territory_id territory_id,w.product_id,sum(w.quantity)::int quantity
+       from spoilage.writeoff_request w
+       where w.source_driver_id=$1 and w.source_dispatch_date=$2
+         and w.source_territory_id is not null and w.status<>'REJECTED'
+       group by w.source_territory_id,w.product_id
+     ), classified_total as (
+       select territory_id,product_id,sum(quantity)::int quantity
+       from classified group by territory_id,product_id
+     )
+     select d.territory_id,d.product_id,p.product_code,p.name product_name,
+       c.code product_group_code,
+       case c.code
+         when 'BASIC_CAKES' then 'Торты Базовые'
+         when 'PREMIUM_CAKES' then 'Торты Премиум'
+         when 'PIES_AND_PASTRIES' then 'Пироги'
+         when 'DESSERTS' then 'Десерты'
+         when 'DRY_BAKERY' then 'Сухая выпечка'
+         else c.name
+       end product_group_name,
+       d.dispatched_quantity,coalesce(x.quantity,0)::int classified_quantity
+     from dispatched d
+     join catalog.product p on p.id=d.product_id
+     join catalog.category c on c.id=p.category_id
+     left join classified_total x on x.territory_id=d.territory_id and x.product_id=d.product_id
+     where d.dispatched_quantity>0
+     order by case c.code
+       when 'BASIC_CAKES' then 1 when 'PREMIUM_CAKES' then 2
+       when 'PIES_AND_PASTRIES' then 3 when 'DESSERTS' then 4
+       when 'DRY_BAKERY' then 5 else 6 end,p.name`,
+    [driverId, dispatchDate],
+  );
+  return result.rows;
+}
+
+async function requireActiveDriverRoute(
+  client: PoolClient,
+  input: {
+    dispatchDate: string;
+    driverId: string;
+    productId: string;
+    quantity: number;
+    territoryId: string;
+  },
+): Promise<{ territoryNumber: number }> {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `driver-settlement:${input.driverId}:${input.dispatchDate}:${input.territoryId}:${input.productId}`,
+  ]);
+  const route = await client.query<{ territory_number: number }>(
+    `select t.territory_number
+     from logistics.driver_route_shift s
+     join logistics.territory t on t.id=s.territory_id
+     where s.driver_employee_id=$1 and s.dispatch_date=$2 and s.territory_id=$3
+       and s.status='ACTIVE'
+     order by s.started_at desc limit 1`,
+    [input.driverId, input.dispatchDate, input.territoryId],
+  );
+  if (!route.rows[0])
+    throw new ForbiddenException("Порчу можно оформить только до завершения активного рейса");
+  const products = await loadDriverSpoilageProducts(client, input.driverId, input.dispatchDate);
+  const product = products.find(
+    (item) => item.territory_id === input.territoryId && item.product_id === input.productId,
+  );
+  if (!product) throw new ConflictException("Товар не найден в принятой погрузке");
+  const available = Math.max(product.dispatched_quantity - product.classified_quantity, 0);
+  if (input.quantity > available)
+    throw new ConflictException(`Можно оформить не более ${available} шт. этого товара`);
+  return { territoryNumber: route.rows[0].territory_number };
 }
 
 function validateSource(command: CreateCommand) {
@@ -694,8 +926,9 @@ async function outbox(
     [randomUUID(), eventName, id, JSON.stringify(payload)],
   );
 }
-function activeRole(actor: SpoilageActor): "ADMIN" | "WAREHOUSE_KEEPER" {
-  return hasRole(actor, "ADMIN") ? "ADMIN" : "WAREHOUSE_KEEPER";
+function activeRole(actor: SpoilageActor): "ADMIN" | "DRIVER" | "WAREHOUSE_KEEPER" {
+  if (hasRole(actor, "ADMIN")) return "ADMIN";
+  return hasRole(actor, "DRIVER") ? "DRIVER" : "WAREHOUSE_KEEPER";
 }
 function hasRole(actor: SpoilageActor, role: RoleCode) {
   return actor.roles.some((item) => item.roleCode === role);

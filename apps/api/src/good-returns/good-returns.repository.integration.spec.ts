@@ -5,11 +5,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadApiConfig } from "../config";
 import { DatabaseService } from "../database.service";
+import { SpoilageRepository } from "../spoilage/spoilage.repository";
 import { type GoodReturnsActor, GoodReturnsRepository } from "./good-returns.repository";
 
 const hasDatabase = typeof process.env.DATABASE_URL === "string";
 const database = new DatabaseService(loadApiConfig(process.env));
 const repository = new GoodReturnsRepository(database);
+const spoilageRepository = new SpoilageRepository(database);
 const seed = randomUUID();
 const departmentId = randomUUID();
 const adminId = randomUUID();
@@ -25,6 +27,7 @@ const loadingRevisionId = randomUUID();
 const territoryIds = [1, 2].map(
   (number) => `12000000-0000-4000-8000-${number.toString().padStart(12, "0")}`,
 );
+const reasonPackaging = "16000000-0000-4000-8000-000000000001";
 const dispatchDate = new Date(
   Date.UTC(2450, 0, 1 + (Number.parseInt(seed.slice(0, 8), 16) % 30_000)),
 )
@@ -337,6 +340,79 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
       source_dispatch_date: dispatchDate,
       source_territory_number_snapshot: 1,
     });
+  });
+
+  it("shares the remaining driver quantity between returns and spoilage", async () => {
+    const driver = actor(driverId, "DRIVER", "FACTORY", null);
+    const before = await spoilageRepository.driverWorkspace(dispatchDate, driver);
+    expect(before.territories[0]?.products).toContainEqual(
+      expect.objectContaining({
+        alreadyClassifiedQuantity: 10,
+        availableSpoilageQuantity: 4,
+        dispatchedQuantity: 14,
+        productId: requestProductId,
+      }),
+    );
+
+    const key = `driver-spoilage-${seed}`;
+    const created = await spoilageRepository.createDriver({
+      actor: driver,
+      businessDate: dispatchDate,
+      comment: "Повреждено во время рейса",
+      correlationId: randomUUID(),
+      externalDocumentNumber: null,
+      idempotencyKey: key,
+      photoUploadId: null,
+      productId: requestProductId,
+      quantity: 4,
+      reasonId: reasonPackaging,
+      territoryId: territoryIds[0]!,
+    });
+    await expect(
+      spoilageRepository.createDriver({
+        actor: driver,
+        businessDate: dispatchDate,
+        comment: "Безопасный повтор",
+        correlationId: randomUUID(),
+        externalDocumentNumber: null,
+        idempotencyKey: key,
+        photoUploadId: null,
+        productId: requestProductId,
+        quantity: 4,
+        reasonId: reasonPackaging,
+        territoryId: territoryIds[0]!,
+      }),
+    ).resolves.toEqual(created);
+
+    const after = await spoilageRepository.driverWorkspace(dispatchDate, driver);
+    expect(after.territories[0]?.products).toContainEqual(
+      expect.objectContaining({
+        alreadyClassifiedQuantity: 14,
+        availableSpoilageQuantity: 0,
+        productId: requestProductId,
+      }),
+    );
+    expect(after.requests.find((request) => request.id === created.requestId)).toMatchObject({
+      quantity: 4,
+      sourceDispatchDate: dispatchDate,
+      sourceTerritoryNumber: 1,
+      status: "SUBMITTED",
+    });
+    await expect(
+      spoilageRepository.createDriver({
+        actor: driver,
+        businessDate: dispatchDate,
+        comment: "Сверх принятого количества",
+        correlationId: randomUUID(),
+        externalDocumentNumber: null,
+        idempotencyKey: `driver-spoilage-over-${seed}`,
+        photoUploadId: null,
+        productId: requestProductId,
+        quantity: 1,
+        reasonId: reasonPackaging,
+        territoryId: territoryIds[0]!,
+      }),
+    ).rejects.toThrow("Можно оформить не более 0 шт.");
   });
 });
 

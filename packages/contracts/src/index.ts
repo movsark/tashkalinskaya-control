@@ -403,6 +403,7 @@ export interface DriverLogisticsDayView {
   readonly driverProfileVersion: number;
   readonly homeTerritoryId: string | null;
   readonly requests: readonly DriverTerritoryRequestView[];
+  readonly routeHistory: readonly DriverRouteShiftView[];
   readonly runs: readonly TerritoryRunView[];
   readonly territories: readonly TerritoryView[];
   readonly totalNormQuantity: number;
@@ -1341,10 +1342,34 @@ export interface WriteoffRequestView {
   readonly reasonCode: string;
   readonly reasonName: string;
   readonly sourceDriverName: string | null;
+  readonly sourceDispatchDate: string | null;
   readonly sourceKind: WriteoffSourceKind;
   readonly sourceLabel: string | null;
+  readonly sourceTerritoryNumber: number | null;
   readonly status: WriteoffStatus;
   readonly version: number;
+}
+
+export interface DriverSpoilageWorkspaceView {
+  readonly dispatchDate: string;
+  readonly reasons: readonly SpoilageReasonView[];
+  readonly requests: readonly WriteoffRequestView[];
+  readonly serverTime: string;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly number: number;
+    readonly products: readonly {
+      readonly alreadyClassifiedQuantity: number;
+      readonly availableSpoilageQuantity: number;
+      readonly dispatchedQuantity: number;
+      readonly productCode: string;
+      readonly productGroupCode: string;
+      readonly productGroupName: string;
+      readonly productId: string;
+      readonly productName: string;
+    }[];
+  }[];
 }
 
 export interface SpoilageWorkspaceView {

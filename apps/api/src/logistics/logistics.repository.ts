@@ -574,6 +574,7 @@ export class LogisticsRepository {
   }
 
   async endDriverRoute(command: {
+    action: "COMPLETE" | "HANDOVER";
     actorEmployeeId: string;
     correlationId: string;
     idempotencyKey: string;
@@ -601,21 +602,27 @@ export class LogisticsRepository {
       if (route.status !== "ACTIVE" || route.version !== command.version) {
         throw new ConflictException("Рейс уже завершён или передан другому водителю");
       }
-      const reason = "Водитель завершил или передал рейс";
+      const isHandover = command.action === "HANDOVER";
+      const nextStatus = isHandover ? "TAKEN_OVER" : "ENDED";
+      const eventType = isHandover ? "TAKEN_OVER" : "ENDED";
+      const reason = isHandover
+        ? "Водитель передал рейс следующему водителю"
+        : "Водитель окончательно завершил рейс";
       await client.query(
         `update logistics.driver_route_shift
-         set status = 'ENDED', ended_at = now(), end_reason = $2, version = version + 1
+         set status = $2, ended_at = now(), end_reason = $3, version = version + 1
          where id = $1`,
-        [route.id, reason],
+        [route.id, nextStatus, reason],
       );
       await client.query(
         `insert into logistics.driver_route_shift_event(
            id, route_shift_id, event_type, actor_employee_id,
            reason, idempotency_key, correlation_id
-         ) values($1,$2,'ENDED',$3,$4,$5,$6)`,
+         ) values($1,$2,$3,$4,$5,$6,$7)`,
         [
           randomUUID(),
           route.id,
+          eventType,
           command.actorEmployeeId,
           reason,
           command.idempotencyKey,
@@ -625,15 +632,20 @@ export class LogisticsRepository {
       await insertAudit(
         client,
         { ...command, activeRole: "DRIVER" },
-        "DRIVER_ROUTE_ENDED",
+        isHandover ? "DRIVER_ROUTE_HANDED_OVER" : "DRIVER_ROUTE_COMPLETED",
         "DRIVER_ROUTE_SHIFT",
         route.id,
         { territoryId: route.territory_id },
       );
-      await insertOutbox(client, "logistics.driver-route.ended", route.id, {
-        driverEmployeeId: command.actorEmployeeId,
-        territoryId: route.territory_id,
-      });
+      await insertOutbox(
+        client,
+        isHandover ? "logistics.driver-route.taken-over" : "logistics.driver-route.ended",
+        route.id,
+        {
+          driverEmployeeId: command.actorEmployeeId,
+          territoryId: route.territory_id,
+        },
+      );
       return getDriverRouteShift(client, route.id);
     });
   }
@@ -1213,17 +1225,25 @@ export class LogisticsRepository {
     dispatchDate: string,
     driverEmployeeId: string,
   ): Promise<DriverLogisticsDayView> {
-    const [runs, normTotal, territories, requests, availableTerritories, profile, activeRoutes] =
-      await Promise.all([
-        this.database.query<RunRow>(
-          `${runSelect}
+    const [
+      runs,
+      normTotal,
+      territories,
+      requests,
+      availableTerritories,
+      profile,
+      activeRoutes,
+      routeHistory,
+    ] = await Promise.all([
+      this.database.query<RunRow>(
+        `${runSelect}
          where r.dispatch_date = $1 and r.driver_employee_id = $2
            and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
          order by r.planned_start_at, t.territory_number, r.run_no`,
-          [dispatchDate, driverEmployeeId],
-        ),
-        this.database.query<{ total_norm_quantity: number }>(
-          `with driver_territories as (
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<{ total_norm_quantity: number }>(
+        `with driver_territories as (
            select distinct r.territory_id
            from logistics.territory_run r
            where r.dispatch_date = $1 and r.driver_employee_id = $2
@@ -1231,7 +1251,7 @@ export class LogisticsRepository {
            union
            select s.territory_id
            from logistics.driver_route_shift s
-           where s.dispatch_date = $1 and s.driver_employee_id = $2 and s.status = 'ACTIVE'
+           where s.dispatch_date = $1 and s.driver_employee_id = $2
            )
            select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
            from driver_territories dt
@@ -1239,20 +1259,20 @@ export class LogisticsRepository {
              $1::date,
              array[dt.territory_id]
            ) n`,
-          [dispatchDate, driverEmployeeId],
-        ),
-        this.database.query<TerritoryRow>(
-          `select id, territory_number, name, description, sort_order, status, version
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<TerritoryRow>(
+        `select id, territory_number, name, description, sort_order, status, version
          from logistics.territory where status = 'ACTIVE' order by sort_order, territory_number`,
-        ),
-        this.database.query<DriverTerritoryRequestRow>(
-          `${driverRequestSelect}
+      ),
+      this.database.query<DriverTerritoryRequestRow>(
+        `${driverRequestSelect}
          where q.dispatch_date = $1 and q.requester_employee_id = $2
          order by q.created_at desc`,
-          [dispatchDate, driverEmployeeId],
-        ),
-        this.database.query<{ territory_id: string }>(
-          `select distinct territory_id from (
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<{ territory_id: string }>(
+        `select distinct territory_id from (
            select r.territory_id
            from logistics.territory_run r
            where r.dispatch_date = $1 and r.driver_employee_id = $2 and r.status <> 'CANCELLED'
@@ -1271,20 +1291,26 @@ export class LogisticsRepository {
            from logistics.driver_route_shift s
            where s.dispatch_date = $1 and s.driver_employee_id = $2 and s.status = 'ACTIVE'
          ) allowed`,
-          [dispatchDate, driverEmployeeId],
-        ),
-        this.database.query<{ home_territory_id: string | null; version: number }>(
-          `select home_territory_id, version from logistics.driver_profile
+        [dispatchDate, driverEmployeeId],
+      ),
+      this.database.query<{ home_territory_id: string | null; version: number }>(
+        `select home_territory_id, version from logistics.driver_profile
          where employee_id = $1 and status = 'ACTIVE'`,
-          [driverEmployeeId],
-        ),
-        this.database.query<DriverRouteShiftRow>(
-          `${driverRouteShiftSelect}
+        [driverEmployeeId],
+      ),
+      this.database.query<DriverRouteShiftRow>(
+        `${driverRouteShiftSelect}
            where s.dispatch_date = $1 and s.status = 'ACTIVE'
            order by t.sort_order, t.territory_number`,
-          [dispatchDate],
-        ),
-      ]);
+        [dispatchDate],
+      ),
+      this.database.query<DriverRouteShiftRow>(
+        `${driverRouteShiftSelect}
+           where s.dispatch_date = $1 and s.driver_employee_id = $2
+           order by s.started_at desc`,
+        [dispatchDate, driverEmployeeId],
+      ),
+    ]);
     const driverProfile = profile.rows[0];
     if (driverProfile === undefined) throw new NotFoundException("Профиль водителя не найден");
     return {
@@ -1294,6 +1320,7 @@ export class LogisticsRepository {
       driverProfileVersion: driverProfile.version,
       homeTerritoryId: driverProfile.home_territory_id,
       requests: requests.rows.map(mapDriverTerritoryRequest),
+      routeHistory: routeHistory.rows.map(mapDriverRouteShift),
       runs: runs.rows.map(mapRun),
       territories: territories.rows.map(mapTerritory),
       totalNormQuantity: normTotal.rows[0]?.total_norm_quantity ?? 0,

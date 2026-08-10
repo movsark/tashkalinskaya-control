@@ -264,16 +264,16 @@ export class LoadingRepository {
          order by t.territory_number,p.name`,
         [date, actor.employeeId],
       );
-      const activeRoute = await client.query<ActiveDriverRouteRow>(
+      const route = await client.query<ActiveDriverRouteRow>(
         `select territory_id
          from logistics.driver_route_shift
-         where dispatch_date=$1 and driver_employee_id=$2 and status='ACTIVE'
-         order by started_at desc limit 1`,
+         where dispatch_date=$1 and driver_employee_id=$2
+         order by (status='ACTIVE') desc,started_at desc limit 1`,
         [date, actor.employeeId],
       );
       const sessions = await loadSessions(client, date, actor.employeeId);
-      const products = activeRoute.rows[0]
-        ? await loadDriverProducts(client, date, activeRoute.rows[0].territory_id, sessions)
+      const products = route.rows[0]
+        ? await loadDriverProducts(client, date, route.rows[0].territory_id, sessions)
         : [];
       return {
         dispatchDate: date,
@@ -1263,7 +1263,14 @@ async function loadSessions(
      ) active_route on true
      left join identity.employee active_driver on active_driver.id=active_route.driver_employee_id
      left join loading.session_confirmation c on c.loading_session_id=s.id
-     where s.dispatch_date=$1 and ($2::uuid is null or active_route.driver_employee_id=$2)
+     where s.dispatch_date=$1 and (
+       $2::uuid is null
+       or exists (
+         select 1 from logistics.driver_route_shift history
+         where history.dispatch_date=s.dispatch_date and history.territory_id=s.territory_id
+           and history.driver_employee_id=$2
+       )
+     )
      group by s.id,t.territory_number,active_route.driver_employee_id,active_driver.full_name
      order by s.group_no,s.sequence_no`,
     [date, driverId],

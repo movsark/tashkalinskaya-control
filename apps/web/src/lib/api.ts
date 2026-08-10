@@ -19,6 +19,7 @@ import type {
   DriverLogisticsDayView,
   DriverHomeTerritoryView,
   DriverRouteShiftView,
+  DriverSpoilageWorkspaceView,
   DriverTerritoryRequestView,
   GoodReturnDriverWorkspaceView,
   GoodReturnsWorkspaceView,
@@ -774,7 +775,7 @@ export async function activateDriverRoute(
 
 export async function endDriverRoute(
   routeShiftId: string,
-  input: { idempotencyKey: string; version: number },
+  input: { action: "COMPLETE" | "HANDOVER"; idempotencyKey: string; version: number },
   csrfToken: string,
 ): Promise<DriverRouteShiftView> {
   return request(`/logistics/me/route/${routeShiftId}/end`, {
@@ -1634,6 +1635,12 @@ export async function getSpoilageWorkspace(): Promise<SpoilageWorkspaceView> {
   return request("/spoilage/workspace");
 }
 
+export async function getDriverSpoilageWorkspace(
+  dispatchDate: string,
+): Promise<DriverSpoilageWorkspaceView> {
+  return request(`/spoilage/me/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
 export async function uploadSpoilagePhoto(
   file: File,
   csrfToken: string,
@@ -1642,6 +1649,39 @@ export async function uploadSpoilagePhoto(
   body.set("file", file);
   return request("/spoilage/photos", {
     body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function uploadDriverSpoilagePhoto(
+  file: File,
+  csrfToken: string,
+): Promise<SpoilagePhotoView> {
+  const body = new FormData();
+  body.set("file", file);
+  return request("/spoilage/me/photos", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createDriverSpoilageRequest(
+  input: {
+    comment: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    photoUploadId?: string;
+    productId: string;
+    quantity: number;
+    reasonId: string;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request("/spoilage/me/requests", {
+    body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });

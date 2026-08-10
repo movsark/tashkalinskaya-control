@@ -28,6 +28,17 @@ export class CreateWriteoffRequestDto {
   @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 
+export class CreateDriverSpoilageRequestDto {
+  @IsUUID() territoryId!: string;
+  @IsDateString({ strict: true }) dispatchDate!: string;
+  @IsUUID() productId!: string;
+  @IsInt() @Min(1) @Max(100_000) quantity!: number;
+  @IsUUID() reasonId!: string;
+  @IsString() @Length(3, 500) comment!: string;
+  @IsOptional() @IsUUID() photoUploadId?: string;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+}
+
 export class DecideWriteoffRequestDto {
   @IsIn(["APPROVE", "REJECT"]) decision!: "APPROVE" | "REJECT";
   @IsString() @Length(3, 500) comment!: string;

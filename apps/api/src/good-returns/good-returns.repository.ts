@@ -155,7 +155,7 @@ export class GoodReturnsRepository {
         `select distinct t.id,t.name,t.territory_number
          from logistics.driver_route_shift s
          join logistics.territory t on t.id=s.territory_id
-         where s.driver_employee_id=$1 and s.dispatch_date=$2 and s.status='ACTIVE'
+         where s.driver_employee_id=$1 and s.dispatch_date=$2
          order by t.territory_number`,
         [actor.employeeId, dispatchDate],
       );
@@ -198,9 +198,11 @@ export class GoodReturnsRepository {
       );
       if (repeated.rows[0]) return { requestId: repeated.rows[0].id };
       for (const productId of [...command.lines.map((line) => line.productId)].sort())
-        await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        for (const lock of [
           `driver-return:${command.actor.employeeId}:${command.dispatchDate}:${command.territoryId}:${productId}`,
-        ]);
+          `driver-settlement:${command.actor.employeeId}:${command.dispatchDate}:${command.territoryId}:${productId}`,
+        ])
+          await client.query("select pg_advisory_xact_lock(hashtext($1))", [lock]);
       const route = await client.query<{
         driver_name: string;
         territory_name: string;
@@ -901,7 +903,7 @@ async function loadDriverReturnProducts(
     `with route_territories as (
        select distinct territory_id
        from logistics.driver_route_shift
-       where driver_employee_id=$1 and dispatch_date=$2 and status='ACTIVE'
+       where driver_employee_id=$1 and dispatch_date=$2
          and ($3::uuid is null or territory_id=$3)
      ), dispatched as (
        select s.territory_id,l.product_id,sum(r.quantity)::int dispatched_quantity
@@ -912,13 +914,23 @@ async function loadDriverReturnProducts(
          on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
        join loading.loading_line_response x on x.loading_line_revision_id=r.id and x.response_type='CONFIRM'
        group by s.territory_id,l.product_id
-     ), returned as (
+     ), classified as (
        select q.territory_id,l.product_id,sum(l.quantity)::int returned_quantity
        from returns.good_return_request q
        join returns.good_return_request_line l on l.request_id=q.id
        where q.source_driver_id=$1 and q.dispatch_date=$2 and q.status in ('PENDING','ACCEPTED')
          and ($3::uuid is null or q.territory_id=$3)
        group by q.territory_id,l.product_id
+       union all
+       select w.source_territory_id territory_id,w.product_id,sum(w.quantity)::int returned_quantity
+       from spoilage.writeoff_request w
+       where w.source_driver_id=$1 and w.source_dispatch_date=$2
+         and w.source_territory_id is not null and w.status<>'REJECTED'
+         and ($3::uuid is null or w.source_territory_id=$3)
+       group by w.source_territory_id,w.product_id
+     ), returned as (
+       select territory_id,product_id,sum(returned_quantity)::int returned_quantity
+       from classified group by territory_id,product_id
      )
      select d.territory_id,d.product_id,p.product_code,p.name product_name,
        c.code product_group_code,c.name product_group_name,d.dispatched_quantity,

@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   StreamableFile,
@@ -20,6 +21,7 @@ import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identi
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   CheckExternalDocumentDto,
+  CreateDriverSpoilageRequestDto,
   CreateWriteoffRequestDto,
   DecideWriteoffRequestDto,
 } from "./spoilage.dto";
@@ -41,11 +43,31 @@ export class SpoilageController {
     return this.service.workspace(actor(request));
   }
 
+  @Get("me/workspace")
+  @RequireRoles("DRIVER")
+  driverWorkspace(
+    @Query("dispatchDate") dispatchDate: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.driverWorkspace(dispatchDate, actor(request));
+  }
+
   @Post("photos")
   @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   uploadPhoto(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.photos.upload(file, actor(request).employee.id);
+  }
+
+  @Post("me/photos")
+  @RequireRoles("DRIVER")
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  uploadDriverPhoto(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() request: AuthenticatedRequest,
   ) {
@@ -69,6 +91,15 @@ export class SpoilageController {
   @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
   create(@Body() dto: CreateWriteoffRequestDto, @Req() request: AuthenticatedRequest) {
     return this.service.create(dto, actor(request), correlationId(request));
+  }
+
+  @Post("me/requests")
+  @RequireRoles("DRIVER")
+  createDriverRequest(
+    @Body() dto: CreateDriverSpoilageRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.createDriver(dto, actor(request), correlationId(request));
   }
 
   @Post("requests/:id/decision")

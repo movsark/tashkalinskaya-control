@@ -8318,6 +8318,79 @@ select:focus {
   gap: 10px;
 }
 
+.driver-route-settlement,
+.driver-route-completion {
+  display: grid;
+  gap: 16px;
+}
+
+.driver-route-settlement.is-archive {
+  border-color: #c7d4cf;
+  background: #f3f7f5;
+}
+
+.driver-settlement-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #edf1ed;
+}
+
+.driver-settlement-switch button,
+.driver-settlement-switch a {
+  display: grid;
+  place-items: center;
+  min-height: 54px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--forest);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.driver-settlement-switch button.is-active,
+.driver-settlement-switch a.is-active {
+  border-color: #a9c0b7;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(26 80 65 / 9%);
+}
+
+.driver-route-completion {
+  border: 2px solid #d3a93b;
+  background: linear-gradient(145deg, #fffaf0, #fff);
+}
+
+.driver-route-completion > .primary-button {
+  min-height: 58px;
+}
+
+.driver-spoilage-form select,
+.driver-spoilage-form input[type="file"] {
+  width: 100%;
+  min-height: 52px;
+}
+
+.driver-spoilage-requests > article.is-submitted {
+  border-color: #ddb85d;
+  background: #fffaf0;
+}
+
+.driver-spoilage-requests > article.is-executed {
+  border-color: #a8c9bc;
+  background: #f2f8f5;
+}
+
+.driver-spoilage-requests > article.is-rejected {
+  border-color: #ddb2aa;
+  background: #fff5f3;
+}
+
 .returns-request-list > article,
 .driver-return-requests > article {
   display: grid;
@@ -8544,6 +8617,10 @@ select:focus {
   }
 
   .driver-return-product-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-settlement-switch {
     grid-template-columns: 1fr;
   }
 }

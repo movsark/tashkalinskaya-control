@@ -144,6 +144,13 @@ export default function SpoilagePage() {
         </div>
       </section>
 
+      <nav className="driver-settlement-switch" aria-label="Возвраты и порча">
+        <Link href="/returns">Годный возврат</Link>
+        <Link aria-current="page" className="is-active" href="/spoilage">
+          Порча и списание
+        </Link>
+      </nav>
+
       {error ? <p className="form-error spoilage-notice">{error}</p> : null}
       {success ? <p className="logistics-success spoilage-notice">{success}</p> : null}
 
@@ -580,6 +587,11 @@ function openPhoto(id: string) {
 }
 function sourceLabel(item: SpoilageWorkspaceView["requests"][number]) {
   if (item.sourceKind === "RETURN_POOL") return "повреждённый возврат";
+  if (item.sourceTerritoryNumber) {
+    return `Территория ${item.sourceTerritoryNumber}${
+      item.sourceDispatchDate ? ` · вывоз ${formatDate(item.sourceDispatchDate)}` : ""
+    } · ${item.sourceDriverName ?? "водитель"}`;
+  }
   return item.sourceDriverName ?? item.sourceLabel ?? "физическая порча";
 }
 function positive(value: string) {

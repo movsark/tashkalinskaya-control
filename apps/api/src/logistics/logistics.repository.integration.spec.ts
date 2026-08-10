@@ -159,13 +159,14 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     ).rejects.toMatchObject({ status: 409 });
 
     const firstEnded = await repository.endDriverRoute({
+      action: "HANDOVER",
       actorEmployeeId: driverEmployeeId,
       correlationId: randomUUID(),
       idempotencyKey: `route-first-end-${actorEmployeeId}`,
       routeShiftId: started.id,
       version: started.version,
     });
-    expect(firstEnded).toMatchObject({ status: "ENDED" });
+    expect(firstEnded).toMatchObject({ status: "TAKEN_OVER" });
 
     const replacement = await repository.activateDriverRoute({
       actorEmployeeId: replacementDriverEmployeeId,
@@ -189,6 +190,7 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
     expect(day.availableTerritoryIds).toContain(territoryOneId);
 
     const ended = await repository.endDriverRoute({
+      action: "COMPLETE",
       actorEmployeeId: replacementDriverEmployeeId,
       correlationId: randomUUID(),
       idempotencyKey: `route-end-${actorEmployeeId}`,

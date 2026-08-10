@@ -74,6 +74,7 @@ export class LogisticsService {
   ) {
     return this.withConflictMapping(() =>
       this.repository.endDriverRoute({
+        action: dto.action,
         actorEmployeeId,
         correlationId,
         idempotencyKey: dto.idempotencyKey,

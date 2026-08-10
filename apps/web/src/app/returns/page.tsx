@@ -2,6 +2,8 @@
 
 import type {
   AuthenticatedUser,
+  DriverLogisticsDayView,
+  DriverSpoilageWorkspaceView,
   GoodReturnDriverWorkspaceView,
   GoodReturnRequestView,
   GoodReturnsWorkspaceView,
@@ -16,12 +18,17 @@ import {
   allocateGoodReturn,
   ApiRequestError,
   cancelGoodReturnAllocation,
+  createDriverSpoilageRequest,
+  endDriverRoute,
   getDriverGoodReturnsWorkspace,
+  getDriverLogisticsDay,
+  getDriverSpoilageWorkspace,
   getGoodReturnsWorkspace,
   getSession,
   receiveGoodReturn,
   reviseGoodReturnAllocation,
   submitGoodReturnRequest,
+  uploadDriverSpoilagePhoto,
 } from "../../lib/api";
 
 export default function GoodReturnsPage() {
@@ -163,6 +170,13 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
           <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </label>
       </section>
+
+      <nav className="driver-settlement-switch" aria-label="Возвраты и порча">
+        <Link aria-current="page" className="is-active" href="/returns">
+          Годный возврат
+        </Link>
+        <Link href="/spoilage">Порча и списание</Link>
+      </nav>
 
       {data.planPublished ? (
         <p className="returns-warning">
@@ -635,27 +649,61 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
 }
 
 function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
+  const router = useRouter();
   const [date, setDate] = useState(moscowDate());
   const [data, setData] = useState<GoodReturnDriverWorkspaceView | null>(null);
+  const [spoilage, setSpoilage] = useState<DriverSpoilageWorkspaceView | null>(null);
+  const [routeDay, setRouteDay] = useState<DriverLogisticsDayView | null>(null);
+  const [section, setSection] = useState<"RETURN" | "SPOILAGE">("RETURN");
   const [expandedGroup, setExpandedGroup] = useState("");
   const [expandedProduct, setExpandedProduct] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
+  const [spoilageDrafts, setSpoilageDrafts] = useState<
+    Record<string, { comment: string; photo: File | null; quantity: string; reasonId: string }>
+  >({});
+  const [completeConfirmation, setCompleteConfirmation] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   async function reload(message?: string) {
-    setData(await getDriverGoodReturnsWorkspace(date));
+    const [nextReturns, nextSpoilage, nextRouteDay] = await Promise.all([
+      getDriverGoodReturnsWorkspace(date),
+      getDriverSpoilageWorkspace(date),
+      getDriverLogisticsDay(date),
+    ]);
+    setData(nextReturns);
+    setSpoilage(nextSpoilage);
+    setRouteDay(nextRouteDay);
     if (message) setSuccess(message);
   }
 
   useEffect(() => {
     setExpandedGroup("");
     setExpandedProduct("");
-    void getDriverGoodReturnsWorkspace(date)
-      .then(setData)
+    void Promise.all([
+      getDriverGoodReturnsWorkspace(date),
+      getDriverSpoilageWorkspace(date),
+      getDriverLogisticsDay(date),
+    ])
+      .then(([nextReturns, nextSpoilage, nextRouteDay]) => {
+        setData(nextReturns);
+        setSpoilage(nextSpoilage);
+        setRouteDay(nextRouteDay);
+      })
       .catch((caught) => setError(messageOf(caught)));
   }, [date]);
+
+  useEffect(() => {
+    let knownToday = moscowDate();
+    const timer = window.setInterval(() => {
+      const nextToday = moscowDate();
+      if (nextToday === knownToday) return;
+      setDate((current) => (current === knownToday ? nextToday : current));
+      knownToday = nextToday;
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function submit(
     territoryId: string,
@@ -691,6 +739,89 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     }
   }
 
+  async function submitSpoilage(
+    territoryId: string,
+    productId: string,
+    productName: string,
+    availableQuantity: number,
+  ) {
+    const draft = spoilageDrafts[productId] ?? {
+      comment: "",
+      photo: null,
+      quantity: "",
+      reasonId: "",
+    };
+    try {
+      const quantity = positive(draft.quantity);
+      if (quantity > availableQuantity)
+        throw new Error(`Можно оформить не более ${availableQuantity} шт.`);
+      if (!draft.reasonId) throw new Error("Выберите причину порчи");
+      if (draft.comment.trim().length < 3) throw new Error("Коротко опишите порчу");
+      const reason = spoilage?.reasons.find((item) => item.id === draft.reasonId);
+      if (reason?.photoRequired && !draft.photo)
+        throw new Error(`Для причины «${reason.displayName}» нужна фотография`);
+      setBusy(`spoilage:${productId}`);
+      setError("");
+      setSuccess("");
+      const uploaded = draft.photo
+        ? await uploadDriverSpoilagePhoto(draft.photo, session.csrfToken)
+        : null;
+      await createDriverSpoilageRequest(
+        {
+          comment: draft.comment.trim(),
+          dispatchDate: date,
+          idempotencyKey: crypto.randomUUID(),
+          ...(uploaded ? { photoUploadId: uploaded.id } : {}),
+          productId,
+          quantity,
+          reasonId: draft.reasonId,
+          territoryId,
+        },
+        session.csrfToken,
+      );
+      setSpoilageDrafts((current) => ({
+        ...current,
+        [productId]: { comment: "", photo: null, quantity: "", reasonId: "" },
+      }));
+      setExpandedProduct("");
+      await reload(`Порча «${productName}» зафиксирована и отправлена администратору.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function completeRoute() {
+    const activeRoute = routeDay?.activeRoutes.find(
+      (route) => route.driverEmployeeId === session.employee.id,
+    );
+    if (!activeRoute) return;
+    try {
+      setBusy("route-complete");
+      setError("");
+      await endDriverRoute(
+        activeRoute.id,
+        {
+          action: "COMPLETE",
+          idempotencyKey: crypto.randomUUID(),
+          version: activeRoute.version,
+        },
+        session.csrfToken,
+      );
+      router.push("/logistics/today");
+    } catch (caught) {
+      setError(messageOf(caught));
+      setCompleteConfirmation(false);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const activeRoute = routeDay?.activeRoutes.find(
+    (route) => route.driverEmployeeId === session.employee.id,
+  );
+
   return (
     <main className="workspace-layout returns-page simple-workspace driver-returns-page">
       <header className="workspace-header">
@@ -703,9 +834,12 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
 
       <section className="returns-hero">
         <div>
-          <p className="eyebrow">После маршрута</p>
-          <h1>Годный возврат</h1>
-          <p>Выберите товар из фактически полученного ассортимента и укажите остаток.</p>
+          <p className="eyebrow">Завершение рабочего дня</p>
+          <h1>Возвраты и порча</h1>
+          <p>
+            Отметьте то, что возвращается на склад или испорчено. Остальное после завершения рейса в
+            MVP считается реализованным без отдельной записи продажи.
+          </p>
         </div>
         <label>
           Дата вывоза
@@ -716,9 +850,52 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       {error ? <p className="form-error returns-notice">{error}</p> : null}
       {success ? <p className="logistics-success returns-notice">{success}</p> : null}
 
-      {!data ? (
+      {activeRoute ? (
+        <section className="returns-panel driver-route-settlement">
+          <div className="returns-heading">
+            <div>
+              <p className="eyebrow">Активный рейс</p>
+              <h2>Территория {activeRoute.territoryNumber}</h2>
+            </div>
+            <b>Сначала проверьте остатки</b>
+          </div>
+          <div className="driver-settlement-switch" aria-label="Вид операции">
+            <button
+              aria-pressed={section === "RETURN"}
+              className={section === "RETURN" ? "is-active" : undefined}
+              type="button"
+              onClick={() => {
+                setSection("RETURN");
+                setExpandedGroup("");
+                setExpandedProduct("");
+              }}
+            >
+              Годный возврат
+            </button>
+            <button
+              aria-pressed={section === "SPOILAGE"}
+              className={section === "SPOILAGE" ? "is-active" : undefined}
+              type="button"
+              onClick={() => {
+                setSection("SPOILAGE");
+                setExpandedGroup("");
+                setExpandedProduct("");
+              }}
+            >
+              Порча
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section className="returns-panel driver-route-settlement is-archive">
+          <h2>Рейс на эту дату уже завершён</h2>
+          <p>Ниже сохранена история оформленных возвратов и порчи.</p>
+        </section>
+      )}
+
+      {section === "RETURN" && !data ? (
         <p className="warehouse-loading">Загружаем ассортимент вывоза…</p>
-      ) : data.territories.length ? (
+      ) : section === "RETURN" && data?.territories.length ? (
         data.territories.map((territory) => {
           const groups = groupReturnProducts(territory.products);
           return (
@@ -802,7 +979,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                         Получено <b>{product.dispatchedQuantity}</b>
                                       </span>
                                       <span>
-                                        Уже заявлено <b>{product.alreadyReturnedQuantity}</b>
+                                        Уже оформлено <b>{product.alreadyReturnedQuantity}</b>
                                       </span>
                                       <span>
                                         Можно вернуть <b>{product.availableReturnQuantity}</b>
@@ -872,12 +1049,225 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             </section>
           );
         })
-      ) : (
+      ) : section === "RETURN" ? (
         <section className="returns-panel">
           <h2>Нет ассортимента для возврата</h2>
           <p>На выбранную дату у вас нет подтверждённой погрузки территории.</p>
         </section>
-      )}
+      ) : null}
+
+      {section === "SPOILAGE" && !spoilage ? (
+        <p className="warehouse-loading">Загружаем ассортимент для фиксации порчи…</p>
+      ) : section === "SPOILAGE" && spoilage?.territories.length ? (
+        spoilage.territories.map((territory) => {
+          const groups = groupSpoilageProducts(territory.products);
+          return (
+            <section className="returns-panel driver-return-territory" key={territory.id}>
+              <div className="returns-heading">
+                <div>
+                  <p className="eyebrow">Порча из вывоза {formatDate(date)}</p>
+                  <h2>Территория {territory.number}</h2>
+                </div>
+                <b>
+                  {territory.products.reduce((sum, item) => sum + item.dispatchedQuantity, 0)} шт.
+                </b>
+              </div>
+              <div className="driver-return-groups">
+                {groups.map((group) => {
+                  const groupKey = `spoilage:${territory.id}:${group.code}`;
+                  const isOpen = expandedGroup === groupKey;
+                  return (
+                    <article className="driver-return-group" key={groupKey}>
+                      <button
+                        aria-expanded={isOpen}
+                        className="driver-return-group__button"
+                        onClick={() => setExpandedGroup(isOpen ? "" : groupKey)}
+                        type="button"
+                      >
+                        <span>
+                          <strong>{group.name}</strong>
+                          <small>{group.products.length} наим.</small>
+                        </span>
+                        <b>
+                          {group.products.reduce(
+                            (sum, item) => sum + item.availableSpoilageQuantity,
+                            0,
+                          )}{" "}
+                          шт. доступно
+                        </b>
+                        <i>{isOpen ? "−" : "+"}</i>
+                      </button>
+                      {isOpen ? (
+                        <div className="driver-return-products">
+                          {group.products.map((product) => {
+                            const productKey = `spoilage:${territory.id}:${product.productId}`;
+                            const productOpen = expandedProduct === productKey;
+                            const draft = spoilageDrafts[product.productId] ?? {
+                              comment: "",
+                              photo: null,
+                              quantity: "",
+                              reasonId: "",
+                            };
+                            const reason = spoilage.reasons.find(
+                              (item) => item.id === draft.reasonId,
+                            );
+                            return (
+                              <article key={product.productId}>
+                                <button
+                                  aria-expanded={productOpen}
+                                  className="driver-return-product__button"
+                                  onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
+                                  type="button"
+                                >
+                                  <span>
+                                    <small>{product.productCode}</small>
+                                    <strong>{product.productName}</strong>
+                                  </span>
+                                  <span className="driver-return-product__counts">
+                                    <small>Вывезено {product.dispatchedQuantity}</small>
+                                    <b>Оформить до {product.availableSpoilageQuantity}</b>
+                                  </span>
+                                  <i>{productOpen ? "−" : "+"}</i>
+                                </button>
+                                {productOpen ? (
+                                  <form
+                                    className="driver-return-form driver-spoilage-form"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      void submitSpoilage(
+                                        territory.id,
+                                        product.productId,
+                                        product.productName,
+                                        product.availableSpoilageQuantity,
+                                      );
+                                    }}
+                                  >
+                                    <div className="driver-return-product-stats">
+                                      <span>
+                                        Получено <b>{product.dispatchedQuantity}</b>
+                                      </span>
+                                      <span>
+                                        Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
+                                      </span>
+                                      <span>
+                                        Доступно <b>{product.availableSpoilageQuantity}</b>
+                                      </span>
+                                    </div>
+                                    {product.availableSpoilageQuantity ? (
+                                      <>
+                                        <label>
+                                          Количество порчи
+                                          <input
+                                            inputMode="numeric"
+                                            max={product.availableSpoilageQuantity}
+                                            min="1"
+                                            required
+                                            type="number"
+                                            value={draft.quantity}
+                                            onChange={(event) =>
+                                              setSpoilageDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  quantity: event.target.value,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          Причина
+                                          <select
+                                            required
+                                            value={draft.reasonId}
+                                            onChange={(event) =>
+                                              setSpoilageDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  reasonId: event.target.value,
+                                                },
+                                              }))
+                                            }
+                                          >
+                                            <option value="">Выберите причину</option>
+                                            {spoilage.reasons.map((item) => (
+                                              <option key={item.id} value={item.id}>
+                                                {item.displayName}
+                                                {item.photoRequired ? " · нужно фото" : ""}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                        <label>
+                                          Фото{" "}
+                                          {reason?.photoRequired
+                                            ? "· обязательно"
+                                            : "· при необходимости"}
+                                          <input
+                                            accept="image/jpeg,image/png,image/webp"
+                                            required={reason?.photoRequired}
+                                            type="file"
+                                            onChange={(event) =>
+                                              setSpoilageDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  photo: event.target.files?.[0] ?? null,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          Что произошло
+                                          <input
+                                            minLength={3}
+                                            required
+                                            value={draft.comment}
+                                            onChange={(event) =>
+                                              setSpoilageDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  comment: event.target.value,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                        <button
+                                          className="primary-button"
+                                          disabled={busy === `spoilage:${product.productId}`}
+                                        >
+                                          Зафиксировать порчу
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <p className="logistics-empty">
+                                        Весь доступный остаток уже оформлен.
+                                      </p>
+                                    )}
+                                  </form>
+                                ) : null}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })
+      ) : section === "SPOILAGE" ? (
+        <section className="returns-panel">
+          <h2>Нет ассортимента для порчи</h2>
+          <p>На выбранную дату у вас нет подтверждённой погрузки территории.</p>
+        </section>
+      ) : null}
 
       {data?.requests.length ? (
         <section className="returns-panel">
@@ -893,6 +1283,86 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               <DriverReturnRequestCard key={request.id} request={request} />
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {spoilage?.requests.length ? (
+        <section className="returns-panel">
+          <div className="returns-heading">
+            <div>
+              <p className="eyebrow">История</p>
+              <h2>Моя порча</h2>
+            </div>
+            <b>{spoilage.requests.length}</b>
+          </div>
+          <div className="driver-return-requests driver-spoilage-requests">
+            {spoilage.requests.map((request) => (
+              <article className={`is-${request.status.toLocaleLowerCase()}`} key={request.id}>
+                <div>
+                  <strong>{request.productName}</strong>
+                  <span>
+                    Территория {request.sourceTerritoryNumber ?? "—"} · {request.quantity} шт.
+                  </span>
+                </div>
+                <div>
+                  <span>{request.reasonName}</span>
+                  <small>{request.comment}</small>
+                </div>
+                <div>
+                  <b>
+                    {request.status === "SUBMITTED"
+                      ? "Ожидает решения"
+                      : request.status === "EXECUTED"
+                        ? "Списано"
+                        : "Отклонено"}
+                  </b>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeRoute ? (
+        <section className="returns-panel driver-route-completion">
+          <p className="eyebrow">Последний шаг</p>
+          <h2>Завершить рейс</h2>
+          <p>
+            Проверьте годный возврат и порчу. После завершения всё остальное количество считается
+            реализованным только для рабочего итога MVP; отдельная продажа пока не создаётся.
+          </p>
+          {completeConfirmation ? (
+            <div className="driver-route-duty__confirmation">
+              <strong>Все возвраты и порча указаны верно?</strong>
+              <p>После подтверждения рейс закроется, а записи останутся в истории этой даты.</p>
+              <div className="driver-route-duty__actions">
+                <button
+                  className="secondary-button"
+                  disabled={busy === "route-complete"}
+                  type="button"
+                  onClick={() => setCompleteConfirmation(false)}
+                >
+                  Нет, перепроверить
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={busy === "route-complete"}
+                  type="button"
+                  onClick={() => void completeRoute()}
+                >
+                  {busy === "route-complete" ? "Завершаем…" : "Да, завершить рейс"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => setCompleteConfirmation(true)}
+            >
+              Завершить рейс
+            </button>
+          )}
         </section>
       ) : null}
     </main>
@@ -923,6 +1393,19 @@ function DriverReturnRequestCard({ request }: { request: GoodReturnRequestView }
 
 function groupReturnProducts(
   products: GoodReturnDriverWorkspaceView["territories"][number]["products"],
+) {
+  const order = ["BASIC_CAKES", "PREMIUM_CAKES", "PIES_AND_PASTRIES", "DESSERTS", "DRY_BAKERY"];
+  return order
+    .map((code) => ({
+      code,
+      name: products.find((product) => product.productGroupCode === code)?.productGroupName ?? code,
+      products: products.filter((product) => product.productGroupCode === code),
+    }))
+    .filter((group) => group.products.length);
+}
+
+function groupSpoilageProducts(
+  products: DriverSpoilageWorkspaceView["territories"][number]["products"],
 ) {
   const order = ["BASIC_CAKES", "PREMIUM_CAKES", "PIES_AND_PASTRIES", "DESSERTS", "DRY_BAKERY"];
   return order
