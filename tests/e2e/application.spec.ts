@@ -3095,11 +3095,14 @@ test.describe("B20 browser and HTTP regression", () => {
     const spoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
     await expect(spoilageDialog).toBeVisible();
     await expect(spoilageDialog.getByText("SV-001 · Сухая выпечка")).toBeVisible();
-    await expect(spoilageDialog.getByText("Порча из магазина")).toBeVisible();
     await expect(spoilageDialog.getByLabel("Количество порчи")).toBeVisible();
     await expect(spoilageDialog.getByLabel("Причина")).toHaveCount(0);
     await expect(spoilageDialog.getByText(/Фото/u)).toHaveCount(0);
     await expect(spoilageDialog.getByLabel("Что произошло")).toHaveCount(0);
+    await expect(page.getByText("Порча из магазина", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Указать количество", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Сегодня вывезено/u)).toHaveCount(0);
+    await expect(page.getByText(/Оформить до/u)).toHaveCount(0);
     await expect(spoilageResults.locator("form")).toHaveCount(0);
     await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
     const spoilageDialogBox = await spoilageDialog.boundingBox();
@@ -3134,6 +3137,16 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(submittedSpoilage[1]).toMatchObject({
       productId: storeReturnProductId,
       quantity: 1,
+      territoryId,
+    });
+    await page.getByLabel("Найти испорченный товар").fill("рыжик");
+    await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
+    const unlimitedSpoilageDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await unlimitedSpoilageDialog.getByLabel("Количество порчи").fill("25");
+    await unlimitedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    expect(submittedSpoilage[2]).toMatchObject({
+      productId,
+      quantity: 25,
       territoryId,
     });
   });

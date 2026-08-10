@@ -242,9 +242,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     territoryNumber: number;
   } | null>(null);
   const [selectedSpoilageProduct, setSelectedSpoilageProduct] = useState<{
-    alreadyClassifiedQuantity: number;
-    availableSpoilageQuantity: number;
-    dispatchedQuantity: number;
     productCode: string;
     productGroupName: string;
     productId: string;
@@ -332,17 +329,10 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     }
   }
 
-  async function submitSpoilage(
-    territoryId: string,
-    productId: string,
-    productName: string,
-    availableQuantity: number | null,
-  ) {
+  async function submitSpoilage(territoryId: string, productId: string, productName: string) {
     const draft = spoilageDrafts[productId] ?? { quantity: "" };
     try {
       const quantity = positive(draft.quantity);
-      if (availableQuantity !== null && quantity > availableQuantity)
-        throw new Error(`Можно оформить не более ${availableQuantity} шт.`);
       const reason =
         spoilage?.reasons.find((item) => item.code === "OTHER") ??
         spoilage?.reasons.find((item) => !item.photoRequired);
@@ -439,7 +429,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     showGroupName = false,
   ) {
     const productKey = `spoilage:${territory.id}:${product.productId}`;
-    const fromTodayRoute = product.dispatchedQuantity > 0;
 
     return (
       <article key={productKey}>
@@ -450,9 +439,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             setError("");
             setSelectedReturnProduct(null);
             setSelectedSpoilageProduct({
-              alreadyClassifiedQuantity: product.alreadyClassifiedQuantity,
-              availableSpoilageQuantity: product.availableSpoilageQuantity,
-              dispatchedQuantity: product.dispatchedQuantity,
               productCode: product.productCode,
               productGroupName: product.productGroupName,
               productId: product.productId,
@@ -468,18 +454,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               {showGroupName ? ` · ${product.productGroupName}` : ""}
             </small>
             <strong>{product.productName}</strong>
-          </span>
-          <span className="driver-return-product__counts">
-            <small>
-              {fromTodayRoute
-                ? `Сегодня вывезено ${product.dispatchedQuantity}`
-                : "Порча из магазина"}
-            </small>
-            <b>
-              {fromTodayRoute
-                ? `Оформить до ${product.availableSpoilageQuantity}`
-                : "Указать количество"}
-            </b>
           </span>
           <i>+</i>
         </button>
@@ -822,9 +796,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 selectedSpoilageProduct.territoryId,
                 selectedSpoilageProduct.productId,
                 selectedSpoilageProduct.productName,
-                selectedSpoilageProduct.dispatchedQuantity > 0
-                  ? selectedSpoilageProduct.availableSpoilageQuantity
-                  : null,
               );
             }}
           >
@@ -846,65 +817,35 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 ×
               </button>
             </header>
-            {selectedSpoilageProduct.dispatchedQuantity > 0 ? (
-              <div className="driver-return-product-stats">
-                <span>
-                  Вывезено <b>{selectedSpoilageProduct.dispatchedQuantity}</b>
-                </span>
-                <span>
-                  Уже оформлено <b>{selectedSpoilageProduct.alreadyClassifiedQuantity}</b>
-                </span>
-                <span>
-                  Доступно <b>{selectedSpoilageProduct.availableSpoilageQuantity}</b>
-                </span>
-              </div>
-            ) : (
-              <p className="driver-acceptance-dialog__quantity">
-                <span>Источник</span>
-                <strong>Порча из магазина</strong>
-              </p>
-            )}
-            {selectedSpoilageProduct.dispatchedQuantity === 0 ||
-            selectedSpoilageProduct.availableSpoilageQuantity > 0 ? (
-              <>
-                <label>
-                  Количество порчи
-                  <input
-                    autoFocus
-                    inputMode="numeric"
-                    max={
-                      selectedSpoilageProduct.dispatchedQuantity > 0
-                        ? selectedSpoilageProduct.availableSpoilageQuantity
-                        : undefined
-                    }
-                    min="1"
-                    required
-                    type="number"
-                    value={selectedSpoilageDraft.quantity}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [selectedSpoilageProduct.productId]: {
-                          ...selectedSpoilageDraft,
-                          quantity: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                {error ? <p className="form-error">{error}</p> : null}
-                <button
-                  className="primary-button"
-                  disabled={busy === `spoilage:${selectedSpoilageProduct.productId}`}
-                >
-                  {busy === `spoilage:${selectedSpoilageProduct.productId}`
-                    ? "Отправляем…"
-                    : "Отправить порчу"}
-                </button>
-              </>
-            ) : (
-              <p className="logistics-empty">Всё доступное количество уже оформлено.</p>
-            )}
+            <label>
+              Количество порчи
+              <input
+                autoFocus
+                inputMode="numeric"
+                min="1"
+                required
+                type="number"
+                value={selectedSpoilageDraft.quantity}
+                onChange={(event) =>
+                  setSpoilageDrafts((current) => ({
+                    ...current,
+                    [selectedSpoilageProduct.productId]: {
+                      ...selectedSpoilageDraft,
+                      quantity: event.target.value,
+                    },
+                  }))
+                }
+              />
+            </label>
+            {error ? <p className="form-error">{error}</p> : null}
+            <button
+              className="primary-button"
+              disabled={busy === `spoilage:${selectedSpoilageProduct.productId}`}
+            >
+              {busy === `spoilage:${selectedSpoilageProduct.productId}`
+                ? "Отправляем…"
+                : "Отправить порчу"}
+            </button>
           </form>
         </div>
       ) : null}

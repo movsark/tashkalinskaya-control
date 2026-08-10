@@ -240,7 +240,6 @@ export class SpoilageRepository {
             dispatchDate: command.sourceDispatchDate!,
             driverId: command.actor.employeeId,
             productId: command.productId,
-            quantity: command.quantity,
             territoryId: command.sourceTerritoryId,
           })
         : null;
@@ -834,7 +833,6 @@ async function requireActiveDriverRoute(
     dispatchDate: string;
     driverId: string;
     productId: string;
-    quantity: number;
     territoryId: string;
   },
 ): Promise<{
@@ -855,21 +853,9 @@ async function requireActiveDriverRoute(
   );
   if (!route.rows[0])
     throw new ForbiddenException("Порчу можно оформить только до завершения активного рейса");
-  const products = await loadDriverSpoilageProducts(client, input.driverId, input.dispatchDate);
-  const product = products.find(
-    (item) => item.territory_id === input.territoryId && item.product_id === input.productId,
-  );
-  if (!product) throw new ConflictException("Товар не найден в активном каталоге");
-  if (product.dispatched_quantity === 0)
-    return {
-      sourceBasis: "STORE_RETURN",
-      territoryNumber: route.rows[0].territory_number,
-    };
-  const available = Math.max(product.dispatched_quantity - product.classified_quantity, 0);
-  if (input.quantity > available)
-    throw new ConflictException(`Можно оформить не более ${available} шт. этого товара`);
+  await requireProduct(client, input.productId);
   return {
-    sourceBasis: "TODAY_ROUTE",
+    sourceBasis: "STORE_RETURN",
     territoryNumber: route.rows[0].territory_number,
   };
 }
