@@ -4,13 +4,14 @@ import type { AuthenticatedUser, WarehouseQueueItemView } from "@tashkalinskaya/
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { getSession, getWarehouseWorkspace } from "../lib/api";
+import { getGoodReturnsWorkspace, getSession, getWarehouseWorkspace } from "../lib/api";
 import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
 import { AccountMenu } from "./account-menu";
 
 export function AppHome() {
   const [session, setSession] = useState<AuthenticatedUser | null | undefined>(undefined);
+  const [returnAttentionCount, setReturnAttentionCount] = useState(0);
   const [warehouseAttentionCount, setWarehouseAttentionCount] = useState(0);
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export function AppHome() {
   );
   const destinations = useMemo(() => destinationsFor(roles), [roles]);
   const canSeeWarehouse = destinations.some((destination) => destination.href === "/warehouse");
+  const canReceiveReturns = roles.some((role) => role === "ADMIN" || role === "WAREHOUSE_KEEPER");
 
   useEffect(() => {
     if (!canSeeWarehouse) {
@@ -55,6 +57,32 @@ export function AppHome() {
       window.clearInterval(timer);
     };
   }, [canSeeWarehouse]);
+
+  useEffect(() => {
+    if (!canReceiveReturns) {
+      setReturnAttentionCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const workspace = await getGoodReturnsWorkspace(moscowDate());
+        if (active) {
+          setReturnAttentionCount(
+            workspace.requests.filter((request) => request.status === "PENDING").length,
+          );
+        }
+      } catch {
+        if (active) setReturnAttentionCount(0);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [canReceiveReturns]);
 
   if (session === undefined) {
     return <main className="app-home app-home--loading">Загружаем…</main>;
@@ -116,23 +144,27 @@ export function AppHome() {
           {destinations
             .filter((destination) => destination.href !== primary.href)
             .slice(0, 8)
-            .map((destination) => (
-              <Link
-                className={
-                  destination.href === "/warehouse" && warehouseAttentionCount > 0
-                    ? "has-attention"
-                    : undefined
-                }
-                href={destination.href}
-                key={destination.href}
-              >
-                <span aria-hidden="true">{destination.symbol}</span>
-                <strong>{destinationLabelFor(destination, roles)}</strong>
-                {destination.href === "/warehouse" ? (
-                  <WarehouseAttentionBadge count={warehouseAttentionCount} />
-                ) : null}
-              </Link>
-            ))}
+            .map((destination) => {
+              const hasAttention =
+                (destination.href === "/warehouse" && warehouseAttentionCount > 0) ||
+                (destination.href === "/returns" && returnAttentionCount > 0);
+              return (
+                <Link
+                  className={hasAttention ? "has-attention" : undefined}
+                  href={destination.href}
+                  key={destination.href}
+                >
+                  <span aria-hidden="true">{destination.symbol}</span>
+                  <strong>{destinationLabelFor(destination, roles)}</strong>
+                  {destination.href === "/warehouse" ? (
+                    <WarehouseAttentionBadge count={warehouseAttentionCount} />
+                  ) : null}
+                  {destination.href === "/returns" ? (
+                    <ReturnAttentionBadge count={returnAttentionCount} />
+                  ) : null}
+                </Link>
+              );
+            })}
           <Link href="/notifications">
             <span aria-hidden="true">!</span>
             <strong>Уведомления</strong>
@@ -145,11 +177,17 @@ export function AppHome() {
 
 function WarehouseAttentionBadge({ count }: { count: number }) {
   if (count === 0) return null;
+  return <AttentionBadge count={count} label={`На складе ${formatWaitingProducts(count)}`} />;
+}
+
+function ReturnAttentionBadge({ count }: { count: number }) {
+  if (count === 0) return null;
+  return <AttentionBadge count={count} label={formatPendingReturns(count)} />;
+}
+
+function AttentionBadge({ count, label }: { count: number; label: string }) {
   return (
-    <b
-      aria-label={`На складе ${formatWaitingProducts(count)}`}
-      className="app-home__attention-badge"
-    >
+    <b aria-label={label} className="app-home__attention-badge">
       {count > 99 ? "99+" : count}
     </b>
   );
@@ -175,6 +213,19 @@ function formatWaitingProducts(count: number): string {
   if (last === 1) return `ожидает ${count} товар`;
   if (last >= 2 && last <= 4) return `ожидают ${count} товара`;
   return `ожидают ${count} товаров`;
+}
+
+function formatPendingReturns(count: number): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return `Ожидают подтверждения ${count} возвратов`;
+  if (last === 1) return `Ожидает подтверждения ${count} возврат`;
+  if (last >= 2 && last <= 4) return `Ожидают подтверждения ${count} возврата`;
+  return `Ожидают подтверждения ${count} возвратов`;
+}
+
+function moscowDate(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }
 
 function firstName(fullName: string): string {

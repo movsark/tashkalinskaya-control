@@ -201,7 +201,7 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             data.requests
               .filter((item) => item.status === "PENDING")
               .map((item) => (
-                <article key={item.id}>
+                <article className="is-pending" key={item.id}>
                   <div className="returns-request-summary">
                     <div>
                       <span>

@@ -9000,6 +9000,12 @@ select:focus {
   background: #fff;
 }
 
+.returns-request-list > article.is-pending {
+  border-color: #ddb85d;
+  background: #fff7df;
+  box-shadow: 0 8px 22px rgb(139 90 23 / 10%);
+}
+
 .returns-request-summary,
 .returns-request-summary > div,
 .returns-request-lines,

@@ -318,6 +318,37 @@ test.describe("B20 browser and HTTP regression", () => {
           warehouseName: "Склад готовой продукции",
         });
       }
+      if (path.endsWith("/returns/workspace")) {
+        return json(route, {
+          allocations: [],
+          dispatchDate: "2026-08-10",
+          drivers: [],
+          planPublished: false,
+          pool: [],
+          products: [],
+          receipts: [],
+          requests: [
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-10",
+              id: "20000000-0000-4000-8000-000000000041",
+              lines: [],
+              sourceDriverId: "20000000-0000-4000-8000-000000000042",
+              sourceDriverName: "Тестовый Водитель",
+              status: "PENDING",
+              submittedAt: "2026-08-10T07:08:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000043",
+              territoryNumber: 1,
+              totalQuantity: 1,
+              version: 1,
+            },
+          ],
+          serverTime: "2026-08-10T07:08:00.000Z",
+          territories: [],
+        });
+      }
       if (path.endsWith("/notifications/workspace")) {
         return json(route, notificationWorkspace());
       }
@@ -336,6 +367,9 @@ test.describe("B20 browser and HTTP regression", () => {
     const warehousePrimary = page.getByRole("link", { name: /Основная работа Склад/ });
     await expect(warehousePrimary).toBeVisible();
     await expect(warehousePrimary.getByLabel("На складе ожидают 2 товара")).toHaveText("2");
+    const returnsLink = page.getByRole("link", { name: /Возвраты и порча/ });
+    await expect(returnsLink).toHaveClass(/has-attention/u);
+    await expect(returnsLink.getByLabel("Ожидает подтверждения 1 возврат")).toHaveText("1");
     await warehousePrimary.click();
     await expect(page).toHaveURL(/\/warehouse$/);
     const reminder = page.getByRole("status");
@@ -2611,6 +2645,11 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
     await expect(page.getByText("Территория 2 · вывоз 05 августа")).toBeVisible();
     await expect(page.getByText("Водитель Территории 2")).toBeVisible();
+    const pendingReturn = page.locator(".returns-request-list > article.is-pending");
+    await expect(pendingReturn).toBeVisible();
+    expect(
+      await pendingReturn.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgb(255, 247, 223)");
     const returnRequestLines = page.locator(".returns-request-lines");
     await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
     await expect(returnRequestLines.getByText("3 шт.")).toBeVisible();
