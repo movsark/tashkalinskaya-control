@@ -2555,7 +2555,31 @@ test.describe("B20 browser and HTTP regression", () => {
           pool: [],
           products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
           receipts: [],
-          requests: [],
+          requests: [
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-05",
+              id: "20000000-0000-4000-8000-000000000115",
+              lines: [
+                {
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  quantity: 3,
+                },
+              ],
+              sourceDriverId: "20000000-0000-4000-8000-000000000116",
+              sourceDriverName: "Водитель Территории 2",
+              status: "PENDING",
+              submittedAt: "2026-08-05T15:00:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000117",
+              territoryNumber: 2,
+              totalQuantity: 3,
+              version: 1,
+            },
+          ],
           serverTime: "2026-08-04T08:00:00+03:00",
           territories: [],
         });
@@ -2584,6 +2608,12 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
+    await expect(page.getByText("Территория 2 · вывоз 05 августа")).toBeVisible();
+    await expect(page.getByText("Водитель Территории 2")).toBeVisible();
+    const returnRequestLines = page.locator(".returns-request-lines");
+    await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
+    await expect(returnRequestLines.getByText("3 шт.")).toBeVisible();
     await expect(page.locator(".returns-allocation-form")).not.toHaveAttribute("open");
     await expect(page.locator(".returns-receipts")).not.toBeVisible();
 
@@ -2900,14 +2930,16 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Возвраты и порча" })).toBeVisible();
     await page.getByLabel("Найти товар для возврата").fill("рыжик");
+    await expect(page.getByText(/Вернуть до/u)).toHaveCount(0);
     await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
-    await page.getByLabel("Количество годного возврата").fill("10");
-    await page.getByLabel("Комментарий").fill("Не продано");
-    await page.getByRole("button", { name: "Отправить возврат на приёмку" }).click();
+    const returnDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await expect(returnDialog).toBeVisible();
+    await expect(returnDialog.getByText("TB-015 · Территория 2")).toBeVisible();
+    await returnDialog.getByLabel("Количество возврата").fill("10");
+    await returnDialog.getByRole("button", { name: "Вернуть на склад" }).click();
 
     await expect(page.getByText("Ожидает приёмки", { exact: true })).toBeVisible();
     expect(submitted).toMatchObject({
-      comment: "Не продано",
       lines: [{ productId, quantity: 10 }],
       territoryId,
     });

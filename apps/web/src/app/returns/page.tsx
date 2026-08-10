@@ -658,6 +658,14 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const [productSearch, setProductSearch] = useState("");
   const [expandedGroup, setExpandedGroup] = useState("");
   const [expandedProduct, setExpandedProduct] = useState("");
+  const [selectedReturnProduct, setSelectedReturnProduct] = useState<{
+    availableQuantity: number;
+    productCode: string;
+    productId: string;
+    productName: string;
+    territoryId: string;
+    territoryNumber: number;
+  } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
   const [spoilageDrafts, setSpoilageDrafts] = useState<
     Record<string, { comment: string; photo: File | null; quantity: string; reasonId: string }>
@@ -682,6 +690,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   useEffect(() => {
     setExpandedGroup("");
     setExpandedProduct("");
+    setSelectedReturnProduct(null);
     void Promise.all([
       getDriverGoodReturnsWorkspace(date),
       getDriverSpoilageWorkspace(date),
@@ -731,6 +740,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         session.csrfToken,
       );
       setDrafts((current) => ({ ...current, [productId]: { comment: "", quantity: "" } }));
+      setSelectedReturnProduct(null);
       setExpandedProduct("");
       await reload(`Возврат «${productName}» отправлен на приёмку.`);
     } catch (caught) {
@@ -894,6 +904,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 setSection("RETURN");
                 setExpandedGroup("");
                 setExpandedProduct("");
+                setSelectedReturnProduct(null);
               }}
             >
               Годный возврат
@@ -906,6 +917,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 setSection("SPOILAGE");
                 setExpandedGroup("");
                 setExpandedProduct("");
+                setSelectedReturnProduct(null);
               }}
             >
               Порча
@@ -921,6 +933,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 onChange={(event) => {
                   setExpandedGroup("");
                   setExpandedProduct("");
+                  setSelectedReturnProduct(null);
                   setProductSearch(event.target.value);
                 }}
                 placeholder="Название, код или группа"
@@ -933,6 +946,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   onClick={() => {
                     setExpandedGroup("");
                     setExpandedProduct("");
+                    setSelectedReturnProduct(null);
                     setProductSearch("");
                   }}
                   type="button"
@@ -1017,106 +1031,29 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                       {isOpen ? (
                         <div className="driver-return-products">
                           {group.products.map((product) => {
-                            const productKey = `${territory.id}:${product.productId}`;
-                            const productOpen = expandedProduct === productKey;
-                            const draft = drafts[product.productId] ?? {
-                              comment: "",
-                              quantity: "",
-                            };
                             return (
                               <article key={product.productId}>
                                 <button
-                                  aria-expanded={productOpen}
-                                  className="driver-return-product__button"
-                                  onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
+                                  aria-haspopup="dialog"
+                                  className="driver-return-product__button is-return-selector"
+                                  onClick={() =>
+                                    setSelectedReturnProduct({
+                                      availableQuantity: product.availableReturnQuantity,
+                                      productCode: product.productCode,
+                                      productId: product.productId,
+                                      productName: product.productName,
+                                      territoryId: territory.id,
+                                      territoryNumber: territory.number,
+                                    })
+                                  }
                                   type="button"
                                 >
                                   <span>
                                     <small>{product.productCode}</small>
                                     <strong>{product.productName}</strong>
                                   </span>
-                                  <span className="driver-return-product__counts">
-                                    <small>Вывезено {product.dispatchedQuantity}</small>
-                                    <b>Вернуть до {product.availableReturnQuantity}</b>
-                                  </span>
-                                  <i>{productOpen ? "−" : "+"}</i>
+                                  <i>+</i>
                                 </button>
-                                {productOpen ? (
-                                  <form
-                                    className="driver-return-form"
-                                    onSubmit={(event) => {
-                                      event.preventDefault();
-                                      void submit(
-                                        territory.id,
-                                        product.productId,
-                                        product.productName,
-                                        product.availableReturnQuantity,
-                                      );
-                                    }}
-                                  >
-                                    <div className="driver-return-product-stats">
-                                      <span>
-                                        Получено <b>{product.dispatchedQuantity}</b>
-                                      </span>
-                                      <span>
-                                        Уже оформлено <b>{product.alreadyReturnedQuantity}</b>
-                                      </span>
-                                      <span>
-                                        Можно вернуть <b>{product.availableReturnQuantity}</b>
-                                      </span>
-                                    </div>
-                                    {product.availableReturnQuantity ? (
-                                      <>
-                                        <label>
-                                          Количество годного возврата
-                                          <input
-                                            inputMode="numeric"
-                                            max={product.availableReturnQuantity}
-                                            min="1"
-                                            required
-                                            type="number"
-                                            value={draft.quantity}
-                                            onChange={(event) =>
-                                              setDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  quantity: event.target.value,
-                                                },
-                                              }))
-                                            }
-                                          />
-                                        </label>
-                                        <label>
-                                          Комментарий
-                                          <input
-                                            placeholder="Необязательно"
-                                            value={draft.comment}
-                                            onChange={(event) =>
-                                              setDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  comment: event.target.value,
-                                                },
-                                              }))
-                                            }
-                                          />
-                                        </label>
-                                        <button
-                                          className="primary-button"
-                                          disabled={busy === product.productId}
-                                        >
-                                          Отправить возврат на приёмку
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <p className="logistics-empty">
-                                        Весь доступный остаток уже заявлен или принят.
-                                      </p>
-                                    )}
-                                  </form>
-                                ) : null}
                               </article>
                             );
                           })}
@@ -1139,6 +1076,82 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
           <h2>Нет ассортимента для возврата</h2>
           <p>На выбранную дату у вас нет подтверждённой погрузки территории.</p>
         </section>
+      ) : null}
+
+      {selectedReturnProduct ? (
+        <div className="driver-return-dialog-layer">
+          <button
+            aria-label="Закрыть окно возврата"
+            className="driver-acceptance-dialog-backdrop"
+            onClick={() => setSelectedReturnProduct(null)}
+            type="button"
+          />
+          <form
+            aria-labelledby="driver-return-dialog-title"
+            aria-modal="true"
+            className="driver-acceptance-dialog driver-return-dialog"
+            role="dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit(
+                selectedReturnProduct.territoryId,
+                selectedReturnProduct.productId,
+                selectedReturnProduct.productName,
+                selectedReturnProduct.availableQuantity,
+              );
+            }}
+          >
+            <header>
+              <div>
+                <small>
+                  {selectedReturnProduct.productCode} · Территория{" "}
+                  {selectedReturnProduct.territoryNumber}
+                </small>
+                <h2 id="driver-return-dialog-title">{selectedReturnProduct.productName}</h2>
+              </div>
+              <button
+                aria-label="Закрыть окно возврата"
+                onClick={() => setSelectedReturnProduct(null)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            {selectedReturnProduct.availableQuantity ? (
+              <>
+                <label>
+                  Количество возврата
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    max={selectedReturnProduct.availableQuantity}
+                    min="1"
+                    required
+                    type="number"
+                    value={drafts[selectedReturnProduct.productId]?.quantity ?? ""}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedReturnProduct.productId]: {
+                          comment: current[selectedReturnProduct.productId]?.comment ?? "",
+                          quantity: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={busy === selectedReturnProduct.productId}
+                >
+                  {busy === selectedReturnProduct.productId ? "Отправляем…" : "Вернуть на склад"}
+                </button>
+              </>
+            ) : (
+              <p className="logistics-empty">Возврат по этой позиции уже оформлен.</p>
+            )}
+          </form>
+        </div>
       ) : null}
 
       {section === "SPOILAGE" && !spoilage ? (

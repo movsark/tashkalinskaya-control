@@ -9061,6 +9061,10 @@ select:focus {
   padding: 10px 14px;
 }
 
+.driver-return-product__button.is-return-selector {
+  grid-template-columns: minmax(0, 1fr) 32px;
+}
+
 .driver-return-group__button > span,
 .driver-return-product__button > span,
 .driver-return-product__counts {
@@ -9122,6 +9126,24 @@ select:focus {
 .driver-return-product-stats b {
   color: var(--forest);
   font-size: 1.05rem;
+}
+
+.driver-return-dialog-layer {
+  position: fixed;
+  z-index: 185;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.driver-return-dialog {
+  width: min(430px, 100%);
+}
+
+.driver-return-dialog > .primary-button {
+  min-height: 58px;
+  font-size: 1rem;
 }
 
 .driver-return-requests > article.is-pending {
