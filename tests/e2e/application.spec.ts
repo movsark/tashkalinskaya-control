@@ -2843,6 +2843,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Назначения территориям", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Последние приёмки", { exact: true })).toHaveCount(0);
 
+    await page.setViewportSize({ height: 844, width: 1180 });
     await page.goto("/spoilage");
     await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Порча от водителей" })).toBeVisible();
@@ -2859,6 +2860,14 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(periodPanel).toContainText("4 шт.");
     await expect(periodPanel.getByText("Общая порча · все территории")).toHaveCount(0);
     await expect(periodPanel.getByText("Ожидает приёмки", { exact: true })).toHaveCount(0);
+    const periodHeadingBox = await periodPanel.getByRole("heading").boundingBox();
+    const fromDateBox = await periodPanel.getByLabel("С", { exact: true }).boundingBox();
+    const toDateBox = await periodPanel.getByLabel("По", { exact: true }).boundingBox();
+    expect(periodHeadingBox).not.toBeNull();
+    expect(fromDateBox).not.toBeNull();
+    expect(toDateBox).not.toBeNull();
+    expect(periodHeadingBox!.y + periodHeadingBox!.height).toBeLessThanOrEqual(fromDateBox!.y);
+    expect(fromDateBox!.x + fromDateBox!.width).toBeLessThanOrEqual(toDateBox!.x);
     await expect(page.locator(".spoilage-territory-group")).toHaveCount(1);
     const territoryOne = page.locator(".spoilage-territory-group").filter({
       hasText: "Территория 1",
@@ -2872,6 +2881,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-05");
     await periodPanel.getByLabel("По", { exact: true }).fill("2026-08-06");
     await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-06");
+    await page.setViewportSize({ height: 844, width: 390 });
     const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
     await expect(pendingSpoilage).toHaveCount(1);
     await expect(pendingSpoilage).toContainText("Территория 2");

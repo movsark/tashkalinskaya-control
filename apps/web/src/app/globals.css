@@ -9811,17 +9811,16 @@ select:focus {
 }
 
 .spoilage-period-heading {
-  align-items: end;
-  display: flex;
+  align-items: stretch;
+  display: grid;
   gap: 20px;
-  justify-content: space-between;
 }
 
 .spoilage-period-controls {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(180px, 1fr));
-  justify-items: end;
+  width: 100%;
 }
 
 .spoilage-period-controls > label {
@@ -9829,15 +9828,19 @@ select:focus {
   font-size: 0.82rem;
   font-weight: 800;
   gap: 6px;
-  min-width: 220px;
+  min-width: 0;
+  width: 100%;
 }
 
 .spoilage-period-controls input {
   background: white;
   border: 1px solid #cfd8d3;
   border-radius: 12px;
+  box-sizing: border-box;
   min-height: 52px;
+  min-width: 0;
   padding: 9px 12px;
+  width: 100%;
 }
 
 .spoilage-period-total article {
@@ -10250,14 +10253,8 @@ select:focus {
     min-width: 0;
   }
 
-  .spoilage-period-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .spoilage-period-controls {
     grid-template-columns: 1fr;
-    justify-items: stretch;
   }
 
   .spoilage-period-controls > label {
