@@ -1182,6 +1182,11 @@ export interface GoodReturnPoolLineView {
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
+  readonly sources: readonly {
+    readonly quantity: number;
+    readonly sourceDriverName: string;
+    readonly territoryNumber: number | null;
+  }[];
   readonly totalQuantity: number;
 }
 
@@ -1197,9 +1202,54 @@ export interface GoodReturnReceiptView {
   }[];
   readonly receivedAt: string;
   readonly receivedByName: string;
+  readonly sourceDispatchDate: string | null;
   readonly sourceDriverId: string;
   readonly sourceDriverName: string;
+  readonly sourceTerritoryNumber: number | null;
   readonly totalQuantity: number;
+}
+
+export interface GoodReturnRequestView {
+  readonly acceptedAt: string | null;
+  readonly acceptedByName: string | null;
+  readonly comment: string | null;
+  readonly dispatchDate: string;
+  readonly id: string;
+  readonly lines: readonly {
+    readonly productCode: string;
+    readonly productId: string;
+    readonly productName: string;
+    readonly quantity: number;
+  }[];
+  readonly sourceDriverId: string;
+  readonly sourceDriverName: string;
+  readonly status: "ACCEPTED" | "PENDING";
+  readonly submittedAt: string;
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly totalQuantity: number;
+  readonly version: number;
+}
+
+export interface GoodReturnDriverWorkspaceView {
+  readonly dispatchDate: string;
+  readonly requests: readonly GoodReturnRequestView[];
+  readonly serverTime: string;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly number: number;
+    readonly products: readonly {
+      readonly alreadyReturnedQuantity: number;
+      readonly availableReturnQuantity: number;
+      readonly dispatchedQuantity: number;
+      readonly productCode: string;
+      readonly productGroupCode: string;
+      readonly productGroupName: string;
+      readonly productId: string;
+      readonly productName: string;
+    }[];
+  }[];
 }
 
 export interface GoodReturnAllocationView {
@@ -1229,6 +1279,7 @@ export interface GoodReturnsWorkspaceView {
     readonly name: string;
   }[];
   readonly receipts: readonly GoodReturnReceiptView[];
+  readonly requests: readonly GoodReturnRequestView[];
   readonly serverTime: string;
   readonly territories: readonly {
     readonly id: string;

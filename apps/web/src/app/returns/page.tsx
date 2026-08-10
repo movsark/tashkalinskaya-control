@@ -1,25 +1,69 @@
 "use client";
 
-import type { AuthenticatedUser, GoodReturnsWorkspaceView } from "@tashkalinskaya/contracts";
+import type {
+  AuthenticatedUser,
+  GoodReturnDriverWorkspaceView,
+  GoodReturnRequestView,
+  GoodReturnsWorkspaceView,
+} from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
+  acceptGoodReturnRequest,
   allocateGoodReturn,
   ApiRequestError,
   cancelGoodReturnAllocation,
+  getDriverGoodReturnsWorkspace,
   getGoodReturnsWorkspace,
   getSession,
   receiveGoodReturn,
   reviseGoodReturnAllocation,
+  submitGoodReturnRequest,
 } from "../../lib/api";
 
 export default function GoodReturnsPage() {
   const router = useRouter();
-  const [date, setDate] = useState(moscowDate());
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void getSession()
+      .then(setSession)
+      .catch((caught) => {
+        if (caught instanceof ApiRequestError && caught.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        setError(messageOf(caught));
+      });
+  }, [router]);
+
+  if (!session)
+    return (
+      <main className="workspace-layout returns-page simple-workspace">
+        <header className="workspace-header">
+          <AppBrand />
+        </header>
+        <p className="warehouse-loading">{error || "Загружаем годный возврат…"}</p>
+      </main>
+    );
+
+  const roleCodes = session.employee.roles.map((role) => role.roleCode);
+  const isDriverOnly =
+    roleCodes.includes("DRIVER") &&
+    !roleCodes.some((role) => ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role));
+  return isDriverOnly ? (
+    <DriverGoodReturnsPage session={session} />
+  ) : (
+    <StaffGoodReturnsPage session={session} />
+  );
+}
+
+function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
+  const [date, setDate] = useState(moscowDate());
   const [data, setData] = useState<GoodReturnsWorkspaceView | null>(null);
   const [receipt, setReceipt] = useState({
     comment: "",
@@ -54,18 +98,12 @@ export default function GoodReturnsPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const current = await getSession();
-        setSession(current);
         setData(await getGoodReturnsWorkspace(date));
       } catch (caught) {
-        if (caught instanceof ApiRequestError && caught.status === 401) {
-          router.replace("/login");
-          return;
-        }
         setError(messageOf(caught));
       }
     })();
-  }, [date, router]);
+  }, [date]);
 
   async function command(id: string, action: () => Promise<unknown>, message: string) {
     setBusy(id);
@@ -86,7 +124,7 @@ export default function GoodReturnsPage() {
     return session.csrfToken;
   }
 
-  if (!data || !session)
+  if (!data)
     return (
       <main className="workspace-layout returns-page simple-workspace">
         <header className="workspace-header">
@@ -134,6 +172,66 @@ export default function GoodReturnsPage() {
       ) : null}
       {error ? <p className="form-error returns-notice">{error}</p> : null}
       {success ? <p className="logistics-success returns-notice">{success}</p> : null}
+
+      <section className="returns-panel returns-request-queue">
+        <div className="returns-heading">
+          <div>
+            <p className="eyebrow">Нужно принять</p>
+            <h2>Возврат от водителей</h2>
+            <p>Заявка попадёт в складской остаток только после одной подтверждённой приёмки.</p>
+          </div>
+          <b>{data.requests.filter((item) => item.status === "PENDING").length}</b>
+        </div>
+        <div className="returns-request-list">
+          {data.requests.filter((item) => item.status === "PENDING").length ? (
+            data.requests
+              .filter((item) => item.status === "PENDING")
+              .map((item) => (
+                <article key={item.id}>
+                  <div className="returns-request-summary">
+                    <div>
+                      <span>
+                        Территория {item.territoryNumber} · вывоз {formatDate(item.dispatchDate)}
+                      </span>
+                      <strong>{item.sourceDriverName}</strong>
+                    </div>
+                    <b>{item.totalQuantity} шт.</b>
+                  </div>
+                  <div className="returns-request-lines">
+                    {item.lines.map((line) => (
+                      <span key={line.productId}>
+                        {line.productName} <b>{line.quantity} шт.</b>
+                      </span>
+                    ))}
+                  </div>
+                  {item.comment ? <p>{item.comment}</p> : null}
+                  {canChange ? (
+                    <button
+                      className="primary-button"
+                      disabled={busy === item.id}
+                      onClick={() =>
+                        void command(
+                          item.id,
+                          () =>
+                            acceptGoodReturnRequest(
+                              item.id,
+                              { idempotencyKey: crypto.randomUUID(), version: item.version },
+                              csrf(),
+                            ),
+                          "Возврат принят и добавлен в возвратный остаток.",
+                        )
+                      }
+                    >
+                      Принять возврат
+                    </button>
+                  ) : null}
+                </article>
+              ))
+          ) : (
+            <p className="logistics-empty">Новых возвратов для приёмки нет.</p>
+          )}
+        </div>
+      </section>
 
       <section className="warehouse-metrics returns-metrics">
         <Metric label="Свободно в пуле" value={poolTotal} />
@@ -355,6 +453,21 @@ export default function GoodReturnsPage() {
                     <dd>{line.totalQuantity}</dd>
                   </div>
                 </dl>
+                {line.sources.length ? (
+                  <div className="returns-pool-sources">
+                    <strong>Откуда поступил возврат</strong>
+                    {line.sources.map((source) => (
+                      <span
+                        key={`${source.territoryNumber ?? "manual"}-${source.sourceDriverName}`}
+                      >
+                        {source.territoryNumber
+                          ? `Территория ${source.territoryNumber}`
+                          : "Ручная приёмка"}
+                        : {source.quantity} шт. · {source.sourceDriverName}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </article>
             ))
           ) : (
@@ -495,6 +608,14 @@ export default function GoodReturnsPage() {
                   {formatDate(item.businessDate)} · {timeLabel(item.receivedAt)}
                 </span>
                 <strong>{item.sourceDriverName}</strong>
+                {item.sourceTerritoryNumber ? (
+                  <small>
+                    Территория {item.sourceTerritoryNumber}
+                    {item.sourceDispatchDate
+                      ? ` · вывоз ${formatDate(item.sourceDispatchDate)}`
+                      : ""}
+                  </small>
+                ) : null}
                 <small>Принял: {item.receivedByName}</small>
               </div>
               <div>
@@ -511,6 +632,306 @@ export default function GoodReturnsPage() {
       </details>
     </main>
   );
+}
+
+function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
+  const [date, setDate] = useState(moscowDate());
+  const [data, setData] = useState<GoodReturnDriverWorkspaceView | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState("");
+  const [expandedProduct, setExpandedProduct] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function reload(message?: string) {
+    setData(await getDriverGoodReturnsWorkspace(date));
+    if (message) setSuccess(message);
+  }
+
+  useEffect(() => {
+    setExpandedGroup("");
+    setExpandedProduct("");
+    void getDriverGoodReturnsWorkspace(date)
+      .then(setData)
+      .catch((caught) => setError(messageOf(caught)));
+  }, [date]);
+
+  async function submit(
+    territoryId: string,
+    productId: string,
+    productName: string,
+    availableQuantity: number,
+  ) {
+    const draft = drafts[productId] ?? { comment: "", quantity: "" };
+    try {
+      const quantity = positive(draft.quantity);
+      if (quantity > availableQuantity)
+        throw new Error(`Можно вернуть не более ${availableQuantity} шт.`);
+      setBusy(productId);
+      setError("");
+      setSuccess("");
+      await submitGoodReturnRequest(
+        {
+          ...(draft.comment.trim() ? { comment: draft.comment.trim() } : {}),
+          dispatchDate: date,
+          idempotencyKey: crypto.randomUUID(),
+          lines: [{ productId, quantity }],
+          territoryId,
+        },
+        session.csrfToken,
+      );
+      setDrafts((current) => ({ ...current, [productId]: { comment: "", quantity: "" } }));
+      setExpandedProduct("");
+      await reload(`Возврат «${productName}» отправлен на приёмку.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <main className="workspace-layout returns-page simple-workspace driver-returns-page">
+      <header className="workspace-header">
+        <AppBrand />
+        <div className="workspace-user">
+          <span>{session.employee.fullName}</span>
+          <small>Водитель</small>
+        </div>
+      </header>
+
+      <section className="returns-hero">
+        <div>
+          <p className="eyebrow">После маршрута</p>
+          <h1>Годный возврат</h1>
+          <p>Выберите товар из фактически полученного ассортимента и укажите остаток.</p>
+        </div>
+        <label>
+          Дата вывоза
+          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        </label>
+      </section>
+
+      {error ? <p className="form-error returns-notice">{error}</p> : null}
+      {success ? <p className="logistics-success returns-notice">{success}</p> : null}
+
+      {!data ? (
+        <p className="warehouse-loading">Загружаем ассортимент вывоза…</p>
+      ) : data.territories.length ? (
+        data.territories.map((territory) => {
+          const groups = groupReturnProducts(territory.products);
+          return (
+            <section className="returns-panel driver-return-territory" key={territory.id}>
+              <div className="returns-heading">
+                <div>
+                  <p className="eyebrow">Ваш вывоз {formatDate(date)}</p>
+                  <h2>Территория {territory.number}</h2>
+                </div>
+                <b>
+                  {territory.products.reduce((sum, item) => sum + item.dispatchedQuantity, 0)} шт.
+                </b>
+              </div>
+              <div className="driver-return-groups">
+                {groups.map((group) => {
+                  const groupKey = `${territory.id}:${group.code}`;
+                  const isOpen = expandedGroup === groupKey;
+                  return (
+                    <article className="driver-return-group" key={groupKey}>
+                      <button
+                        aria-expanded={isOpen}
+                        className="driver-return-group__button"
+                        onClick={() => setExpandedGroup(isOpen ? "" : groupKey)}
+                        type="button"
+                      >
+                        <span>
+                          <strong>{group.name}</strong>
+                          <small>{group.products.length} наим.</small>
+                        </span>
+                        <b>
+                          {group.products.reduce(
+                            (sum, item) => sum + item.availableReturnQuantity,
+                            0,
+                          )}{" "}
+                          шт. можно вернуть
+                        </b>
+                        <i>{isOpen ? "−" : "+"}</i>
+                      </button>
+                      {isOpen ? (
+                        <div className="driver-return-products">
+                          {group.products.map((product) => {
+                            const productKey = `${territory.id}:${product.productId}`;
+                            const productOpen = expandedProduct === productKey;
+                            const draft = drafts[product.productId] ?? {
+                              comment: "",
+                              quantity: "",
+                            };
+                            return (
+                              <article key={product.productId}>
+                                <button
+                                  aria-expanded={productOpen}
+                                  className="driver-return-product__button"
+                                  onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
+                                  type="button"
+                                >
+                                  <span>
+                                    <small>{product.productCode}</small>
+                                    <strong>{product.productName}</strong>
+                                  </span>
+                                  <span className="driver-return-product__counts">
+                                    <small>Вывезено {product.dispatchedQuantity}</small>
+                                    <b>Вернуть до {product.availableReturnQuantity}</b>
+                                  </span>
+                                  <i>{productOpen ? "−" : "+"}</i>
+                                </button>
+                                {productOpen ? (
+                                  <form
+                                    className="driver-return-form"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      void submit(
+                                        territory.id,
+                                        product.productId,
+                                        product.productName,
+                                        product.availableReturnQuantity,
+                                      );
+                                    }}
+                                  >
+                                    <div className="driver-return-product-stats">
+                                      <span>
+                                        Получено <b>{product.dispatchedQuantity}</b>
+                                      </span>
+                                      <span>
+                                        Уже заявлено <b>{product.alreadyReturnedQuantity}</b>
+                                      </span>
+                                      <span>
+                                        Можно вернуть <b>{product.availableReturnQuantity}</b>
+                                      </span>
+                                    </div>
+                                    {product.availableReturnQuantity ? (
+                                      <>
+                                        <label>
+                                          Количество годного возврата
+                                          <input
+                                            inputMode="numeric"
+                                            max={product.availableReturnQuantity}
+                                            min="1"
+                                            required
+                                            type="number"
+                                            value={draft.quantity}
+                                            onChange={(event) =>
+                                              setDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  quantity: event.target.value,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          Комментарий
+                                          <input
+                                            placeholder="Необязательно"
+                                            value={draft.comment}
+                                            onChange={(event) =>
+                                              setDrafts((current) => ({
+                                                ...current,
+                                                [product.productId]: {
+                                                  ...draft,
+                                                  comment: event.target.value,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                        <button
+                                          className="primary-button"
+                                          disabled={busy === product.productId}
+                                        >
+                                          Отправить возврат на приёмку
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <p className="logistics-empty">
+                                        Весь доступный остаток уже заявлен или принят.
+                                      </p>
+                                    )}
+                                  </form>
+                                ) : null}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })
+      ) : (
+        <section className="returns-panel">
+          <h2>Нет ассортимента для возврата</h2>
+          <p>На выбранную дату у вас нет подтверждённой погрузки территории.</p>
+        </section>
+      )}
+
+      {data?.requests.length ? (
+        <section className="returns-panel">
+          <div className="returns-heading">
+            <div>
+              <p className="eyebrow">История</p>
+              <h2>Мои возвраты</h2>
+            </div>
+            <b>{data.requests.length}</b>
+          </div>
+          <div className="driver-return-requests">
+            {data.requests.map((request) => (
+              <DriverReturnRequestCard key={request.id} request={request} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </main>
+  );
+}
+
+function DriverReturnRequestCard({ request }: { request: GoodReturnRequestView }) {
+  return (
+    <article className={`is-${request.status.toLocaleLowerCase()}`}>
+      <div>
+        <strong>Территория {request.territoryNumber}</strong>
+        <span>{formatDate(request.dispatchDate)}</span>
+      </div>
+      <div>
+        {request.lines.map((line) => (
+          <span key={line.productId}>
+            {line.productName} · <b>{line.quantity} шт.</b>
+          </span>
+        ))}
+      </div>
+      <div>
+        <b>{request.status === "PENDING" ? "Ожидает приёмки" : "Принято"}</b>
+        {request.acceptedByName ? <small>Принял: {request.acceptedByName}</small> : null}
+      </div>
+    </article>
+  );
+}
+
+function groupReturnProducts(
+  products: GoodReturnDriverWorkspaceView["territories"][number]["products"],
+) {
+  const order = ["BASIC_CAKES", "PREMIUM_CAKES", "PIES_AND_PASTRIES", "DESSERTS", "DRY_BAKERY"];
+  return order
+    .map((code) => ({
+      code,
+      name: products.find((product) => product.productGroupCode === code)?.productGroupName ?? code,
+      products: products.filter((product) => product.productGroupCode === code),
+    }))
+    .filter((group) => group.products.length);
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

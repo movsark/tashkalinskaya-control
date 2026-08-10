@@ -14,10 +14,12 @@ import { ApiTags } from "@nestjs/swagger";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  AcceptGoodReturnRequestDto,
   AllocateGoodReturnDto,
   CancelGoodReturnAllocationDto,
   ReceiveGoodReturnDto,
   ReviseGoodReturnAllocationDto,
+  SubmitGoodReturnRequestDto,
 } from "./good-returns.dto";
 import { GoodReturnsService } from "./good-returns.service";
 
@@ -31,6 +33,31 @@ export class GoodReturnsController {
   @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER")
   workspace(@Query("dispatchDate") dispatchDate: string, @Req() request: AuthenticatedRequest) {
     return this.service.workspace(dispatchDate, actor(request));
+  }
+
+  @Get("me/workspace")
+  @RequireRoles("DRIVER")
+  driverWorkspace(
+    @Query("dispatchDate") dispatchDate: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.driverWorkspace(dispatchDate, actor(request));
+  }
+
+  @Post("requests")
+  @RequireRoles("DRIVER")
+  submitRequest(@Body() dto: SubmitGoodReturnRequestDto, @Req() request: AuthenticatedRequest) {
+    return this.service.submitRequest(dto, actor(request), correlationId(request));
+  }
+
+  @Post("requests/:id/accept")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  acceptRequest(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AcceptGoodReturnRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.acceptRequest(id, dto, actor(request), correlationId(request));
   }
 
   @Post("receipts")

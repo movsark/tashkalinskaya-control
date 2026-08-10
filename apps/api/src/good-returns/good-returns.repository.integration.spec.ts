@@ -16,6 +16,12 @@ const adminId = randomUUID();
 const keeperId = randomUUID();
 const driverId = randomUUID();
 const productId = randomUUID();
+const requestProductId = randomUUID();
+const loadingGroupId = randomUUID();
+const territoryRunId = randomUUID();
+const loadingSessionId = randomUUID();
+const loadingLineId = randomUUID();
+const loadingRevisionId = randomUUID();
 const territoryIds = [1, 2].map(
   (number) => `12000000-0000-4000-8000-${number.toString().padStart(12, "0")}`,
 );
@@ -58,8 +64,82 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
     ]);
     await database.query(
       `insert into catalog.product(id,product_code,name,category_id,unit_code,primary_workshop_id)
-       values($1,$2,$3,'11000000-0000-4000-8000-000000000001','PCS',$4)`,
-      [productId, `B15-${seed.slice(0, 8).toUpperCase()}`, "Торт возвратный B15", departmentId],
+       values($1,$2,$3,'11000000-0000-4000-8000-000000000001','PCS',$4),
+             ($5,$6,$7,'11000000-0000-4000-8000-000000000001','PCS',$4)`,
+      [
+        productId,
+        `B15-${seed.slice(0, 8).toUpperCase()}`,
+        "Торт возвратный B15",
+        departmentId,
+        requestProductId,
+        `B15-REQUEST-${seed.slice(0, 6).toUpperCase()}`,
+        "ТБ Рыжик возврат водителя B15",
+      ],
+    );
+    await database.query(
+      `insert into logistics.driver_route_shift(
+         id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+       ) values($1,$2,$3,$4,$5,$6)`,
+      [randomUUID(), dispatchDate, territoryIds[0], driverId, adminId, randomUUID()],
+    );
+    await database.query(
+      `insert into logistics.loading_group(
+         id,dispatch_date,group_no,planned_start_at,planned_end_at,loading_zone,status,published_at,created_by
+       ) values($1,$2,1,$2::date + time '05:00',$2::date + time '06:00',$3,'PUBLISHED',now(),$4)`,
+      [loadingGroupId, dispatchDate, `B15-${seed.slice(0, 8)}`, adminId],
+    );
+    await database.query(
+      `insert into logistics.territory_run(
+         id,dispatch_date,territory_id,driver_employee_id,loading_group_id,sequence_no,
+         planned_start_at,planned_end_at,status,territory_code_snapshot,territory_name_snapshot,
+         driver_name_snapshot,vehicle_snapshot,published_at,ready_at,created_by,updated_by,correlation_id
+       ) values($1,$2,$3,$4,$5,1,$2::date + time '05:00',$2::date + time '06:00',
+         'LOADING','T1','Территория 1','Водитель B15','Рейс территории 1',
+         now(),now(),$6,$6,$7)`,
+      [
+        territoryRunId,
+        dispatchDate,
+        territoryIds[0],
+        driverId,
+        loadingGroupId,
+        adminId,
+        randomUUID(),
+      ],
+    );
+    await database.query(
+      `insert into loading.loading_session(
+         id,loading_group_id,territory_run_id,warehouse_id,dispatch_date,territory_id,
+         territory_code_snapshot,territory_name_snapshot,run_no,group_no,sequence_no,
+         driver_employee_id,driver_name_snapshot,vehicle_snapshot,status,started_by
+       ) values($1,$2,$3,'15000000-0000-4000-8000-000000000001',$4,$5,
+         'T1','Территория 1',1,1,1,$6,'Водитель B15','Рейс территории 1','IN_PROGRESS',$7)`,
+      [
+        loadingSessionId,
+        loadingGroupId,
+        territoryRunId,
+        dispatchDate,
+        territoryIds[0],
+        driverId,
+        keeperId,
+      ],
+    );
+    await database.query(
+      `insert into loading.loading_line(id,loading_session_id,product_id,status)
+       values($1,$2,$3,'CONFIRMED')`,
+      [loadingLineId, loadingSessionId, requestProductId],
+    );
+    await database.query(
+      `insert into loading.loading_line_revision(
+         id,loading_line_id,revision_no,quantity,reserved_free_quantity,created_by,
+         actor_role,idempotency_key,correlation_id
+       ) values($1,$2,1,14,14,$3,'WAREHOUSE_KEEPER',$4,$5)`,
+      [loadingRevisionId, loadingLineId, keeperId, `loading-${seed}`, randomUUID()],
+    );
+    await database.query(
+      `insert into loading.loading_line_response(
+         id,loading_line_revision_id,response_type,driver_employee_id,idempotency_key,correlation_id
+       ) values($1,$2,'CONFIRM',$3,$4,$5)`,
+      [randomUUID(), loadingRevisionId, driverId, `confirm-${seed}`, randomUUID()],
     );
   });
 
@@ -163,6 +243,100 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
         (item) => item.productId === productId && item.status !== "CANCELLED",
       ),
     ).toHaveLength(1);
+  });
+
+  it("lets a driver request a partial return and accepts it exactly once", async () => {
+    const driver = actor(driverId, "DRIVER", "FACTORY", null);
+    const before = await repository.driverWorkspace(dispatchDate, driver);
+    expect(before.territories[0]?.products).toContainEqual(
+      expect.objectContaining({
+        availableReturnQuantity: 14,
+        dispatchedQuantity: 14,
+        productId: requestProductId,
+      }),
+    );
+
+    const created = await repository.submitRequest({
+      actor: driver,
+      comment: "Не продано, упаковка целая",
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `request-${seed}`,
+      lines: [{ productId: requestProductId, quantity: 10 }],
+      territoryId: territoryIds[0]!,
+    });
+    const repeated = await repository.submitRequest({
+      actor: driver,
+      comment: "Повтор отправки",
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `request-${seed}`,
+      lines: [{ productId: requestProductId, quantity: 10 }],
+      territoryId: territoryIds[0]!,
+    });
+    expect(repeated).toEqual(created);
+    expect(
+      (await repository.driverWorkspace(dispatchDate, driver)).territories[0]?.products,
+    ).toContainEqual(
+      expect.objectContaining({
+        alreadyReturnedQuantity: 10,
+        availableReturnQuantity: 4,
+        productId: requestProductId,
+      }),
+    );
+
+    const attempts = await Promise.allSettled([
+      repository.acceptRequest({
+        actor: keeper,
+        correlationId: randomUUID(),
+        idempotencyKey: `accept-keeper-${seed}`,
+        requestId: created.requestId,
+        version: 1,
+      }),
+      repository.acceptRequest({
+        actor: admin,
+        correlationId: randomUUID(),
+        idempotencyKey: `accept-admin-${seed}`,
+        requestId: created.requestId,
+        version: 1,
+      }),
+    ]);
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === "rejected")).toHaveLength(1);
+
+    const requestBalance = await database.query<{ bucket: string; quantity: number }>(
+      `select bucket,quantity from warehouse.stock_balance
+       where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
+      [requestProductId],
+    );
+    expect(
+      Object.fromEntries(requestBalance.rows.map((row) => [row.bucket, row.quantity])),
+    ).toMatchObject({ RETURN_EXTERNAL: -10, RETURN_POOL: 10 });
+    const workspace = await repository.workspace(dispatchDate, keeper);
+    expect(workspace.requests.find((request) => request.id === created.requestId)).toMatchObject({
+      comment: "Не продано, упаковка целая",
+      status: "ACCEPTED",
+      territoryNumber: 1,
+      totalQuantity: 10,
+    });
+    const receipt = await database.query<{
+      quantity: number;
+      source_dispatch_date: string;
+      source_territory_number_snapshot: number;
+    }>(
+      `select r.source_dispatch_date::text,r.source_territory_number_snapshot,
+         sum(l.quantity)::int quantity
+       from returns.good_return_receipt r
+       join returns.good_return_line l on l.receipt_id=r.id
+       where r.source_request_id=$1
+       group by r.id`,
+      [created.requestId],
+    );
+    expect(receipt.rows[0]).toMatchObject({
+      quantity: 10,
+      source_dispatch_date: dispatchDate,
+      source_territory_number_snapshot: 1,
+    });
   });
 });
 

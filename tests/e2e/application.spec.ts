@@ -2328,6 +2328,7 @@ test.describe("B20 browser and HTTP regression", () => {
           pool: [],
           products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
           receipts: [],
+          requests: [],
           serverTime: "2026-08-04T08:00:00+03:00",
           territories: [],
         });
@@ -2366,6 +2367,132 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/notifications");
     await expect(page.getByRole("heading", { name: "Уведомления" })).toBeVisible();
     await expect(page.locator(".notifications-settings")).not.toHaveAttribute("open");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("a driver sends a partial good return from the grouped received assortment", async ({
+    page,
+  }) => {
+    const driverId = "20000000-0000-4000-8000-000000000120";
+    const territoryId = "20000000-0000-4000-8000-000000000121";
+    const productId = "20000000-0000-4000-8000-000000000122";
+    let submitted: Record<string, unknown> | null = null;
+    let requestCreated = false;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-driver-return",
+          deviceId: "20000000-0000-4000-8000-000000000123",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Водитель возврата",
+            id: driverId,
+            login: "driver-return",
+            personnelNumber: "RETURN-DRIVER",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000124",
+                roleCode: "DRIVER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/returns/me/workspace")) {
+        return json(route, {
+          dispatchDate: "2026-08-10",
+          requests: requestCreated
+            ? [
+                {
+                  acceptedAt: null,
+                  acceptedByName: null,
+                  comment: "Не продано",
+                  dispatchDate: "2026-08-10",
+                  id: "20000000-0000-4000-8000-000000000125",
+                  lines: [
+                    {
+                      productCode: "TB-015",
+                      productId,
+                      productName: "ТБ Рыжик (0,8кг)",
+                      quantity: 10,
+                    },
+                  ],
+                  sourceDriverId: driverId,
+                  sourceDriverName: "Водитель возврата",
+                  status: "PENDING",
+                  submittedAt: "2026-08-10T15:00:00.000Z",
+                  territoryId,
+                  territoryNumber: 2,
+                  totalQuantity: 10,
+                  version: 1,
+                },
+              ]
+            : [],
+          serverTime: "2026-08-10T15:00:00.000Z",
+          territories: [
+            {
+              id: territoryId,
+              name: "Территория 2",
+              number: 2,
+              products: [
+                {
+                  alreadyReturnedQuantity: requestCreated ? 10 : 0,
+                  availableReturnQuantity: requestCreated ? 4 : 14,
+                  dispatchedQuantity: 14,
+                  productCode: "TB-015",
+                  productGroupCode: "BASIC_CAKES",
+                  productGroupName: "Торты Базовые",
+                  productId,
+                  productName: "ТБ Рыжик (0,8кг)",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (path.endsWith("/returns/requests")) {
+        submitted = request.postDataJSON() as Record<string, unknown>;
+        requestCreated = true;
+        return json(route, { requestId: "20000000-0000-4000-8000-000000000125" });
+      }
+      if (path.endsWith("/notifications/workspace")) return json(route, notificationWorkspace());
+      if (path.endsWith("/health/live"))
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T15:00:00.000Z",
+          version: "test",
+        });
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/returns");
+    await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
+    await page.getByRole("button", { name: /Торты Базовые/u }).click();
+    await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
+    await page.getByLabel("Количество годного возврата").fill("10");
+    await page.getByLabel("Комментарий").fill("Не продано");
+    await page.getByRole("button", { name: "Отправить возврат на приёмку" }).click();
+
+    await expect(page.getByText("Ожидает приёмки", { exact: true })).toBeVisible();
+    expect(submitted).toMatchObject({
+      comment: "Не продано",
+      lines: [{ productId, quantity: 10 }],
+      territoryId,
+    });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

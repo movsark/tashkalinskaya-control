@@ -20,6 +20,7 @@ import type {
   DriverHomeTerritoryView,
   DriverRouteShiftView,
   DriverTerritoryRequestView,
+  GoodReturnDriverWorkspaceView,
   GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
@@ -1533,6 +1534,41 @@ export async function getGoodReturnsWorkspace(
   dispatchDate: string,
 ): Promise<GoodReturnsWorkspaceView> {
   return request(`/returns/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
+export async function getDriverGoodReturnsWorkspace(
+  dispatchDate: string,
+): Promise<GoodReturnDriverWorkspaceView> {
+  return request(`/returns/me/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
+export async function submitGoodReturnRequest(
+  input: {
+    comment?: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    lines: ReadonlyArray<{ productId: string; quantity: number }>;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request("/returns/requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function acceptGoodReturnRequest(
+  requestId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ receiptId: string; requestId: string }> {
+  return request(`/returns/requests/${requestId}/accept`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function receiveGoodReturn(

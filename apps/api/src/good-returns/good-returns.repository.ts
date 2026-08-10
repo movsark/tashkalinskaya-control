@@ -7,8 +7,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type {
+  GoodReturnDriverWorkspaceView,
   GoodReturnAllocationView,
   GoodReturnReceiptView,
+  GoodReturnRequestView,
   GoodReturnsWorkspaceView,
   RoleAssignmentView,
   RoleCode,
@@ -67,6 +69,19 @@ export class GoodReturnsRepository {
          order by p.name`,
         [warehouseId],
       );
+      const poolSources = await client.query<{
+        product_id: string;
+        quantity: number;
+        source_driver_name: string;
+        territory_number: number | null;
+      }>(
+        `select l.product_id,r.source_driver_name_snapshot source_driver_name,
+           r.source_territory_number_snapshot territory_number,sum(l.quantity)::int quantity
+         from returns.good_return_receipt r
+         join returns.good_return_line l on l.receipt_id=r.id
+         group by l.product_id,r.source_driver_name_snapshot,r.source_territory_number_snapshot
+         order by r.source_territory_number_snapshot nulls last,r.source_driver_name_snapshot`,
+      );
       const allocations = await client.query<AllocationWorkspaceRow>(
         `select a.*,p.product_code,p.name product_name,t.territory_number
          from returns.return_allocation a join catalog.product p on p.id=a.product_id
@@ -76,6 +91,7 @@ export class GoodReturnsRepository {
       );
       const receipts = await client.query<ReceiptWorkspaceRow>(
         `select r.id,r.business_date::text,r.comment,r.source_driver_id,r.source_driver_name_snapshot,
+           r.source_dispatch_date::text,r.source_territory_number_snapshot,
            r.received_at,e.full_name received_by_name,
            coalesce(sum(l.quantity),0)::int total_quantity,
            jsonb_agg(jsonb_build_object('productId',p.id,'productCode',l.product_code_snapshot,
@@ -97,6 +113,13 @@ export class GoodReturnsRepository {
           productCode: row.product_code,
           productId: row.product_id,
           productName: row.product_name,
+          sources: poolSources.rows
+            .filter((source) => source.product_id === row.product_id)
+            .map((source) => ({
+              quantity: source.quantity,
+              sourceDriverName: source.source_driver_name,
+              territoryNumber: source.territory_number,
+            })),
           totalQuantity: row.total_quantity,
         })),
         products: products.rows.map((row) => ({
@@ -105,6 +128,7 @@ export class GoodReturnsRepository {
           name: row.name,
         })),
         receipts: receipts.rows.map(mapReceipt),
+        requests: await loadReturnRequests(client, { driverId: null, dispatchDate: null }),
         serverTime: new Date().toISOString(),
         territories: territories.rows.map((row) => ({
           id: row.id,
@@ -112,6 +136,296 @@ export class GoodReturnsRepository {
           number: row.territory_number,
         })),
       };
+    });
+  }
+
+  driverWorkspace(
+    dispatchDate: string,
+    actor: GoodReturnsActor,
+  ): Promise<GoodReturnDriverWorkspaceView> {
+    assertRole(actor, ["DRIVER"]);
+    requireDate(dispatchDate);
+    return this.database.transaction(async (client) => {
+      const products = await loadDriverReturnProducts(client, actor.employeeId, dispatchDate);
+      const territories = await client.query<{
+        id: string;
+        name: string;
+        territory_number: number;
+      }>(
+        `select distinct t.id,t.name,t.territory_number
+         from logistics.driver_route_shift s
+         join logistics.territory t on t.id=s.territory_id
+         where s.driver_employee_id=$1 and s.dispatch_date=$2 and s.status='ACTIVE'
+         order by t.territory_number`,
+        [actor.employeeId, dispatchDate],
+      );
+      return {
+        dispatchDate,
+        requests: await loadReturnRequests(client, {
+          dispatchDate,
+          driverId: actor.employeeId,
+        }),
+        serverTime: new Date().toISOString(),
+        territories: territories.rows.map((territory) => ({
+          id: territory.id,
+          name: territory.name,
+          number: territory.territory_number,
+          products: products
+            .filter((product) => product.territory_id === territory.id)
+            .map(mapDriverReturnProduct),
+        })),
+      };
+    });
+  }
+
+  submitRequest(command: {
+    actor: GoodReturnsActor;
+    comment: string | null;
+    correlationId: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    lines: readonly { productId: string; quantity: number }[];
+    territoryId: string;
+  }) {
+    assertRole(command.actor, ["DRIVER"]);
+    requireDate(command.dispatchDate);
+    if (new Set(command.lines.map((line) => line.productId)).size !== command.lines.length)
+      throw new ConflictException("Один товар нельзя указывать двумя строками");
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ id: string }>(
+        `select id from returns.good_return_request where source_driver_id=$1 and idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) return { requestId: repeated.rows[0].id };
+      for (const productId of [...command.lines.map((line) => line.productId)].sort())
+        await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+          `driver-return:${command.actor.employeeId}:${command.dispatchDate}:${command.territoryId}:${productId}`,
+        ]);
+      const route = await client.query<{
+        driver_name: string;
+        territory_name: string;
+        territory_number: number;
+      }>(
+        `select e.full_name driver_name,t.name territory_name,t.territory_number
+         from logistics.driver_route_shift s
+         join identity.employee e on e.id=s.driver_employee_id
+         join logistics.territory t on t.id=s.territory_id
+         where s.driver_employee_id=$1 and s.dispatch_date=$2 and s.territory_id=$3
+           and s.status='ACTIVE'
+         order by s.started_at desc limit 1`,
+        [command.actor.employeeId, command.dispatchDate, command.territoryId],
+      );
+      if (!route.rows[0])
+        throw new ForbiddenException("Возврат доступен только по территории вашего рейса");
+      const available = await loadDriverReturnProducts(
+        client,
+        command.actor.employeeId,
+        command.dispatchDate,
+        command.territoryId,
+      );
+      for (const line of command.lines) {
+        const product = available.find((item) => item.product_id === line.productId);
+        if (!product) throw new ConflictException("Товар не найден в принятой погрузке");
+        const availableQuantity = product.dispatched_quantity - product.returned_quantity;
+        if (line.quantity > availableQuantity)
+          throw new ConflictException(
+            `Можно вернуть не более ${availableQuantity} шт. товара «${product.product_name}»`,
+          );
+      }
+      const requestId = randomUUID();
+      await client.query(
+        `insert into returns.good_return_request(
+           id,source_driver_id,source_driver_name_snapshot,territory_id,territory_number_snapshot,
+           dispatch_date,comment,idempotency_key,correlation_id
+         ) values($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          requestId,
+          command.actor.employeeId,
+          route.rows[0].driver_name,
+          command.territoryId,
+          route.rows[0].territory_number,
+          command.dispatchDate,
+          command.comment,
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      for (const line of command.lines) {
+        const product = available.find((item) => item.product_id === line.productId)!;
+        await client.query(
+          `insert into returns.good_return_request_line(
+             id,request_id,product_id,product_code_snapshot,product_name_snapshot,quantity
+           ) values($1,$2,$3,$4,$5,$6)`,
+          [
+            randomUUID(),
+            requestId,
+            line.productId,
+            product.product_code,
+            product.product_name,
+            line.quantity,
+          ],
+        );
+      }
+      await insertRequestEvent(client, {
+        actor: command.actor,
+        correlationId: command.correlationId,
+        eventType: "SUBMITTED",
+        idempotencyKey: command.idempotencyKey,
+        requestId,
+      });
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "GOOD_RETURN_REQUEST_SUBMITTED",
+        requestId,
+        {
+          dispatchDate: command.dispatchDate,
+          territoryId: command.territoryId,
+          totalQuantity: command.lines.reduce((sum, line) => sum + line.quantity, 0),
+        },
+      );
+      await outbox(client, "returns.request.submitted", requestId, {
+        sourceDriverId: command.actor.employeeId,
+        territoryId: command.territoryId,
+      });
+      return { requestId };
+    });
+  }
+
+  acceptRequest(command: {
+    actor: GoodReturnsActor;
+    correlationId: string;
+    idempotencyKey: string;
+    requestId: string;
+    version: number;
+  }) {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ receipt_id: string }>(
+        `select r.receipt_id
+         from returns.good_return_request_event e
+         join returns.good_return_request r on r.id=e.request_id
+         where e.actor_employee_id=$1 and e.idempotency_key=$2 and e.event_type='ACCEPTED'`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]?.receipt_id)
+        return { receiptId: repeated.rows[0].receipt_id, requestId: command.requestId };
+      const request = await client.query<AcceptRequestRow>(
+        `select r.*,accepted.full_name accepted_by_name
+         from returns.good_return_request r
+         left join identity.employee accepted on accepted.id=r.accepted_by
+         where r.id=$1 for update of r`,
+        [command.requestId],
+      );
+      const current = request.rows[0];
+      if (!current) throw new NotFoundException("Заявка на возврат не найдена");
+      if (current.status === "ACCEPTED")
+        throw new ConflictException(
+          `Возврат уже принял ${current.accepted_by_name ?? "сотрудник"}`,
+        );
+      if (current.version !== command.version) throw versionConflict();
+      const lines = await client.query<ReturnRequestLineRow>(
+        `select product_id,product_code_snapshot,product_name_snapshot,quantity
+         from returns.good_return_request_line where request_id=$1 order by product_name_snapshot`,
+        [command.requestId],
+      );
+      const receiptId = randomUUID(),
+        documentId = randomUUID();
+      await createDocument(client, {
+        actor: command.actor,
+        businessDate: current.business_date,
+        correlationId: command.correlationId,
+        documentId,
+        idempotencyKey: command.idempotencyKey,
+        sourceId: receiptId,
+        sourceType: "GOOD_RETURN_REQUEST",
+        type: "RETURN_RECEIPT",
+      });
+      await client.query(
+        `insert into returns.good_return_receipt(
+           id,warehouse_id,source_driver_id,source_driver_name_snapshot,business_date,comment,
+           movement_document_id,received_by,actor_role,correlation_id,idempotency_key,
+           source_territory_id,source_territory_number_snapshot,source_dispatch_date,source_request_id
+         ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [
+          receiptId,
+          warehouseId,
+          current.source_driver_id,
+          current.source_driver_name_snapshot,
+          current.business_date,
+          current.comment,
+          documentId,
+          command.actor.employeeId,
+          activeWarehouseRole(command.actor),
+          command.correlationId,
+          command.idempotencyKey,
+          current.territory_id,
+          current.territory_number_snapshot,
+          current.dispatch_date,
+          current.id,
+        ],
+      );
+      for (const line of lines.rows) {
+        await move(
+          client,
+          documentId,
+          line.product_id,
+          "RETURN_EXTERNAL",
+          "RETURN_POOL",
+          line.quantity,
+          current.business_date,
+        );
+        await client.query(
+          `insert into returns.good_return_line(
+             id,receipt_id,product_id,product_code_snapshot,product_name_snapshot,quantity
+           ) values($1,$2,$3,$4,$5,$6)`,
+          [
+            randomUUID(),
+            receiptId,
+            line.product_id,
+            line.product_code_snapshot,
+            line.product_name_snapshot,
+            line.quantity,
+          ],
+        );
+      }
+      await client.query(
+        `update returns.good_return_request
+         set status='ACCEPTED',accepted_by=$2,accepted_actor_role=$3,accepted_at=now(),
+             receipt_id=$4,version=version+1 where id=$1`,
+        [
+          command.requestId,
+          command.actor.employeeId,
+          activeWarehouseRole(command.actor),
+          receiptId,
+        ],
+      );
+      await insertRequestEvent(client, {
+        actor: command.actor,
+        correlationId: command.correlationId,
+        eventType: "ACCEPTED",
+        idempotencyKey: command.idempotencyKey,
+        requestId: command.requestId,
+      });
+      const totalQuantity = lines.rows.reduce((sum, line) => sum + line.quantity, 0);
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "GOOD_RETURN_REQUEST_ACCEPTED",
+        command.requestId,
+        { receiptId, totalQuantity },
+      );
+      await outbox(client, "returns.receipt.created", receiptId, {
+        businessDate: current.business_date,
+        sourceDriverId: current.source_driver_id,
+      });
+      await outbox(client, "returns.request.accepted", command.requestId, {
+        receiptId,
+        sourceDriverId: current.source_driver_id,
+      });
+      return { receiptId, requestId: command.requestId };
     });
   }
 
@@ -473,9 +787,60 @@ interface ReceiptWorkspaceRow {
   readonly lines: GoodReturnReceiptView["lines"];
   readonly received_at: Date;
   readonly received_by_name: string;
+  readonly source_dispatch_date: string | null;
   readonly source_driver_id: string;
   readonly source_driver_name_snapshot: string;
+  readonly source_territory_number_snapshot: number | null;
   readonly total_quantity: number;
+}
+
+interface DriverReturnProductRow {
+  readonly dispatched_quantity: number;
+  readonly product_code: string;
+  readonly product_group_code: string;
+  readonly product_group_name: string;
+  readonly product_id: string;
+  readonly product_name: string;
+  readonly returned_quantity: number;
+  readonly territory_id: string;
+}
+
+interface ReturnRequestRow {
+  readonly accepted_at: Date | null;
+  readonly accepted_by_name: string | null;
+  readonly comment: string | null;
+  readonly dispatch_date: string;
+  readonly id: string;
+  readonly lines: GoodReturnRequestView["lines"];
+  readonly source_driver_id: string;
+  readonly source_driver_name_snapshot: string;
+  readonly status: GoodReturnRequestView["status"];
+  readonly submitted_at: Date;
+  readonly territory_id: string;
+  readonly territory_number_snapshot: number;
+  readonly total_quantity: number;
+  readonly version: number;
+}
+
+interface AcceptRequestRow {
+  readonly accepted_by_name: string | null;
+  readonly business_date: string;
+  readonly comment: string | null;
+  readonly dispatch_date: string;
+  readonly id: string;
+  readonly source_driver_id: string;
+  readonly source_driver_name_snapshot: string;
+  readonly status: GoodReturnRequestView["status"];
+  readonly territory_id: string;
+  readonly territory_number_snapshot: number;
+  readonly version: number;
+}
+
+interface ReturnRequestLineRow {
+  readonly product_code_snapshot: string;
+  readonly product_id: string;
+  readonly product_name_snapshot: string;
+  readonly quantity: number;
 }
 
 function mapAllocation(row: AllocationWorkspaceRow): GoodReturnAllocationView {
@@ -505,11 +870,146 @@ function mapReceipt(row: ReceiptWorkspaceRow): GoodReturnReceiptView {
     lines: row.lines,
     receivedAt: row.received_at.toISOString(),
     receivedByName: row.received_by_name,
+    sourceDispatchDate: row.source_dispatch_date,
     sourceDriverId: row.source_driver_id,
     sourceDriverName: row.source_driver_name_snapshot,
+    sourceTerritoryNumber: row.source_territory_number_snapshot,
     totalQuantity: row.total_quantity,
   };
 }
+
+function mapDriverReturnProduct(row: DriverReturnProductRow) {
+  return {
+    alreadyReturnedQuantity: row.returned_quantity,
+    availableReturnQuantity: Math.max(row.dispatched_quantity - row.returned_quantity, 0),
+    dispatchedQuantity: row.dispatched_quantity,
+    productCode: row.product_code,
+    productGroupCode: row.product_group_code,
+    productGroupName: row.product_group_name,
+    productId: row.product_id,
+    productName: row.product_name,
+  };
+}
+
+async function loadDriverReturnProducts(
+  client: PoolClient,
+  driverId: string,
+  dispatchDate: string,
+  territoryId: string | null = null,
+) {
+  const result = await client.query<DriverReturnProductRow>(
+    `with route_territories as (
+       select distinct territory_id
+       from logistics.driver_route_shift
+       where driver_employee_id=$1 and dispatch_date=$2 and status='ACTIVE'
+         and ($3::uuid is null or territory_id=$3)
+     ), dispatched as (
+       select s.territory_id,l.product_id,sum(r.quantity)::int dispatched_quantity
+       from route_territories rt
+       join loading.loading_session s on s.territory_id=rt.territory_id and s.dispatch_date=$2
+       join loading.loading_line l on l.loading_session_id=s.id and l.status<>'CANCELLED'
+       join loading.loading_line_revision r
+         on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+       join loading.loading_line_response x on x.loading_line_revision_id=r.id and x.response_type='CONFIRM'
+       group by s.territory_id,l.product_id
+     ), returned as (
+       select q.territory_id,l.product_id,sum(l.quantity)::int returned_quantity
+       from returns.good_return_request q
+       join returns.good_return_request_line l on l.request_id=q.id
+       where q.source_driver_id=$1 and q.dispatch_date=$2 and q.status in ('PENDING','ACCEPTED')
+         and ($3::uuid is null or q.territory_id=$3)
+       group by q.territory_id,l.product_id
+     )
+     select d.territory_id,d.product_id,p.product_code,p.name product_name,
+       c.code product_group_code,c.name product_group_name,d.dispatched_quantity,
+       coalesce(r.returned_quantity,0)::int returned_quantity
+     from dispatched d
+     join catalog.product p on p.id=d.product_id
+     join catalog.category c on c.id=p.category_id
+     left join returned r on r.territory_id=d.territory_id and r.product_id=d.product_id
+     where d.dispatched_quantity>0
+     order by case c.code
+       when 'BASIC_CAKES' then 1
+       when 'PREMIUM_CAKES' then 2
+       when 'PIES_AND_PASTRIES' then 3
+       when 'DESSERTS' then 4
+       when 'DRY_BAKERY' then 5
+       else 6 end,p.name`,
+    [driverId, dispatchDate, territoryId],
+  );
+  return result.rows;
+}
+
+async function loadReturnRequests(
+  client: PoolClient,
+  filter: { dispatchDate: string | null; driverId: string | null },
+): Promise<GoodReturnRequestView[]> {
+  const result = await client.query<ReturnRequestRow>(
+    `select q.id,q.source_driver_id,q.source_driver_name_snapshot,q.territory_id,
+       q.territory_number_snapshot,q.dispatch_date::text,q.comment,q.status,q.submitted_at,
+       q.accepted_at,accepted.full_name accepted_by_name,q.version,
+       coalesce(sum(l.quantity),0)::int total_quantity,
+       jsonb_agg(jsonb_build_object(
+         'productId',l.product_id,
+         'productCode',l.product_code_snapshot,
+         'productName',l.product_name_snapshot,
+         'quantity',l.quantity
+       ) order by l.product_name_snapshot) lines
+     from returns.good_return_request q
+     join returns.good_return_request_line l on l.request_id=q.id
+     left join identity.employee accepted on accepted.id=q.accepted_by
+     where ($1::uuid is null or q.source_driver_id=$1)
+       and ($2::date is null or q.dispatch_date=$2)
+       and ($1::uuid is not null or q.status='PENDING' or q.submitted_at>=now()-interval '14 days')
+     group by q.id,accepted.full_name
+     order by case q.status when 'PENDING' then 0 else 1 end,q.submitted_at desc
+     limit 100`,
+    [filter.driverId, filter.dispatchDate],
+  );
+  return result.rows.map((row) => ({
+    acceptedAt: row.accepted_at?.toISOString() ?? null,
+    acceptedByName: row.accepted_by_name,
+    comment: row.comment,
+    dispatchDate: row.dispatch_date,
+    id: row.id,
+    lines: row.lines,
+    sourceDriverId: row.source_driver_id,
+    sourceDriverName: row.source_driver_name_snapshot,
+    status: row.status,
+    submittedAt: row.submitted_at.toISOString(),
+    territoryId: row.territory_id,
+    territoryNumber: row.territory_number_snapshot,
+    totalQuantity: row.total_quantity,
+    version: row.version,
+  }));
+}
+
+async function insertRequestEvent(
+  client: PoolClient,
+  input: {
+    actor: GoodReturnsActor;
+    correlationId: string;
+    eventType: "ACCEPTED" | "SUBMITTED";
+    idempotencyKey: string;
+    requestId: string;
+  },
+) {
+  await client.query(
+    `insert into returns.good_return_request_event(
+       id,request_id,event_type,actor_employee_id,actor_role,idempotency_key,correlation_id
+     ) values($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      randomUUID(),
+      input.requestId,
+      input.eventType,
+      input.actor.employeeId,
+      activeRole(input.actor),
+      input.idempotencyKey,
+      input.correlationId,
+    ],
+  );
+}
+
 async function requireProductAndTerritory(
   client: PoolClient,
   productId: string,
@@ -711,8 +1211,16 @@ async function outbox(
     [randomUUID(), eventName, id, JSON.stringify(payload)],
   );
 }
-function activeRole(actor: GoodReturnsActor): "ADMIN" | "WAREHOUSE_KEEPER" {
-  return hasRole(actor, "ADMIN") ? "ADMIN" : "WAREHOUSE_KEEPER";
+function activeRole(actor: GoodReturnsActor): RoleCode {
+  if (hasRole(actor, "ADMIN")) return "ADMIN";
+  if (hasRole(actor, "WAREHOUSE_KEEPER")) return "WAREHOUSE_KEEPER";
+  if (hasRole(actor, "DRIVER")) return "DRIVER";
+  return actor.roles[0]?.roleCode ?? "ATTENDANCE_ONLY";
+}
+function activeWarehouseRole(actor: GoodReturnsActor): "ADMIN" | "WAREHOUSE_KEEPER" {
+  if (hasRole(actor, "ADMIN")) return "ADMIN";
+  if (hasRole(actor, "WAREHOUSE_KEEPER")) return "WAREHOUSE_KEEPER";
+  throw new ForbiddenException("Принимать возврат может кладовщик или администратор");
 }
 function hasRole(actor: GoodReturnsActor, role: RoleCode) {
   return actor.roles.some((item) => item.roleCode === role);
