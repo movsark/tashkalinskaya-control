@@ -2528,6 +2528,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const driverId = "20000000-0000-4000-8000-000000000120";
     const territoryId = "20000000-0000-4000-8000-000000000121";
     const productId = "20000000-0000-4000-8000-000000000122";
+    const carryoverProductId = "20000000-0000-4000-8000-000000000126";
     let submitted: Record<string, unknown> | null = null;
     let requestCreated = false;
     await page.setViewportSize({ height: 844, width: 390 });
@@ -2616,6 +2617,77 @@ test.describe("B20 browser and HTTP regression", () => {
         requestCreated = true;
         return json(route, { requestId: "20000000-0000-4000-8000-000000000125" });
       }
+      if (path.endsWith("/spoilage/me/workspace")) {
+        return json(route, {
+          dispatchDate: "2026-08-10",
+          reasons: [
+            {
+              code: "PACKAGING_DAMAGE",
+              displayName: "Повреждение упаковки",
+              id: "16000000-0000-4000-8000-000000000001",
+              photoRequired: false,
+            },
+          ],
+          requests: [],
+          serverTime: "2026-08-10T15:00:00.000Z",
+          territories: [
+            {
+              id: territoryId,
+              name: "Территория 2",
+              number: 2,
+              products: [
+                {
+                  alreadyClassifiedQuantity: requestCreated ? 10 : 0,
+                  availableSpoilageQuantity: requestCreated ? 4 : 14,
+                  dispatchedQuantity: 14,
+                  productCode: "TB-015",
+                  productGroupCode: "BASIC_CAKES",
+                  productGroupName: "Торты Базовые",
+                  productId,
+                  productName: "ТБ Рыжик (0,8кг)",
+                },
+                {
+                  alreadyClassifiedQuantity: 0,
+                  availableSpoilageQuantity: 0,
+                  dispatchedQuantity: 0,
+                  productCode: "SV-001",
+                  productGroupCode: "DRY_BAKERY",
+                  productGroupName: "Сухая выпечка",
+                  productId: carryoverProductId,
+                  productName: "СВ Бакусы",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (path.endsWith("/logistics/me/days/2026-08-10")) {
+        return json(route, {
+          activeRoutes: [
+            {
+              dispatchDate: "2026-08-10",
+              driverEmployeeId: driverId,
+              driverName: "Водитель возврата",
+              endedAt: null,
+              endReason: null,
+              id: "20000000-0000-4000-8000-000000000127",
+              startedAt: "2026-08-10T03:30:00.000Z",
+              status: "ACTIVE",
+              territoryId,
+              territoryName: "Территория 2",
+              territoryNumber: 2,
+              version: 1,
+            },
+          ],
+          availableTerritoryIds: [],
+          dispatchDate: "2026-08-10",
+          driverProfileVersion: 1,
+          homeTerritoryId: territoryId,
+          requests: [],
+          runs: [],
+          territories: [],
+        });
+      }
       if (path.endsWith("/notifications/workspace")) return json(route, notificationWorkspace());
       if (path.endsWith("/health/live"))
         return json(route, {
@@ -2628,8 +2700,8 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.goto("/returns");
-    await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
-    await page.getByRole("button", { name: /Торты Базовые/u }).click();
+    await expect(page.getByRole("heading", { name: "Возвраты и порча" })).toBeVisible();
+    await page.getByLabel("Найти товар для возврата").fill("рыжик");
     await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
     await page.getByLabel("Количество годного возврата").fill("10");
     await page.getByLabel("Комментарий").fill("Не продано");
@@ -2641,6 +2713,13 @@ test.describe("B20 browser and HTTP regression", () => {
       lines: [{ productId, quantity: 10 }],
       territoryId,
     });
+
+    await page.getByRole("button", { name: "Порча" }).click();
+    await page.getByLabel("Найти испорченный товар").fill("бакус");
+    await expect(page.getByRole("button", { name: /СВ Бакусы/u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /ТБ Рыжик/u })).toHaveCount(0);
+    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    await expect(page.getByText(/остаток прошлых дней; количество проверит/u)).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

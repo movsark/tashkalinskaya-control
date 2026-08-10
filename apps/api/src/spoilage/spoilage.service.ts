@@ -32,6 +32,7 @@ export class SpoilageService {
       reasonId: dto.reasonId,
       sourceDriverId: dto.sourceDriverId ?? null,
       sourceDispatchDate: null,
+      sourceBasis: null,
       sourceKind: dto.sourceKind,
       sourceLabel: dto.sourceLabel?.trim() ?? null,
       sourceTerritoryId: null,

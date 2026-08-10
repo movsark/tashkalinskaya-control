@@ -8361,6 +8361,69 @@ select:focus {
   box-shadow: 0 4px 14px rgb(26 80 65 / 9%);
 }
 
+.driver-return-search {
+  display: grid;
+  gap: 7px;
+  color: var(--forest);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.driver-return-search > div {
+  position: relative;
+}
+
+.driver-return-search input {
+  width: 100%;
+  min-height: 58px;
+  padding: 0 54px 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.driver-return-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.driver-return-search input:focus {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 3px rgb(29 91 75 / 12%);
+  outline: 0;
+}
+
+.driver-return-search button {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #e7eee8;
+  color: var(--forest);
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+
+.driver-return-search > small {
+  color: var(--muted);
+}
+
+.driver-spoilage-carryover {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff5dc;
+  color: #6f4a00;
+  line-height: 1.45;
+}
+
 .driver-route-completion {
   border: 2px solid #d3a93b;
   background: linear-gradient(145deg, #fffaf0, #fff);

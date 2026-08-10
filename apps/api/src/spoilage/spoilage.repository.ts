@@ -27,7 +27,7 @@ const warehouseId = "15000000-0000-4000-8000-000000000001";
 
 const writeoffWorkspaceSelect = `select
   r.id,r.source_kind,r.physical_source_kind,r.source_driver_name_snapshot,r.source_label,
-  r.source_dispatch_date::text,r.source_territory_number_snapshot,
+  r.source_dispatch_date::text,r.source_territory_number_snapshot,r.source_basis,
   r.product_id,r.product_code_snapshot,r.product_name_snapshot,r.quantity,
   r.reason_snapshot->>'code' reason_code,r.reason_snapshot->>'displayName' reason_name,
   r.comment,r.external_document_number,r.status,r.created_at,r.business_date::text,r.version,
@@ -216,6 +216,7 @@ export class SpoilageRepository {
       sourceKind: "PHYSICAL_SPOILAGE",
       sourceLabel: null,
       sourceTerritoryId: command.territoryId,
+      sourceBasis: null,
     });
   }
 
@@ -239,6 +240,7 @@ export class SpoilageRepository {
             territoryId: command.sourceTerritoryId,
           })
         : null;
+      const sourceBasis = sourceRoute?.sourceBasis ?? command.sourceBasis ?? null;
       const product = await requireProduct(client, command.productId);
       const reason = await requireReason(client, command.reasonId, command.businessDate);
       const driverName = command.sourceDriverId
@@ -273,11 +275,11 @@ export class SpoilageRepository {
       await client.query(
         `insert into spoilage.writeoff_request(
            id,warehouse_id,source_kind,physical_source_kind,source_driver_id,source_driver_name_snapshot,
-           source_label,source_territory_id,source_territory_number_snapshot,source_dispatch_date,
+           source_label,source_territory_id,source_territory_number_snapshot,source_dispatch_date,source_basis,
            product_id,product_code_snapshot,product_name_snapshot,quantity,reason_id,
            reason_snapshot,comment,external_document_number,photo_upload_id,request_movement_document_id,
            created_by,actor_role,idempotency_key,correlation_id,business_date)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
         [
           requestId,
           warehouseId,
@@ -289,6 +291,7 @@ export class SpoilageRepository {
           command.sourceTerritoryId ?? null,
           sourceRoute?.territoryNumber ?? null,
           command.sourceDispatchDate ?? null,
+          sourceBasis,
           command.productId,
           product.product_code,
           product.name,
@@ -325,6 +328,7 @@ export class SpoilageRepository {
         {
           productId: command.productId,
           quantity: command.quantity,
+          sourceBasis,
           sourceKind: command.sourceKind,
         },
       );
@@ -478,6 +482,7 @@ interface CreateCommand {
   readonly reasonId: string;
   readonly sourceDriverId: string | null;
   readonly sourceDispatchDate?: string | null;
+  readonly sourceBasis?: "DRIVER_CARRYOVER" | "TODAY_ROUTE" | null;
   readonly sourceKind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly sourceLabel: string | null;
   readonly sourceTerritoryId?: string | null;
@@ -553,6 +558,7 @@ interface WriteoffWorkspaceRow {
   readonly revision_no: number | null;
   readonly source_driver_name_snapshot: string | null;
   readonly source_dispatch_date: string | null;
+  readonly source_basis: "DRIVER_CARRYOVER" | "TODAY_ROUTE" | null;
   readonly source_kind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly source_label: string | null;
   readonly source_territory_number_snapshot: number | null;
@@ -621,6 +627,7 @@ function mapRequest(row: WriteoffWorkspaceRow): WriteoffRequestView {
     reasonName: row.reason_name,
     sourceDriverName: row.source_driver_name_snapshot,
     sourceDispatchDate: row.source_dispatch_date,
+    sourceBasis: row.source_basis,
     sourceKind: row.source_kind,
     sourceLabel: row.source_label,
     sourceTerritoryNumber: row.source_territory_number_snapshot,
@@ -671,12 +678,13 @@ async function loadDriverSpoilageProducts(
        from spoilage.writeoff_request w
        where w.source_driver_id=$1 and w.source_dispatch_date=$2
          and w.source_territory_id is not null and w.status<>'REJECTED'
+         and coalesce(w.source_basis,'TODAY_ROUTE')='TODAY_ROUTE'
        group by w.source_territory_id,w.product_id
      ), classified_total as (
        select territory_id,product_id,sum(quantity)::int quantity
        from classified group by territory_id,product_id
      )
-     select d.territory_id,d.product_id,p.product_code,p.name product_name,
+     select rt.territory_id,p.id product_id,p.product_code,p.name product_name,
        c.code product_group_code,
        case c.code
          when 'BASIC_CAKES' then 'Торты Базовые'
@@ -686,12 +694,14 @@ async function loadDriverSpoilageProducts(
          when 'DRY_BAKERY' then 'Сухая выпечка'
          else c.name
        end product_group_name,
-       d.dispatched_quantity,coalesce(x.quantity,0)::int classified_quantity
-     from dispatched d
-     join catalog.product p on p.id=d.product_id
+       coalesce(d.dispatched_quantity,0)::int dispatched_quantity,
+       coalesce(x.quantity,0)::int classified_quantity
+     from route_territories rt
+     cross join catalog.product p
      join catalog.category c on c.id=p.category_id
-     left join classified_total x on x.territory_id=d.territory_id and x.product_id=d.product_id
-     where d.dispatched_quantity>0
+     left join dispatched d on d.territory_id=rt.territory_id and d.product_id=p.id
+     left join classified_total x on x.territory_id=rt.territory_id and x.product_id=p.id
+     where p.status='ACTIVE'
      order by case c.code
        when 'BASIC_CAKES' then 1 when 'PREMIUM_CAKES' then 2
        when 'PIES_AND_PASTRIES' then 3 when 'DESSERTS' then 4
@@ -710,7 +720,10 @@ async function requireActiveDriverRoute(
     quantity: number;
     territoryId: string;
   },
-): Promise<{ territoryNumber: number }> {
+): Promise<{
+  sourceBasis: "DRIVER_CARRYOVER" | "TODAY_ROUTE";
+  territoryNumber: number;
+}> {
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [
     `driver-settlement:${input.driverId}:${input.dispatchDate}:${input.territoryId}:${input.productId}`,
   ]);
@@ -729,11 +742,19 @@ async function requireActiveDriverRoute(
   const product = products.find(
     (item) => item.territory_id === input.territoryId && item.product_id === input.productId,
   );
-  if (!product) throw new ConflictException("Товар не найден в принятой погрузке");
+  if (!product) throw new ConflictException("Товар не найден в активном каталоге");
+  if (product.dispatched_quantity === 0)
+    return {
+      sourceBasis: "DRIVER_CARRYOVER",
+      territoryNumber: route.rows[0].territory_number,
+    };
   const available = Math.max(product.dispatched_quantity - product.classified_quantity, 0);
   if (input.quantity > available)
     throw new ConflictException(`Можно оформить не более ${available} шт. этого товара`);
-  return { territoryNumber: route.rows[0].territory_number };
+  return {
+    sourceBasis: "TODAY_ROUTE",
+    territoryNumber: route.rows[0].territory_number,
+  };
 }
 
 function validateSource(command: CreateCommand) {

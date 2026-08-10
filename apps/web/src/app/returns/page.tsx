@@ -655,6 +655,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const [spoilage, setSpoilage] = useState<DriverSpoilageWorkspaceView | null>(null);
   const [routeDay, setRouteDay] = useState<DriverLogisticsDayView | null>(null);
   const [section, setSection] = useState<"RETURN" | "SPOILAGE">("RETURN");
+  const [productSearch, setProductSearch] = useState("");
   const [expandedGroup, setExpandedGroup] = useState("");
   const [expandedProduct, setExpandedProduct] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
@@ -743,7 +744,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     territoryId: string,
     productId: string,
     productName: string,
-    availableQuantity: number,
+    availableQuantity: number | null,
   ) {
     const draft = spoilageDrafts[productId] ?? {
       comment: "",
@@ -753,7 +754,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     };
     try {
       const quantity = positive(draft.quantity);
-      if (quantity > availableQuantity)
+      if (availableQuantity !== null && quantity > availableQuantity)
         throw new Error(`Можно оформить не более ${availableQuantity} шт.`);
       if (!draft.reasonId) throw new Error("Выберите причину порчи");
       if (draft.comment.trim().length < 3) throw new Error("Коротко опишите порчу");
@@ -821,6 +822,25 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const activeRoute = routeDay?.activeRoutes.find(
     (route) => route.driverEmployeeId === session.employee.id,
   );
+  const normalizedProductSearch = productSearch.trim().toLocaleLowerCase("ru-RU");
+  const visibleProductCount =
+    section === "RETURN"
+      ? (data?.territories.reduce(
+          (sum, territory) =>
+            sum +
+            territory.products.filter((product) =>
+              matchesDriverProduct(product, normalizedProductSearch),
+            ).length,
+          0,
+        ) ?? 0)
+      : (spoilage?.territories.reduce(
+          (sum, territory) =>
+            sum +
+            territory.products.filter((product) =>
+              matchesDriverProduct(product, normalizedProductSearch),
+            ).length,
+          0,
+        ) ?? 0);
 
   return (
     <main className="workspace-layout returns-page simple-workspace driver-returns-page">
@@ -885,6 +905,44 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               Порча
             </button>
           </div>
+          <div className="driver-return-search">
+            <label htmlFor="driver-return-product-search">
+              {section === "RETURN" ? "Найти товар для возврата" : "Найти испорченный товар"}
+            </label>
+            <div>
+              <input
+                id="driver-return-product-search"
+                onChange={(event) => {
+                  setExpandedGroup("");
+                  setExpandedProduct("");
+                  setProductSearch(event.target.value);
+                }}
+                placeholder="Название, код или группа"
+                type="search"
+                value={productSearch}
+              />
+              {productSearch ? (
+                <button
+                  aria-label="Очистить поиск"
+                  onClick={() => {
+                    setExpandedGroup("");
+                    setExpandedProduct("");
+                    setProductSearch("");
+                  }}
+                  type="button"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+            <small>
+              {normalizedProductSearch
+                ? `Найдено: ${visibleProductCount} поз.`
+                : section === "RETURN"
+                  ? "Поиск среди фактически принятого товара"
+                  : "Поиск по всему активному каталогу"}
+            </small>
+          </div>
         </section>
       ) : (
         <section className="returns-panel driver-route-settlement is-archive">
@@ -897,7 +955,10 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         <p className="warehouse-loading">Загружаем ассортимент вывоза…</p>
       ) : section === "RETURN" && data?.territories.length ? (
         data.territories.map((territory) => {
-          const groups = groupReturnProducts(territory.products);
+          const groups = filterDriverProductGroups(
+            groupReturnProducts(territory.products),
+            normalizedProductSearch,
+          );
           return (
             <section className="returns-panel driver-return-territory" key={territory.id}>
               <div className="returns-heading">
@@ -912,7 +973,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               <div className="driver-return-groups">
                 {groups.map((group) => {
                   const groupKey = `${territory.id}:${group.code}`;
-                  const isOpen = expandedGroup === groupKey;
+                  const isOpen = Boolean(normalizedProductSearch) || expandedGroup === groupKey;
                   return (
                     <article className="driver-return-group" key={groupKey}>
                       <button
@@ -1046,6 +1107,11 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   );
                 })}
               </div>
+              {normalizedProductSearch && groups.length === 0 ? (
+                <p className="logistics-empty">
+                  По запросу «{productSearch.trim()}» товары для возврата не найдены.
+                </p>
+              ) : null}
             </section>
           );
         })
@@ -1060,22 +1126,23 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         <p className="warehouse-loading">Загружаем ассортимент для фиксации порчи…</p>
       ) : section === "SPOILAGE" && spoilage?.territories.length ? (
         spoilage.territories.map((territory) => {
-          const groups = groupSpoilageProducts(territory.products);
+          const groups = filterDriverProductGroups(
+            groupSpoilageProducts(territory.products),
+            normalizedProductSearch,
+          );
           return (
             <section className="returns-panel driver-return-territory" key={territory.id}>
               <div className="returns-heading">
                 <div>
-                  <p className="eyebrow">Порча из вывоза {formatDate(date)}</p>
+                  <p className="eyebrow">Порча · весь каталог</p>
                   <h2>Территория {territory.number}</h2>
                 </div>
-                <b>
-                  {territory.products.reduce((sum, item) => sum + item.dispatchedQuantity, 0)} шт.
-                </b>
+                <b>{territory.products.length} поз.</b>
               </div>
               <div className="driver-return-groups">
                 {groups.map((group) => {
                   const groupKey = `spoilage:${territory.id}:${group.code}`;
-                  const isOpen = expandedGroup === groupKey;
+                  const isOpen = Boolean(normalizedProductSearch) || expandedGroup === groupKey;
                   return (
                     <article className="driver-return-group" key={groupKey}>
                       <button
@@ -1088,13 +1155,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                           <strong>{group.name}</strong>
                           <small>{group.products.length} наим.</small>
                         </span>
-                        <b>
-                          {group.products.reduce(
-                            (sum, item) => sum + item.availableSpoilageQuantity,
-                            0,
-                          )}{" "}
-                          шт. доступно
-                        </b>
+                        <b>{group.products.length} поз.</b>
                         <i>{isOpen ? "−" : "+"}</i>
                       </button>
                       {isOpen ? (
@@ -1111,6 +1172,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                             const reason = spoilage.reasons.find(
                               (item) => item.id === draft.reasonId,
                             );
+                            const fromTodayRoute = product.dispatchedQuantity > 0;
                             return (
                               <article key={product.productId}>
                                 <button
@@ -1124,8 +1186,16 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                     <strong>{product.productName}</strong>
                                   </span>
                                   <span className="driver-return-product__counts">
-                                    <small>Вывезено {product.dispatchedQuantity}</small>
-                                    <b>Оформить до {product.availableSpoilageQuantity}</b>
+                                    <small>
+                                      {fromTodayRoute
+                                        ? `Сегодня вывезено ${product.dispatchedQuantity}`
+                                        : "Остаток прошлых дней"}
+                                    </small>
+                                    <b>
+                                      {fromTodayRoute
+                                        ? `Оформить до ${product.availableSpoilageQuantity}`
+                                        : "Указать количество"}
+                                    </b>
                                   </span>
                                   <i>{productOpen ? "−" : "+"}</i>
                                 </button>
@@ -1138,28 +1208,40 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                         territory.id,
                                         product.productId,
                                         product.productName,
-                                        product.availableSpoilageQuantity,
+                                        fromTodayRoute ? product.availableSpoilageQuantity : null,
                                       );
                                     }}
                                   >
-                                    <div className="driver-return-product-stats">
-                                      <span>
-                                        Получено <b>{product.dispatchedQuantity}</b>
-                                      </span>
-                                      <span>
-                                        Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
-                                      </span>
-                                      <span>
-                                        Доступно <b>{product.availableSpoilageQuantity}</b>
-                                      </span>
-                                    </div>
-                                    {product.availableSpoilageQuantity ? (
+                                    {fromTodayRoute ? (
+                                      <div className="driver-return-product-stats">
+                                        <span>
+                                          Получено <b>{product.dispatchedQuantity}</b>
+                                        </span>
+                                        <span>
+                                          Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
+                                        </span>
+                                        <span>
+                                          Доступно <b>{product.availableSpoilageQuantity}</b>
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <p className="driver-spoilage-carryover">
+                                        Этого товара не было в сегодняшней принятой погрузке. Заявка
+                                        будет отмечена как остаток прошлых дней; количество проверит
+                                        кладовщик или администратор.
+                                      </p>
+                                    )}
+                                    {!fromTodayRoute || product.availableSpoilageQuantity ? (
                                       <>
                                         <label>
                                           Количество порчи
                                           <input
                                             inputMode="numeric"
-                                            max={product.availableSpoilageQuantity}
+                                            max={
+                                              fromTodayRoute
+                                                ? product.availableSpoilageQuantity
+                                                : undefined
+                                            }
                                             min="1"
                                             required
                                             type="number"
@@ -1259,13 +1341,18 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   );
                 })}
               </div>
+              {normalizedProductSearch && groups.length === 0 ? (
+                <p className="logistics-empty">
+                  По запросу «{productSearch.trim()}» товары в каталоге не найдены.
+                </p>
+              ) : null}
             </section>
           );
         })
       ) : section === "SPOILAGE" ? (
         <section className="returns-panel">
-          <h2>Нет ассортимента для порчи</h2>
-          <p>На выбранную дату у вас нет подтверждённой погрузки территории.</p>
+          <h2>Нет активного каталога для порчи</h2>
+          <p>Проверьте активный рейс и справочник товаров.</p>
         </section>
       ) : null}
 
@@ -1303,6 +1390,11 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   <span>
                     Территория {request.sourceTerritoryNumber ?? "—"} · {request.quantity} шт.
                   </span>
+                  <small>
+                    {request.sourceBasis === "DRIVER_CARRYOVER"
+                      ? "Остаток прошлых дней"
+                      : "Из сегодняшнего вывоза"}
+                  </small>
                 </div>
                 <div>
                   <span>{request.reasonName}</span>
@@ -1415,6 +1507,38 @@ function groupSpoilageProducts(
       products: products.filter((product) => product.productGroupCode === code),
     }))
     .filter((group) => group.products.length);
+}
+
+interface DriverProductSearchable {
+  readonly productCode: string;
+  readonly productGroupName: string;
+  readonly productName: string;
+}
+
+function matchesDriverProduct(product: DriverProductSearchable, normalizedQuery: string) {
+  if (!normalizedQuery) return true;
+  return `${product.productCode} ${product.productName} ${product.productGroupName}`
+    .toLocaleLowerCase("ru-RU")
+    .includes(normalizedQuery);
+}
+
+function filterDriverProductGroups<T extends DriverProductSearchable>(
+  groups: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly products: readonly T[];
+  }[],
+  normalizedQuery: string,
+) {
+  if (!normalizedQuery) return groups;
+  return groups
+    .map((group) => ({
+      ...group,
+      products: group.name.toLocaleLowerCase("ru-RU").includes(normalizedQuery)
+        ? group.products
+        : group.products.filter((product) => matchesDriverProduct(product, normalizedQuery)),
+    }))
+    .filter((group) => group.products.length > 0);
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

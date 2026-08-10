@@ -347,6 +347,13 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
     const before = await spoilageRepository.driverWorkspace(dispatchDate, driver);
     expect(before.territories[0]?.products).toContainEqual(
       expect.objectContaining({
+        availableSpoilageQuantity: 0,
+        dispatchedQuantity: 0,
+        productId,
+      }),
+    );
+    expect(before.territories[0]?.products).toContainEqual(
+      expect.objectContaining({
         alreadyClassifiedQuantity: 10,
         availableSpoilageQuantity: 4,
         dispatchedQuantity: 14,
@@ -394,6 +401,7 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
     );
     expect(after.requests.find((request) => request.id === created.requestId)).toMatchObject({
       quantity: 4,
+      sourceBasis: "TODAY_ROUTE",
       sourceDispatchDate: dispatchDate,
       sourceTerritoryNumber: 1,
       status: "SUBMITTED",
@@ -413,6 +421,31 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
         territoryId: territoryIds[0]!,
       }),
     ).rejects.toThrow("Можно оформить не более 0 шт.");
+
+    const carryover = await spoilageRepository.createDriver({
+      actor: driver,
+      businessDate: dispatchDate,
+      comment: "Старая порча, не из сегодняшней погрузки",
+      correlationId: randomUUID(),
+      externalDocumentNumber: null,
+      idempotencyKey: `driver-spoilage-carryover-${seed}`,
+      photoUploadId: null,
+      productId,
+      quantity: 3,
+      reasonId: reasonPackaging,
+      territoryId: territoryIds[0]!,
+    });
+    const carryoverRequest = (
+      await spoilageRepository.driverWorkspace(dispatchDate, driver)
+    ).requests.find((request) => request.id === carryover.requestId);
+    expect(carryoverRequest).toMatchObject({
+      productId,
+      quantity: 3,
+      sourceBasis: "DRIVER_CARRYOVER",
+      sourceDispatchDate: dispatchDate,
+      sourceTerritoryNumber: 1,
+      status: "SUBMITTED",
+    });
   });
 });
 
