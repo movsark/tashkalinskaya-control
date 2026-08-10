@@ -10907,6 +10907,10 @@ label:has(input[type="datetime-local"]) {
   box-shadow: var(--shadow-soft);
 }
 
+.driver-loading-workspace [hidden] {
+  display: none !important;
+}
+
 .driver-territory-request__link {
   display: flex;
   width: 100%;

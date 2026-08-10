@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../../components/app-brand";
 import {
+  activateDriverRoute,
   ApiRequestError,
   confirmLoadingByDriver,
   getDriverLogisticsDay,
@@ -38,6 +39,7 @@ export default function DriverLogisticsPage() {
   const [productSearch, setProductSearch] = useState("");
   const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
+  const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -49,6 +51,21 @@ export default function DriverLogisticsPage() {
     ]);
     setRoutes(nextRoutes);
     setLoading(nextLoading);
+    setRouteTerritoryChoice((current) => {
+      const ownRoute = nextRoutes.activeRoutes.find(
+        (route) => route.driverEmployeeId === session?.employee.id,
+      );
+      if (ownRoute) return ownRoute.territoryId;
+      if (current && nextRoutes.territories.some((territory) => territory.id === current)) {
+        return current;
+      }
+      return (
+        nextRoutes.homeTerritoryId ??
+        nextRoutes.availableTerritoryIds[0] ??
+        nextRoutes.territories.find((territory) => territory.status === "ACTIVE")?.id ??
+        ""
+      );
+    });
   }
 
   useEffect(() => {
@@ -92,11 +109,49 @@ export default function DriverLogisticsPage() {
     return session.csrfToken;
   }
 
+  async function startRoute() {
+    if (!session || routeTerritoryChoice === "") return;
+    const selectedTerritory = routes?.territories.find(
+      (territory) => territory.id === routeTerritoryChoice,
+    );
+    setBusyId("route-start");
+    setError("");
+    setSuccess("");
+    try {
+      await activateDriverRoute(
+        { idempotencyKey: crypto.randomUUID(), territoryId: routeTerritoryChoice },
+        session.csrfToken,
+      );
+      await reload();
+      setSuccess(
+        `Вы приступили к рейсу${selectedTerritory ? ` Территории ${selectedTerritory.number}` : ""}. Погрузка открыта.`,
+      );
+    } catch (caught) {
+      setError(messageOf(caught, "Не удалось начать рейс"));
+    } finally {
+      setBusyId("");
+    }
+  }
+
   const pageTitle =
     session?.employee.roles.some((role) => role.roleCode === "DRIVER") &&
     !session.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode))
       ? "Моя погрузка"
       : "Подтверждение водителем";
+  const isDriverOnly =
+    session?.employee.roles.some((role) => role.roleCode === "DRIVER") &&
+    !session.employee.roles.some((role) => ["ADMIN", "MANAGER"].includes(role.roleCode));
+  const myActiveRoute = routes?.activeRoutes.find(
+    (route) => route.driverEmployeeId === session?.employee.id,
+  );
+  const selectedRouteTerritory = routes?.territories.find(
+    (territory) => territory.id === routeTerritoryChoice,
+  );
+  const selectedTerritoryRoute = routes?.activeRoutes.find(
+    (route) => route.territoryId === routeTerritoryChoice,
+  );
+  const today = todayMoscow();
+  const requiresRouteStart = Boolean(isDriverOnly && routes && !myActiveRoute);
   const products = loading?.products ?? [];
   const productGroups = useMemo(() => {
     const query = productSearch.trim().toLocaleLowerCase("ru-RU");
@@ -163,32 +218,125 @@ export default function DriverLogisticsPage() {
         </label>
       </section>
 
-      <section className="driver-day-strip">
+      {error ? <p className="form-error loading-message">{error}</p> : null}
+      {success ? <p className="logistics-success loading-message">{success}</p> : null}
+
+      {!routes || !session ? (
+        <div className="empty-state">
+          <h2>Загружаем погрузку</h2>
+          <p>Проверяем, вышли ли вы сегодня на рейс.</p>
+        </div>
+      ) : requiresRouteStart ? (
+        <section className="driver-route-duty driver-loading-route-gate" aria-label="Выход на рейс">
+          <div className="driver-route-duty__heading">
+            <div>
+              <p className="eyebrow">Перед погрузкой</p>
+              <h2>Сначала выйдите на рейс</h2>
+              <p>
+                Выберите территорию и подтвердите выход. После успешного ответа сервера откроется
+                весь ассортимент погрузки этой территории.
+              </p>
+            </div>
+            <span className="driver-route-duty__inactive">Рейс не начат</span>
+          </div>
+
+          {dispatchDate === today ? (
+            <>
+              <label>
+                Территория рейса
+                <select
+                  value={routeTerritoryChoice}
+                  onChange={(event) => setRouteTerritoryChoice(event.target.value)}
+                >
+                  {routes.territories
+                    .filter((territory) => territory.status === "ACTIVE")
+                    .map((territory) => {
+                      const active = routes.activeRoutes.find(
+                        (route) => route.territoryId === territory.id,
+                      );
+                      return (
+                        <option key={territory.id} value={territory.id}>
+                          Территория {territory.number}
+                          {active ? ` · на рейсе ${active.driverName}` : " · свободна"}
+                        </option>
+                      );
+                    })}
+                </select>
+              </label>
+
+              {selectedTerritoryRoute ? (
+                <div className="driver-route-duty__status is-occupied">
+                  <strong>Территория уже на рейсе</strong>
+                  <span>Сейчас работает {selectedTerritoryRoute.driverName}</span>
+                </div>
+              ) : (
+                <div className="driver-route-duty__status">
+                  <strong>
+                    {selectedRouteTerritory
+                      ? `Территория ${selectedRouteTerritory.number} свободна`
+                      : "Выберите территорию"}
+                  </strong>
+                  <span>После подтверждения склад сможет передавать продукцию вам.</span>
+                </div>
+              )}
+
+              {selectedTerritoryRoute ? (
+                <p className="driver-route-duty__occupied-note">
+                  Сначала текущий водитель должен закончить рейс этой территории.
+                </p>
+              ) : null}
+              <button
+                className="primary-action"
+                disabled={
+                  busyId === "route-start" ||
+                  routeTerritoryChoice === "" ||
+                  Boolean(selectedTerritoryRoute)
+                }
+                type="button"
+                onClick={() => void startRoute()}
+              >
+                {busyId === "route-start" ? "Начинаем рейс…" : "Приступил к рейсу"}
+              </button>
+            </>
+          ) : (
+            <div className="driver-route-duty__confirmation">
+              <strong>Рейс можно начать только на сегодняшнюю дату</strong>
+              <p>Вернитесь к сегодняшней погрузке, выберите территорию и приступите к рейсу.</p>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => setDispatchDate(today)}
+              >
+                Открыть сегодняшнюю погрузку
+              </button>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      <section className="driver-day-strip" hidden={!routes || !session || requiresRouteStart}>
         <div className="driver-day-total">
           <span>Общая норма</span>
           <strong>{routes?.totalNormQuantity ?? 0} шт.</strong>
         </div>
         <span>Обновлено {loading ? timeLabel(loading.serverTime) : "—"}</span>
       </section>
-      {error ? <p className="form-error loading-message">{error}</p> : null}
-      {success ? <p className="logistics-success loading-message">{success}</p> : null}
 
-      <section className="driver-territory-request">
-        <div>
-          <p className="eyebrow">Водитель дня</p>
-          <h2>Кто вышел на рейс</h2>
-          <p>
-            Территория становится вашей на сегодня после нажатия «Приступил к рейсу» в разделе «Моя
-            норма». Подтверждение администратора не требуется.
-          </p>
-        </div>
-        <Link className="primary-button driver-territory-request__link" href="/planning">
-          Открыть «Мою норму»
-        </Link>
-      </section>
+      {myActiveRoute ? (
+        <section className="driver-territory-request">
+          <div>
+            <p className="eyebrow">Вы на рейсе</p>
+            <h2>Территория {myActiveRoute.territoryNumber}</h2>
+            <p>Погрузка открыта. Все новые передачи склада поступают вам.</p>
+          </div>
+          <Link className="primary-button driver-territory-request__link" href="/planning">
+            Открыть «Мою норму»
+          </Link>
+        </section>
+      ) : null}
 
       {loading?.priorityReturns.length ? (
-        <section className="driver-return-priority">
+        <section className="driver-return-priority" hidden={requiresRouteStart}>
           <div>
             <p className="eyebrow">Сначала возврат</p>
             <h2>Возврат для погрузки</h2>
@@ -212,7 +360,11 @@ export default function DriverLogisticsPage() {
         </section>
       ) : null}
 
-      <section className="driver-assortment" aria-labelledby="driver-assortment-title">
+      <section
+        aria-labelledby="driver-assortment-title"
+        className="driver-assortment"
+        hidden={!routes || !session || requiresRouteStart}
+      >
         <header className="driver-assortment__heading">
           <div>
             <p className="eyebrow">Ассортимент рейса</p>
@@ -373,7 +525,7 @@ export default function DriverLogisticsPage() {
         )}
       </section>
 
-      <section className="driver-loading-list">
+      <section className="driver-loading-list" hidden={!routes || !session || requiresRouteStart}>
         {loading?.sessions.length ? (
           <div className="driver-loading-list__heading">
             <p className="eyebrow">Передано складом</p>

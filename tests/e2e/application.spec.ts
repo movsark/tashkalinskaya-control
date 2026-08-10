@@ -868,6 +868,149 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Нет связи", { exact: true })).toHaveCount(0);
   });
 
+  test("a driver starts a territory route before opening loading", async ({ page }) => {
+    const driverId = "20000000-0000-4000-8000-000000000065";
+    const territoryId = "20000000-0000-4000-8000-000000000066";
+    const occupiedTerritoryId = "20000000-0000-4000-8000-000000000063";
+    let activeRoute: Record<string, unknown> | null = null;
+    let activatedTerritoryId = "";
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-driver-route-gate",
+        deviceId: "20000000-0000-4000-8000-000000000067",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Водитель перед погрузкой",
+          id: driverId,
+          login: "driver-route-gate",
+          personnelNumber: "DRIVER-GATE",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000068",
+              roleCode: "DRIVER",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/days/*", (route) =>
+      json(route, {
+        activeRoutes: [
+          {
+            dispatchDate: "2026-08-10",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000061",
+            driverName: "Другой водитель",
+            endedAt: null,
+            endReason: null,
+            id: "20000000-0000-4000-8000-000000000062",
+            startedAt: "2026-08-10T03:30:00.000Z",
+            status: "ACTIVE",
+            territoryId: occupiedTerritoryId,
+            territoryName: "Территория 1",
+            territoryNumber: 1,
+            version: 1,
+          },
+          ...(activeRoute ? [activeRoute] : []),
+        ],
+        availableTerritoryIds: [territoryId],
+        dispatchDate: "2026-08-10",
+        driverProfileVersion: 1,
+        homeTerritoryId: territoryId,
+        requests: [],
+        runs: [],
+        territories: [
+          {
+            description: null,
+            id: occupiedTerritoryId,
+            name: "Территория 1",
+            number: 1,
+            sortOrder: 1,
+            status: "ACTIVE",
+            version: 1,
+          },
+          {
+            description: null,
+            id: territoryId,
+            name: "Территория 2",
+            number: 2,
+            sortOrder: 2,
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        totalNormQuantity: activeRoute ? 15 : 0,
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/route/activate", async (route) => {
+      const input = route.request().postDataJSON() as { territoryId: string };
+      activatedTerritoryId = input.territoryId;
+      activeRoute = {
+        dispatchDate: "2026-08-10",
+        driverEmployeeId: driverId,
+        driverName: "Водитель перед погрузкой",
+        endedAt: null,
+        endReason: null,
+        id: "20000000-0000-4000-8000-000000000069",
+        startedAt: "2026-08-10T04:00:00.000Z",
+        status: "ACTIVE",
+        territoryId,
+        territoryName: "Территория 2",
+        territoryNumber: 2,
+        version: 1,
+      };
+      await json(route, activeRoute);
+    });
+    await page.route("**/api/v1/loading/driver/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        priorityReturns: [],
+        products: [
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "T-001",
+            id: "20000000-0000-4000-8000-000000000064",
+            name: "Торт после выхода",
+            plannedQuantity: 15,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 15,
+            sentQuantity: 0,
+          },
+        ],
+        serverTime: "2026-08-10T04:01:00.000Z",
+        sessions: [],
+      }),
+    );
+
+    await page.goto("/logistics/today");
+    const gate = page.getByRole("region", { name: "Выход на рейс" });
+    await expect(gate.getByRole("heading", { name: "Сначала выйдите на рейс" })).toBeVisible();
+    await expect(gate.getByLabel("Территория рейса")).toHaveValue(territoryId);
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).not.toBeVisible();
+    await gate.getByLabel("Территория рейса").selectOption(occupiedTerritoryId);
+    await expect(gate.getByText("Сейчас работает Другой водитель")).toBeVisible();
+    await expect(gate.getByRole("button", { name: "Приступил к рейсу" })).toBeDisabled();
+    await gate.getByLabel("Территория рейса").selectOption(territoryId);
+    await gate.getByRole("button", { name: "Приступил к рейсу" }).click();
+
+    await expect.poll(() => activatedTerritoryId).toBe(territoryId);
+    await expect(page.getByText("Вы на рейсе", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Территория 2" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
+    await expect(page.getByText("Торт после выхода", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: /Торты Базовые/u }).click();
+    await expect(page.getByText("Торт после выхода", { exact: true })).toBeVisible();
+    await expect(gate).toHaveCount(0);
+  });
+
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
     page,
   }) => {
@@ -907,8 +1050,26 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
+        activeRoutes: [
+          {
+            dispatchDate: "2026-08-04",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000071",
+            driverName: "Водитель теста",
+            endedAt: null,
+            endReason: null,
+            id: "20000000-0000-4000-8000-000000000069",
+            startedAt: "2026-08-04T05:45:00.000Z",
+            status: "ACTIVE",
+            territoryId: "20000000-0000-4000-8000-000000000075",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+            version: 1,
+          },
+        ],
         availableTerritoryIds: ["20000000-0000-4000-8000-000000000075"],
         dispatchDate: "2026-08-04",
+        driverProfileVersion: 1,
+        homeTerritoryId: "20000000-0000-4000-8000-000000000075",
         requests: [],
         runs: [
           {
@@ -1081,8 +1242,10 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
-    await expect(page.getByText("Кто вышел на рейс")).toBeVisible();
-    await expect(page.getByText("Подтверждение администратора не требуется.")).toBeVisible();
+    await expect(page.getByText("Вы на рейсе", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".driver-territory-request").getByRole("heading", { name: "Территория 3" }),
+    ).toBeVisible();
     const planningLink = page.getByRole("link", { name: "Открыть «Мою норму»" });
     await expect(planningLink).toHaveAttribute("href", "/planning");
     await expect(planningLink).toHaveCSS("align-items", "center");
