@@ -1109,20 +1109,20 @@ test.describe("B20 browser and HTTP regression", () => {
           {
             barcodes: [],
             code: "TB-015",
-            freeQuantity: 14 - sentQuantity,
+            freeQuantity: 27 - sentQuantity,
             id: productId,
             name: "ТБ Рыжик (0,8кг)",
-            plannedQuantity: 16,
+            plannedQuantity: 28,
             productGroupCode: "BASIC_CAKES",
             productGroupName: "Торты Базовые",
-            remainingQuantity: 16 - sentQuantity,
+            remainingQuantity: 28 - sentQuantity,
             sentQuantity,
             territories: [
               {
                 canSend: false,
                 driverName: null,
-                plannedQuantity: 6,
-                remainingQuantity: 6,
+                plannedQuantity: 18,
+                remainingQuantity: 18,
                 sentQuantity: 0,
                 territoryId: territoryOneId,
                 territoryName: "Территория 1",
@@ -1156,7 +1156,21 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/logistics/warehouse");
     await expect(page.getByRole("heading", { name: "Управление погрузкой" })).toBeVisible();
     await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
-    await page.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    const baseGroup = page.getByRole("button", { name: /Торты Базовые/u });
+    await expect(baseGroup).toContainText("На складе27 шт.");
+    await expect(baseGroup).toContainText("Осталось28 шт.");
+    await expect(baseGroup).toContainText("Не хватает−1 шт.");
+    const productRow = page.getByRole("button", { name: /TB-015 ТБ Рыжик/u });
+    await expect(productRow).toContainText("На складе27 шт.");
+    await expect(productRow.locator(".loading-product__shortage")).toHaveAttribute(
+      "aria-label",
+      "Не хватает 1 шт.",
+    );
+    await expect(productRow.locator(".loading-product__shortage")).toHaveText("−1");
+    await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
+      "28 шт.",
+    );
+    await productRow.click();
     const territoryOne = page.locator(".loading-territory-row").filter({ hasText: "Территория 1" });
     const territoryTwo = page.locator(".loading-territory-row").filter({ hasText: "Территория 2" });
     await expect(territoryOne.getByText("Водитель не выбран")).toBeVisible();
@@ -1164,7 +1178,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await territoryTwo.getByRole("spinbutton").fill("3");
     await territoryTwo.getByRole("button", { name: "Отправить водителю" }).click();
     await expect.poll(() => sentPayload?.quantity).toBe(3);
+    await expect(page.getByRole("button", { name: /ТБ Рыжик.*На складе 24 шт\./u })).toBeVisible();
     await expect(page.getByRole("button", { name: /ТБ Рыжик.*Передано 3 шт\./u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /ТБ Рыжик.*Осталось.*25 шт\./u })).toBeVisible();
     await expect(territoryTwo.getByText("7", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(

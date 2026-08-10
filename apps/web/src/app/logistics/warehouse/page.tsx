@@ -207,6 +207,15 @@ export default function WarehouseLogisticsPage() {
             );
             if (normalizedQuery && products.length === 0) return null;
             const open = normalizedQuery.length > 0 || openGroups.includes(group.code);
+            const stockQuantity = products.reduce((sum, item) => sum + item.freeQuantity, 0);
+            const remainingQuantity = products.reduce(
+              (sum, item) => sum + item.remainingQuantity,
+              0,
+            );
+            const shortageQuantity = products.reduce(
+              (sum, item) => sum + Math.max(0, item.remainingQuantity - item.freeQuantity),
+              0,
+            );
             return (
               <section
                 className={`loading-product-group${open ? " is-open" : ""}`}
@@ -224,13 +233,24 @@ export default function WarehouseLogisticsPage() {
                   }
                   type="button"
                 >
-                  <span>
+                  <span className="loading-product-group__identity">
                     <strong>{group.name}</strong>
                     <small>{products.length} поз.</small>
                   </span>
-                  <b>
-                    {products.reduce((sum, item) => sum + item.remainingQuantity, 0)} шт. осталось
-                  </b>
+                  <span className="loading-product-group__metrics">
+                    <span>
+                      <small>На складе</small>
+                      <b>{stockQuantity} шт.</b>
+                    </span>
+                    <span>
+                      <small>Осталось</small>
+                      <b>{remainingQuantity} шт.</b>
+                    </span>
+                    <span className={shortageQuantity > 0 ? "is-shortage" : undefined}>
+                      <small>Не хватает</small>
+                      <b>{shortageQuantity > 0 ? `−${shortageQuantity}` : 0} шт.</b>
+                    </span>
+                  </span>
                   <i aria-hidden="true">{open ? "−" : "+"}</i>
                 </button>
                 {open ? (
@@ -330,6 +350,7 @@ function ProductLoadingRow({
   open: boolean;
   product: LoadingProductView;
 }) {
+  const shortageQuantity = Math.max(0, product.remainingQuantity - product.freeQuantity);
   return (
     <article className={`loading-product${open ? " is-open" : ""}`}>
       <button
@@ -338,21 +359,33 @@ function ProductLoadingRow({
         onClick={onToggle}
         type="button"
       >
-        <span>
+        <span className="loading-product__identity">
           <small>{product.code}</small>
           <strong>{product.name}</strong>
         </span>
-        <span className="loading-product__metric">
-          <small>На складе</small>
-          <b>{product.freeQuantity} шт.</b>
-        </span>
-        <span className="loading-product__metric">
-          <small>Передано</small>
-          <b>{product.sentQuantity} шт.</b>
-        </span>
-        <span className="loading-product__metric is-remaining">
-          <small>Осталось</small>
-          <b>{product.remainingQuantity} шт.</b>
+        <span className="loading-product__metrics">
+          <span className="loading-product__metric">
+            <small>На складе</small>
+            <b>{product.freeQuantity} шт.</b>
+          </span>
+          <span className="loading-product__metric">
+            <small>Передано</small>
+            <b>{product.sentQuantity} шт.</b>
+          </span>
+          <span className="loading-product__metric is-remaining">
+            <small>Осталось</small>
+            <b>
+              {shortageQuantity > 0 ? (
+                <em
+                  aria-label={`Не хватает ${shortageQuantity} шт.`}
+                  className="loading-product__shortage"
+                >
+                  −{shortageQuantity}
+                </em>
+              ) : null}
+              <span>{product.remainingQuantity} шт.</span>
+            </b>
+          </span>
         </span>
         <i aria-hidden="true">{open ? "−" : "+"}</i>
       </button>
