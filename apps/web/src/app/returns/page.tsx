@@ -35,6 +35,22 @@ import {
 type DriverSpoilageTerritory = DriverSpoilageWorkspaceView["territories"][number];
 type DriverSpoilageProduct = DriverSpoilageTerritory["products"][number];
 
+interface PendingGoodReturnGroup {
+  readonly comments: readonly string[];
+  readonly dispatchDate: string;
+  readonly key: string;
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+    readonly quantity: number;
+  }[];
+  readonly requests: readonly GoodReturnRequestView[];
+  readonly sourceDriverName: string;
+  readonly territoryNumber: number;
+  readonly totalQuantity: number;
+}
+
 export default function GoodReturnsPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -148,6 +164,8 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       </main>
     );
 
+  const pendingGroups = groupPendingGoodReturns(data.requests);
+
   return (
     <main className="workspace-layout returns-page simple-workspace">
       <header className="workspace-header">
@@ -192,53 +210,67 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             <h2>Возврат от водителей</h2>
             <p>Заявка попадёт в складской остаток только после одной подтверждённой приёмки.</p>
           </div>
-          <b>{data.requests.filter((item) => item.status === "PENDING").length}</b>
+          <b>{countPendingGoodReturns(data.requests)}</b>
         </div>
         <div className="returns-request-list">
-          {data.requests.filter((item) => item.status === "PENDING").length ? (
-            data.requests
-              .filter((item) => item.status === "PENDING")
-              .map((item) => (
-                <article className="is-pending" key={item.id}>
-                  <div className="returns-request-summary">
-                    <div>
-                      <span>
-                        Территория {item.territoryNumber} · вывоз {formatDate(item.dispatchDate)}
-                      </span>
-                      <strong>{item.sourceDriverName}</strong>
-                    </div>
-                    <b>{item.totalQuantity} шт.</b>
+          {pendingGroups.length ? (
+            pendingGroups.map((group) => (
+              <article className="is-pending" key={group.key}>
+                <div className="returns-request-summary">
+                  <div>
+                    <span>
+                      Территория {group.territoryNumber} · вывоз {formatDate(group.dispatchDate)}
+                    </span>
+                    <strong>{group.sourceDriverName}</strong>
                   </div>
-                  <div className="returns-request-lines">
-                    {item.lines.map((line) => (
-                      <span key={line.productId}>
-                        {line.productName} <b>{line.quantity} шт.</b>
-                      </span>
+                  <b>{group.totalQuantity} шт.</b>
+                </div>
+                <div className="returns-request-lines">
+                  {group.products.map((product) => (
+                    <span key={product.id}>
+                      <small>{product.code}</small>
+                      <strong>{product.name}</strong>
+                      <b>{product.quantity} шт.</b>
+                    </span>
+                  ))}
+                </div>
+                {group.comments.map((comment) => (
+                  <p key={comment}>{comment}</p>
+                ))}
+                {canChange ? (
+                  <div className="returns-request-actions">
+                    {group.requests.map((request) => (
+                      <button
+                        className="primary-button"
+                        disabled={busy === request.id}
+                        key={request.id}
+                        onClick={() =>
+                          void command(
+                            request.id,
+                            () =>
+                              acceptGoodReturnRequest(
+                                request.id,
+                                {
+                                  idempotencyKey: crypto.randomUUID(),
+                                  version: request.version,
+                                },
+                                csrf(),
+                              ),
+                            "Возврат принят и добавлен в общий остаток склада.",
+                          )
+                        }
+                      >
+                        {busy === request.id
+                          ? "Принимаем…"
+                          : group.requests.length === 1
+                            ? "Принять возврат"
+                            : `Принять ${request.totalQuantity} шт.`}
+                      </button>
                     ))}
                   </div>
-                  {item.comment ? <p>{item.comment}</p> : null}
-                  {canChange ? (
-                    <button
-                      className="primary-button"
-                      disabled={busy === item.id}
-                      onClick={() =>
-                        void command(
-                          item.id,
-                          () =>
-                            acceptGoodReturnRequest(
-                              item.id,
-                              { idempotencyKey: crypto.randomUUID(), version: item.version },
-                              csrf(),
-                            ),
-                          "Возврат принят и добавлен в общий остаток склада.",
-                        )
-                      }
-                    >
-                      Принять возврат
-                    </button>
-                  ) : null}
-                </article>
-              ))
+                ) : null}
+              </article>
+            ))
           ) : (
             <p className="logistics-empty">Новых возвратов для приёмки нет.</p>
           )}
@@ -246,6 +278,56 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       </section>
     </main>
   );
+}
+
+function groupPendingGoodReturns(
+  requests: readonly GoodReturnRequestView[],
+): PendingGoodReturnGroup[] {
+  const grouped = new Map<string, GoodReturnRequestView[]>();
+  for (const request of requests) {
+    if (request.status !== "PENDING") continue;
+    const key = [request.territoryId, request.sourceDriverId, request.dispatchDate].join(":");
+    grouped.set(key, [...(grouped.get(key) ?? []), request]);
+  }
+
+  return [...grouped.entries()]
+    .map(([key, groupRequests]) => {
+      const products = new Map<
+        string,
+        { code: string; id: string; name: string; quantity: number }
+      >();
+      const comments = new Set<string>();
+      for (const request of groupRequests) {
+        if (request.comment?.trim()) comments.add(request.comment.trim());
+        for (const line of request.lines) {
+          const current = products.get(line.productId);
+          products.set(line.productId, {
+            code: line.productCode,
+            id: line.productId,
+            name: line.productName,
+            quantity: (current?.quantity ?? 0) + line.quantity,
+          });
+        }
+      }
+      const first = groupRequests[0]!;
+      return {
+        comments: [...comments],
+        dispatchDate: first.dispatchDate,
+        key,
+        products: [...products.values()].sort((left, right) =>
+          left.name.localeCompare(right.name, "ru"),
+        ),
+        requests: groupRequests,
+        sourceDriverName: first.sourceDriverName,
+        territoryNumber: first.territoryNumber,
+        totalQuantity: groupRequests.reduce((sum, request) => sum + request.totalQuantity, 0),
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.territoryNumber - right.territoryNumber ||
+        left.sourceDriverName.localeCompare(right.sourceDriverName, "ru"),
+    );
 }
 
 function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {

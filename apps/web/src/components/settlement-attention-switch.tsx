@@ -36,16 +36,43 @@ export function SettlementAttentionSwitch({
 }
 
 export function countPendingGoodReturns(requests: readonly GoodReturnRequestView[]) {
-  return requests.filter((request) => request.status === "PENDING").length;
+  const positions = new Set<string>();
+  for (const request of requests) {
+    if (request.status !== "PENDING") continue;
+    if (request.lines.length === 0) {
+      positions.add(request.id);
+      continue;
+    }
+    for (const line of request.lines) {
+      positions.add(
+        [request.territoryId, request.sourceDriverId, request.dispatchDate, line.productId].join(
+          ":",
+        ),
+      );
+    }
+  }
+  return positions.size;
 }
 
 export function countPendingDriverSpoilage(requests: readonly WriteoffRequestView[]) {
-  return requests.filter(
-    (request) =>
-      request.awaitingReceipt &&
-      request.status === "SUBMITTED" &&
-      request.sourceTerritoryNumber !== null,
-  ).length;
+  const positions = new Set<string>();
+  for (const request of requests) {
+    if (
+      !request.awaitingReceipt ||
+      request.status !== "SUBMITTED" ||
+      request.sourceTerritoryNumber === null
+    )
+      continue;
+    positions.add(
+      [
+        request.sourceTerritoryNumber,
+        request.sourceDriverName ?? request.createdByName,
+        request.sourceDispatchDate ?? request.businessDate,
+        request.productId,
+      ].join(":"),
+    );
+  }
+  return positions.size;
 }
 
 function SettlementBadge({ count, label }: { count: number; label: string }) {

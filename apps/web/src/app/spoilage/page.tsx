@@ -37,6 +37,21 @@ interface SpoilageStockGroup {
   readonly total: number;
 }
 
+interface PendingSpoilageGroup {
+  readonly dispatchDate: string | null;
+  readonly driverName: string;
+  readonly key: string;
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+    readonly quantity: number;
+  }[];
+  readonly requests: readonly WriteoffRequestView[];
+  readonly territoryNumber: number;
+  readonly total: number;
+}
+
 export default function SpoilagePage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -131,6 +146,7 @@ export default function SpoilagePage() {
     (item) =>
       item.awaitingReceipt && item.status === "SUBMITTED" && item.sourceTerritoryNumber !== null,
   );
+  const pendingGroups = groupPendingSpoilage(pending);
   const stored = data.requests.filter(
     (item) =>
       !item.awaitingReceipt && item.status === "SUBMITTED" && item.sourceTerritoryNumber !== null,
@@ -161,7 +177,7 @@ export default function SpoilagePage() {
         </div>
         <div className="spoilage-summary">
           <span>
-            Ожидает приёмки <b>{pending.length}</b>
+            Ожидает приёмки <b>{countPendingDriverSpoilage(data.requests)}</b>
           </span>
           <span>
             На складе порчи <b>{data.blockedQuantity} шт.</b>
@@ -184,33 +200,46 @@ export default function SpoilagePage() {
             <p className="eyebrow">Нужно принять</p>
             <h2>Порча от водителей</h2>
           </div>
-          <b>{pending.length}</b>
+          <b>{countPendingDriverSpoilage(data.requests)}</b>
         </div>
 
         <div className="spoilage-receipt-list">
-          {pending.map((item) => (
-            <article className="spoilage-receipt-card is-pending" key={item.id}>
+          {pendingGroups.map((group) => (
+            <article className="spoilage-receipt-card is-pending" key={group.key}>
               <div className="spoilage-receipt-card__source">
-                <b>Территория {item.sourceTerritoryNumber}</b>
-                <span>{item.sourceDriverName ?? item.createdByName}</span>
-                {item.sourceDispatchDate ? (
-                  <small>Вывоз {formatDate(item.sourceDispatchDate)}</small>
-                ) : null}
+                <b>Территория {group.territoryNumber}</b>
+                <span>{group.driverName}</span>
+                {group.dispatchDate ? <small>Вывоз {formatDate(group.dispatchDate)}</small> : null}
               </div>
-              <div className="spoilage-receipt-card__product">
-                <small>{item.productCode}</small>
-                <strong>{item.productName}</strong>
+              <div className="spoilage-receipt-card__products">
+                {group.products.map((product) => (
+                  <div className="spoilage-receipt-card__product" key={product.id}>
+                    <span>
+                      <small>{product.code}</small>
+                      <strong>{product.name}</strong>
+                    </span>
+                    <b>{product.quantity} шт.</b>
+                  </div>
+                ))}
               </div>
-              <b className="spoilage-receipt-card__quantity">{item.quantity} шт.</b>
               {canReceive ? (
-                <button
-                  className="primary-button"
-                  disabled={busy === item.id}
-                  onClick={() => void accept(item)}
-                  type="button"
-                >
-                  {busy === item.id ? "Принимаем…" : "Принять порчу"}
-                </button>
+                <div className="spoilage-receipt-card__actions">
+                  {group.requests.map((request) => (
+                    <button
+                      className="primary-button"
+                      disabled={busy === request.id}
+                      key={request.id}
+                      onClick={() => void accept(request)}
+                      type="button"
+                    >
+                      {busy === request.id
+                        ? "Принимаем…"
+                        : group.requests.length === 1
+                          ? "Принять порчу"
+                          : `Принять ${request.quantity} шт.`}
+                    </button>
+                  ))}
+                </div>
               ) : null}
             </article>
           ))}
@@ -258,6 +287,52 @@ export default function SpoilagePage() {
       </section>
     </main>
   );
+}
+
+function groupPendingSpoilage(items: readonly WriteoffRequestView[]): PendingSpoilageGroup[] {
+  const groups = new Map<string, WriteoffRequestView[]>();
+  for (const item of items) {
+    const key = [
+      item.sourceTerritoryNumber,
+      item.sourceDriverName ?? item.createdByName,
+      item.sourceDispatchDate ?? item.businessDate,
+    ].join(":");
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, requests]) => {
+      const products = new Map<
+        string,
+        { code: string; id: string; name: string; quantity: number }
+      >();
+      for (const request of requests) {
+        const current = products.get(request.productId);
+        products.set(request.productId, {
+          code: request.productCode,
+          id: request.productId,
+          name: request.productName,
+          quantity: (current?.quantity ?? 0) + request.quantity,
+        });
+      }
+      const first = requests[0]!;
+      return {
+        dispatchDate: first.sourceDispatchDate,
+        driverName: first.sourceDriverName ?? first.createdByName,
+        key,
+        products: [...products.values()].sort((left, right) =>
+          left.name.localeCompare(right.name, "ru"),
+        ),
+        requests,
+        territoryNumber: first.sourceTerritoryNumber!,
+        total: requests.reduce((sum, request) => sum + request.quantity, 0),
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.territoryNumber - right.territoryNumber ||
+        left.driverName.localeCompare(right.driverName, "ru"),
+    );
 }
 
 function groupStoredSpoilage(items: readonly WriteoffRequestView[]): SpoilageStockGroup[] {

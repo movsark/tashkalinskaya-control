@@ -13,6 +13,7 @@ import {
 import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
 import { AccountMenu } from "./account-menu";
+import { countPendingDriverSpoilage, countPendingGoodReturns } from "./settlement-attention-switch";
 
 export function AppHome() {
   const [session, setSession] = useState<AuthenticatedUser | null | undefined>(undefined);
@@ -77,8 +78,8 @@ export function AppHome() {
         ]);
         if (active) {
           setReturnAttentionCount(
-            returns.requests.filter((request) => request.status === "PENDING").length +
-              spoilage.requests.filter((request) => request.awaitingReceipt).length,
+            countPendingGoodReturns(returns.requests) +
+              countPendingDriverSpoilage(spoilage.requests),
           );
         }
       } catch {

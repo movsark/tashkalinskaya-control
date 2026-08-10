@@ -9075,6 +9075,7 @@ select:focus {
 .returns-request-summary,
 .returns-request-summary > div,
 .returns-request-lines,
+.returns-request-actions,
 .driver-return-requests > article > div {
   display: grid;
   gap: 4px;
@@ -9083,6 +9084,30 @@ select:focus {
 .returns-request-summary {
   align-items: center;
   grid-template-columns: 1fr auto;
+}
+
+.returns-request-lines > span {
+  display: grid;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 54px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.returns-request-lines > span:last-child {
+  border-bottom: 0;
+}
+
+.returns-request-lines > span small,
+.returns-request-lines > span strong {
+  grid-column: 1;
+}
+
+.returns-request-lines > span > b {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .returns-request-lines span,
@@ -9923,7 +9948,7 @@ select:focus {
   padding: 16px;
   border: 1px solid #e2ddd3;
   border-radius: 16px;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.4fr) auto minmax(170px, auto);
+  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.4fr) minmax(170px, auto);
 }
 
 .spoilage-receipt-card.is-pending {
@@ -9932,10 +9957,32 @@ select:focus {
 }
 
 .spoilage-receipt-card__source,
+.spoilage-receipt-card__products,
 .spoilage-receipt-card__product,
-.spoilage-receipt-card__product > strong {
+.spoilage-receipt-card__product > span {
   display: grid;
   gap: 4px;
+}
+
+.spoilage-receipt-card__products {
+  gap: 0;
+}
+
+.spoilage-receipt-card__product {
+  align-items: center;
+  min-height: 54px;
+  padding: 7px 0;
+  border-bottom: 1px solid #e3d9ba;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.spoilage-receipt-card__product:last-child {
+  border-bottom: 0;
+}
+
+.spoilage-receipt-card__product > b {
+  color: var(--forest);
+  white-space: nowrap;
 }
 
 .spoilage-receipt-card__source span,
@@ -9946,13 +9993,12 @@ select:focus {
   font-size: 0.78rem;
 }
 
-.spoilage-receipt-card__quantity {
-  color: var(--forest);
-  font-size: 1.25rem;
-  white-space: nowrap;
+.spoilage-receipt-card__actions {
+  display: grid;
+  gap: 8px;
 }
 
-.spoilage-receipt-card .primary-button {
+.spoilage-receipt-card__actions .primary-button {
   min-height: 52px;
   margin: 0;
 }
@@ -10053,7 +10099,7 @@ select:focus {
     grid-template-columns: minmax(140px, 0.8fr) minmax(190px, 1.2fr) auto;
   }
 
-  .spoilage-receipt-card .primary-button {
+  .spoilage-receipt-card__actions {
     grid-column: 1 / -1;
   }
 }
@@ -10089,15 +10135,12 @@ select:focus {
   }
 
   .spoilage-receipt-card__source,
-  .spoilage-receipt-card__product {
+  .spoilage-receipt-card__products,
+  .spoilage-receipt-card__actions {
     grid-column: 1 / -1;
   }
 
-  .spoilage-receipt-card__quantity {
-    align-self: center;
-  }
-
-  .spoilage-receipt-card .primary-button {
+  .spoilage-receipt-card__actions .primary-button {
     grid-column: 1 / -1;
     width: 100%;
   }

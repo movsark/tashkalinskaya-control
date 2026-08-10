@@ -349,6 +349,18 @@ test.describe("B20 browser and HTTP regression", () => {
           territories: [],
         });
       }
+      if (path.endsWith("/spoilage/workspace")) {
+        return json(route, {
+          blockedQuantity: 0,
+          drivers: [],
+          products: [],
+          reasons: [],
+          requests: [],
+          returnPool: [],
+          serverTime: "2026-08-10T07:08:00.000Z",
+          writtenOffQuantity: 0,
+        });
+      }
       if (path.endsWith("/notifications/workspace")) {
         return json(route, notificationWorkspace());
       }
@@ -369,7 +381,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(warehousePrimary.getByLabel("На складе ожидают 2 товара")).toHaveText("2");
     const returnsLink = page.getByRole("link", { name: /Возвраты и порча/ });
     await expect(returnsLink).toHaveClass(/has-attention/u);
-    await expect(returnsLink.getByLabel("Ожидает подтверждения 1 возврат")).toHaveText("1");
+    await expect(returnsLink.getByLabel("Ожидают приёмки: 1")).toHaveText("1");
     await warehousePrimary.click();
     await expect(page).toHaveURL(/\/warehouse$/);
     const reminder = page.getByRole("status");
@@ -2613,6 +2625,29 @@ test.describe("B20 browser and HTTP regression", () => {
               totalQuantity: 3,
               version: 1,
             },
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-10",
+              id: "20000000-0000-4000-8000-00000000011a",
+              lines: [
+                {
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  quantity: 2,
+                },
+              ],
+              sourceDriverId: "20000000-0000-4000-8000-000000000116",
+              sourceDriverName: "Водитель Территории 2",
+              status: "PENDING",
+              submittedAt: "2026-08-05T15:05:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000117",
+              territoryNumber: 2,
+              totalQuantity: 2,
+              version: 1,
+            },
           ],
           serverTime: "2026-08-04T08:00:00+03:00",
           territories: [],
@@ -2683,6 +2718,35 @@ test.describe("B20 browser and HTTP regression", () => {
               status: "SUBMITTED",
               version: 2,
             },
+            {
+              awaitingReceipt: true,
+              businessDate: "2026-08-10",
+              comment: "Повторная порча",
+              createdAt: "2026-08-05T15:05:00.000Z",
+              createdByName: "Водитель Территории 2",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-00000000011b",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 1,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: null,
+              receivedByName: null,
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 2",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 2,
+              status: "SUBMITTED",
+              version: 1,
+            },
           ],
           returnPool: [],
           serverTime: "2026-08-04T08:00:00+03:00",
@@ -2709,12 +2773,15 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Водитель Территории 2")).toBeVisible();
     const pendingReturn = page.locator(".returns-request-list > article.is-pending");
     await expect(pendingReturn).toBeVisible();
+    await expect(pendingReturn).toHaveCount(1);
     expect(
       await pendingReturn.evaluate((element) => getComputedStyle(element).backgroundColor),
     ).toBe("rgb(255, 247, 223)");
     const returnRequestLines = page.locator(".returns-request-lines");
     await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
-    await expect(returnRequestLines.getByText("3 шт.")).toBeVisible();
+    await expect(returnRequestLines.getByText("5 шт.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Принять 3 шт." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Принять 2 шт." })).toBeVisible();
     await expect(page.getByText(/сразу добавится в общий свободный остаток склада/u)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Принять возврат" })).toHaveCount(0);
     await expect(page.getByText("Распределить возврат", { exact: true })).toHaveCount(0);
@@ -2729,14 +2796,16 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(spoilageSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
     await expect(spoilageSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
     const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
+    await expect(pendingSpoilage).toHaveCount(1);
     await expect(pendingSpoilage).toContainText("Территория 2");
     await expect(pendingSpoilage).toContainText("Водитель Территории 2");
     await expect(pendingSpoilage).toContainText("Торт тестовый");
-    await expect(pendingSpoilage).toContainText("2 шт.");
+    await expect(pendingSpoilage).toContainText("3 шт.");
     expect(
       await pendingSpoilage.evaluate((element) => getComputedStyle(element).backgroundColor),
     ).toBe("rgb(255, 247, 221)");
-    await expect(page.getByRole("button", { name: "Принять порчу" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Принять 2 шт." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Принять 1 шт." })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
     const spoilageStock = page.locator(".spoilage-stock-group");
     await expect(spoilageStock).toContainText("Территория 1");
