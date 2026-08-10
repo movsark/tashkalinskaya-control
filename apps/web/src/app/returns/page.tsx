@@ -822,6 +822,12 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const activeRoute = routeDay?.activeRoutes.find(
     (route) => route.driverEmployeeId === session.employee.id,
   );
+  const completedRoute = routeDay?.routeHistory?.find(
+    (route) => route.driverEmployeeId === session.employee.id && route.status === "ENDED",
+  );
+  const handedOverRoute = routeDay?.routeHistory?.find(
+    (route) => route.driverEmployeeId === session.employee.id && route.status === "TAKEN_OVER",
+  );
   const normalizedProductSearch = productSearch.trim().toLocaleLowerCase("ru-RU");
   const visibleProductCount =
     section === "RETURN"
@@ -944,10 +950,23 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             </small>
           </div>
         </section>
-      ) : (
+      ) : completedRoute ? (
         <section className="returns-panel driver-route-settlement is-archive">
           <h2>Рейс на эту дату уже завершён</h2>
           <p>Ниже сохранена история оформленных возвратов и порчи.</p>
+        </section>
+      ) : handedOverRoute ? (
+        <section className="returns-panel driver-route-settlement is-archive">
+          <h2>Рейс на эту дату передан другому водителю</h2>
+          <p>Ниже сохранена история возвратов и порчи, оформленных до передачи рейса.</p>
+        </section>
+      ) : (
+        <section className="returns-panel driver-route-settlement is-archive">
+          <h2>Рейс на эту дату ещё не начат</h2>
+          <p>Сначала выберите территорию и нажмите «Приступил к рейсу» в разделе «Моя погрузка».</p>
+          <Link className="primary-button" href="/logistics/today">
+            Открыть «Мою погрузку»
+          </Link>
         </section>
       )}
 

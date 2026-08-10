@@ -2522,6 +2522,119 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
+  test("driver returns distinguish a route that has not started from a completed route", async ({
+    page,
+  }) => {
+    const driverId = "20000000-0000-4000-8000-000000000117";
+    const territoryId = "20000000-0000-4000-8000-000000000118";
+    let routeCompleted = false;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-driver-empty-route",
+          deviceId: "20000000-0000-4000-8000-000000000119",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Водитель без рейса",
+            id: driverId,
+            login: "driver-empty-route",
+            personnelNumber: "EMPTY-ROUTE",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-00000000011a",
+                roleCode: "DRIVER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/returns/me/workspace")) {
+        return json(route, {
+          dispatchDate: "2026-08-10",
+          requests: [],
+          serverTime: "2026-08-10T13:00:00.000Z",
+          territories: [],
+        });
+      }
+      if (path.endsWith("/spoilage/me/workspace")) {
+        return json(route, {
+          dispatchDate: "2026-08-10",
+          reasons: [],
+          requests: [],
+          serverTime: "2026-08-10T13:00:00.000Z",
+          territories: [],
+        });
+      }
+      if (path.endsWith("/logistics/me/days/2026-08-10")) {
+        return json(route, {
+          activeRoutes: [],
+          availableTerritoryIds: [territoryId],
+          dispatchDate: "2026-08-10",
+          driverProfileVersion: 1,
+          homeTerritoryId: territoryId,
+          requests: [],
+          routeHistory: routeCompleted
+            ? [
+                {
+                  dispatchDate: "2026-08-10",
+                  driverEmployeeId: driverId,
+                  driverName: "Водитель без рейса",
+                  endedAt: "2026-08-10T12:30:00.000Z",
+                  endReason: "COMPLETE",
+                  id: "20000000-0000-4000-8000-00000000011b",
+                  startedAt: "2026-08-10T06:00:00.000Z",
+                  status: "ENDED",
+                  territoryId,
+                  territoryName: "Территория 2",
+                  territoryNumber: 2,
+                  version: 2,
+                },
+              ]
+            : [],
+          runs: [],
+          territories: [],
+          totalNormQuantity: 0,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) return json(route, notificationWorkspace());
+      if (path.endsWith("/health/live")) {
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T13:00:00.000Z",
+          version: "test",
+        });
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/returns");
+    await expect(
+      page.getByRole("heading", { name: "Рейс на эту дату ещё не начат" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Рейс на эту дату уже завершён" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("link", { name: "Открыть «Мою погрузку»" })).toBeVisible();
+
+    routeCompleted = true;
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Рейс на эту дату уже завершён" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Рейс на эту дату ещё не начат" })).toHaveCount(
+      0,
+    );
+  });
+
   test("a driver sends a partial good return from the grouped received assortment", async ({
     page,
   }) => {
