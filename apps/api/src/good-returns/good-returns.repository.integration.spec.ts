@@ -422,26 +422,26 @@ describe.runIf(hasDatabase)("GoodReturnsRepository with PostgreSQL", () => {
       }),
     ).rejects.toThrow("Можно оформить не более 0 шт.");
 
-    const carryover = await spoilageRepository.createDriver({
+    const storeReturn = await spoilageRepository.createDriver({
       actor: driver,
       businessDate: dispatchDate,
       comment: "Старая порча, не из сегодняшней погрузки",
       correlationId: randomUUID(),
       externalDocumentNumber: null,
-      idempotencyKey: `driver-spoilage-carryover-${seed}`,
+      idempotencyKey: `driver-spoilage-store-return-${seed}`,
       photoUploadId: null,
       productId,
       quantity: 3,
       reasonId: reasonPackaging,
       territoryId: territoryIds[0]!,
     });
-    const carryoverRequest = (
+    const storeReturnRequest = (
       await spoilageRepository.driverWorkspace(dispatchDate, driver)
-    ).requests.find((request) => request.id === carryover.requestId);
-    expect(carryoverRequest).toMatchObject({
+    ).requests.find((request) => request.id === storeReturn.requestId);
+    expect(storeReturnRequest).toMatchObject({
       productId,
       quantity: 3,
-      sourceBasis: "DRIVER_CARRYOVER",
+      sourceBasis: "STORE_RETURN",
       sourceDispatchDate: dispatchDate,
       sourceTerritoryNumber: 1,
       status: "SUBMITTED",

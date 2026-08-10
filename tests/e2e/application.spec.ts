@@ -2528,7 +2528,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const driverId = "20000000-0000-4000-8000-000000000120";
     const territoryId = "20000000-0000-4000-8000-000000000121";
     const productId = "20000000-0000-4000-8000-000000000122";
-    const carryoverProductId = "20000000-0000-4000-8000-000000000126";
+    const storeReturnProductId = "20000000-0000-4000-8000-000000000126";
     let submitted: Record<string, unknown> | null = null;
     let requestCreated = false;
     await page.setViewportSize({ height: 844, width: 390 });
@@ -2653,7 +2653,7 @@ test.describe("B20 browser and HTTP regression", () => {
                   productCode: "SV-001",
                   productGroupCode: "DRY_BAKERY",
                   productGroupName: "Сухая выпечка",
-                  productId: carryoverProductId,
+                  productId: storeReturnProductId,
                   productName: "СВ Бакусы",
                 },
               ],
@@ -2719,7 +2719,8 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("button", { name: /СВ Бакусы/u })).toBeVisible();
     await expect(page.getByRole("button", { name: /ТБ Рыжик/u })).toHaveCount(0);
     await page.getByRole("button", { name: /СВ Бакусы/u }).click();
-    await expect(page.getByText(/остаток прошлых дней; количество проверит/u)).toBeVisible();
+    await expect(page.getByText("Порча из магазина")).toBeVisible();
+    await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

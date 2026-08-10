@@ -1189,7 +1189,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                     <small>
                                       {fromTodayRoute
                                         ? `Сегодня вывезено ${product.dispatchedQuantity}`
-                                        : "Остаток прошлых дней"}
+                                        : "Порча из магазина"}
                                     </small>
                                     <b>
                                       {fromTodayRoute
@@ -1224,13 +1224,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                           Доступно <b>{product.availableSpoilageQuantity}</b>
                                         </span>
                                       </div>
-                                    ) : (
-                                      <p className="driver-spoilage-carryover">
-                                        Этого товара не было в сегодняшней принятой погрузке. Заявка
-                                        будет отмечена как остаток прошлых дней; количество проверит
-                                        кладовщик или администратор.
-                                      </p>
-                                    )}
+                                    ) : null}
                                     {!fromTodayRoute || product.availableSpoilageQuantity ? (
                                       <>
                                         <label>
@@ -1390,11 +1384,9 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   <span>
                     Территория {request.sourceTerritoryNumber ?? "—"} · {request.quantity} шт.
                   </span>
-                  <small>
-                    {request.sourceBasis === "DRIVER_CARRYOVER"
-                      ? "Остаток прошлых дней"
-                      : "Из сегодняшнего вывоза"}
-                  </small>
+                  {request.sourceBasis === "TODAY_ROUTE" ? (
+                    <small>Из сегодняшнего вывоза</small>
+                  ) : null}
                 </div>
                 <div>
                   <span>{request.reasonName}</span>

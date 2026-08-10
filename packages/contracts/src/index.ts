@@ -1343,7 +1343,7 @@ export interface WriteoffRequestView {
   readonly reasonName: string;
   readonly sourceDriverName: string | null;
   readonly sourceDispatchDate: string | null;
-  readonly sourceBasis: "DRIVER_CARRYOVER" | "TODAY_ROUTE" | null;
+  readonly sourceBasis: "STORE_RETURN" | "TODAY_ROUTE" | null;
   readonly sourceKind: WriteoffSourceKind;
   readonly sourceLabel: string | null;
   readonly sourceTerritoryNumber: number | null;

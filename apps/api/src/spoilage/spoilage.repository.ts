@@ -482,7 +482,7 @@ interface CreateCommand {
   readonly reasonId: string;
   readonly sourceDriverId: string | null;
   readonly sourceDispatchDate?: string | null;
-  readonly sourceBasis?: "DRIVER_CARRYOVER" | "TODAY_ROUTE" | null;
+  readonly sourceBasis?: "STORE_RETURN" | "TODAY_ROUTE" | null;
   readonly sourceKind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly sourceLabel: string | null;
   readonly sourceTerritoryId?: string | null;
@@ -558,7 +558,7 @@ interface WriteoffWorkspaceRow {
   readonly revision_no: number | null;
   readonly source_driver_name_snapshot: string | null;
   readonly source_dispatch_date: string | null;
-  readonly source_basis: "DRIVER_CARRYOVER" | "TODAY_ROUTE" | null;
+  readonly source_basis: "STORE_RETURN" | "TODAY_ROUTE" | null;
   readonly source_kind: "PHYSICAL_SPOILAGE" | "RETURN_POOL";
   readonly source_label: string | null;
   readonly source_territory_number_snapshot: number | null;
@@ -721,7 +721,7 @@ async function requireActiveDriverRoute(
     territoryId: string;
   },
 ): Promise<{
-  sourceBasis: "DRIVER_CARRYOVER" | "TODAY_ROUTE";
+  sourceBasis: "STORE_RETURN" | "TODAY_ROUTE";
   territoryNumber: number;
 }> {
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [
@@ -745,7 +745,7 @@ async function requireActiveDriverRoute(
   if (!product) throw new ConflictException("Товар не найден в активном каталоге");
   if (product.dispatched_quantity === 0)
     return {
-      sourceBasis: "DRIVER_CARRYOVER",
+      sourceBasis: "STORE_RETURN",
       territoryNumber: route.rows[0].territory_number,
     };
   const available = Math.max(product.dispatched_quantity - product.classified_quantity, 0);
