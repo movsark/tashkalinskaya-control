@@ -2932,7 +2932,13 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByLabel("Найти товар для возврата").fill("рыжик");
     await expect(page.getByText(/Вернуть до/u)).toHaveCount(0);
     const returnProduct = page.getByRole("button", { name: /ТБ Рыжик/u });
-    await expect(returnProduct.getByText("Вывезено 14 шт.")).toBeVisible();
+    const dispatchedQuantity = returnProduct.getByText("Вывезено 14 шт.");
+    await expect(dispatchedQuantity).toBeVisible();
+    const dispatchedBox = await dispatchedQuantity.boundingBox();
+    const expandBox = await returnProduct.locator("i").boundingBox();
+    expect(dispatchedBox).not.toBeNull();
+    expect(expandBox).not.toBeNull();
+    expect(dispatchedBox!.x + dispatchedBox!.width).toBeLessThanOrEqual(expandBox!.x);
     await returnProduct.click();
     const returnDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
     await expect(returnDialog).toBeVisible();

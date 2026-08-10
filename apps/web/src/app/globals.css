@@ -9231,6 +9231,10 @@ select:focus {
     grid-template-columns: minmax(0, 1fr) 24px;
   }
 
+  .driver-return-product__button.is-return-selector {
+    grid-template-columns: minmax(0, 1fr) auto 32px;
+  }
+
   .driver-return-group__button > b,
   .driver-return-product__counts {
     grid-column: 1;
@@ -9238,9 +9242,14 @@ select:focus {
   }
 
   .driver-return-group__button > i,
-  .driver-return-product__button > i {
+  .driver-return-product__button:not(.is-return-selector) > i {
     grid-column: 2;
     grid-row: 1 / span 2;
+  }
+
+  .driver-return-product__button.is-return-selector > i {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .driver-return-product-stats {
