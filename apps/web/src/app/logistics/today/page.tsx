@@ -26,6 +26,8 @@ interface ReplyDraft {
   type: "COUNTER" | "REJECT" | null;
 }
 
+type ProductFilter = "ACCEPTED" | "ALL" | "REMAINING";
+
 export default function DriverLogisticsPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -34,6 +36,7 @@ export default function DriverLogisticsPage() {
   const [dispatchDate, setDispatchDate] = useState(todayMoscow());
   const [replies, setReplies] = useState<Record<string, ReplyDraft>>({});
   const [productSearch, setProductSearch] = useState("");
+  const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
@@ -97,18 +100,25 @@ export default function DriverLogisticsPage() {
   const products = loading?.products ?? [];
   const productGroups = useMemo(() => {
     const query = productSearch.trim().toLocaleLowerCase("ru-RU");
+    const filteredByStatus = products.filter((product) =>
+      productFilter === "ALL"
+        ? true
+        : productFilter === "REMAINING"
+          ? product.remainingQuantity > 0
+          : product.acceptedQuantity > 0,
+    );
     const filtered = query
-      ? products.filter((product) =>
+      ? filteredByStatus.filter((product) =>
           `${product.code} ${product.name} ${product.productGroupName}`
             .toLocaleLowerCase("ru-RU")
             .includes(query),
         )
-      : products;
+      : filteredByStatus;
     return PRODUCT_GROUPS.map((group) => ({
       ...group,
       products: filtered.filter((product) => product.productGroupCode === group.code),
     })).filter((group) => group.products.length > 0);
-  }, [productSearch, products]);
+  }, [productFilter, productSearch, products]);
   const productTotals = products.reduce(
     (totals, product) => ({
       accepted: totals.accepted + product.acceptedQuantity,
@@ -121,6 +131,11 @@ export default function DriverLogisticsPage() {
   const visibleExpandedGroups = productSearch.trim()
     ? productGroups.map((group) => group.code)
     : expandedProductGroups;
+  const productFilterCounts = {
+    ACCEPTED: products.reduce((total, product) => total + product.acceptedQuantity, 0),
+    ALL: products.reduce((total, product) => total + product.plannedQuantity, 0),
+    REMAINING: products.reduce((total, product) => total + product.remainingQuantity, 0),
+  } satisfies Record<ProductFilter, number>;
 
   return (
     <main className="workspace-layout logistics-role-layout driver-loading-workspace simple-workspace">
@@ -234,6 +249,21 @@ export default function DriverLogisticsPage() {
               </article>
             </div>
 
+            <div className="driver-assortment__filters" aria-label="Фильтр товаров">
+              {PRODUCT_FILTERS.map((filter) => (
+                <button
+                  aria-pressed={productFilter === filter.value}
+                  className={productFilter === filter.value ? "is-active" : undefined}
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setProductFilter(filter.value)}
+                >
+                  <span>{filter.label}</span>
+                  <strong>{productFilterCounts[filter.value]} шт.</strong>
+                </button>
+              ))}
+            </div>
+
             <div className="driver-assortment__tools">
               <label>
                 <span>Поиск товара</span>
@@ -307,6 +337,7 @@ export default function DriverLogisticsPage() {
                             <div className="driver-assortment-product__name">
                               <span>{product.code}</span>
                               <strong>{product.name}</strong>
+                              <ProductTransferStatus product={product} />
                             </div>
                             <div className="driver-assortment-product__metrics">
                               <span>
@@ -330,7 +361,13 @@ export default function DriverLogisticsPage() {
                 );
               })}
               {!productGroups.length ? (
-                <p className="driver-assortment__empty">По этому запросу товары не найдены.</p>
+                <p className="driver-assortment__empty">
+                  {productSearch.trim()
+                    ? "По этому запросу товары не найдены."
+                    : productFilter === "ACCEPTED"
+                      ? "Принятых товаров пока нет."
+                      : "Все товары уже приняты."}
+                </p>
               ) : null}
             </div>
           </>
@@ -651,6 +688,21 @@ function todayMoscow(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }
 
+function ProductTransferStatus({ product }: { product: LoadingDriverDayView["products"][number] }) {
+  const notSentQuantity = Math.max(0, product.plannedQuantity - product.sentQuantity);
+  if (product.remainingQuantity === 0)
+    return <small className="is-completed">Принято полностью</small>;
+  return (
+    <small className="driver-assortment-product__status">
+      {notSentQuantity > 0 ? `Склад ещё не передал ${notSentQuantity} шт.` : null}
+      {notSentQuantity > 0 && product.awaitingAcceptanceQuantity > 0 ? " · " : null}
+      {product.awaitingAcceptanceQuantity > 0
+        ? `Ждёт вашего подтверждения ${product.awaitingAcceptanceQuantity} шт.`
+        : null}
+    </small>
+  );
+}
+
 const PRODUCT_GROUPS = [
   { code: "BASIC_CAKES", name: "Торты Базовые" },
   { code: "PREMIUM_CAKES", name: "Торты Премиум" },
@@ -658,3 +710,9 @@ const PRODUCT_GROUPS = [
   { code: "DESSERTS", name: "Десерты" },
   { code: "DRY_BAKERY", name: "Сухая выпечка" },
 ] as const;
+
+const PRODUCT_FILTERS: readonly { label: string; value: ProductFilter }[] = [
+  { label: "Все", value: "ALL" },
+  { label: "Осталось забрать", value: "REMAINING" },
+  { label: "Принято", value: "ACCEPTED" },
+];

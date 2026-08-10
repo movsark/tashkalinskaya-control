@@ -3077,6 +3077,54 @@ select:focus {
   background: #f9e7e1;
 }
 
+.driver-assortment__filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.driver-assortment__filters button {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--forest);
+  background: #f7f8f5;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.driver-assortment__filters button strong {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.driver-assortment__filters button.is-active {
+  border-color: var(--forest);
+  color: #fff;
+  background: var(--forest);
+}
+
+.driver-assortment__filters button.is-active strong {
+  color: var(--forest);
+  background: #fff;
+}
+
 .driver-assortment__tools label {
   display: grid;
   flex: 1 1 340px;
@@ -3190,6 +3238,16 @@ select:focus {
 
 .driver-assortment-product__name strong {
   overflow-wrap: anywhere;
+}
+
+.driver-assortment-product__name small {
+  color: #8d6613;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.driver-assortment-product__name small.is-completed {
+  color: #1c714d;
 }
 
 .driver-assortment-product__metrics {
@@ -3367,6 +3425,14 @@ select:focus {
 
   .driver-assortment__totals {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .driver-assortment__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .driver-assortment__filters button:first-child {
+    grid-column: 1 / -1;
   }
 
   .driver-assortment__tools {
