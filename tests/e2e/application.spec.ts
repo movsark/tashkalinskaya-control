@@ -2623,7 +2623,13 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("heading", { name: "Рейс на эту дату уже завершён" })).toHaveCount(
       0,
     );
-    await expect(page.getByRole("link", { name: "Открыть «Мою погрузку»" })).toBeVisible();
+    const loadingLink = page.getByRole("link", { name: "Открыть «Мою погрузку»" });
+    await expect(loadingLink).toBeVisible();
+    await expect(loadingLink).toHaveCSS("align-items", "center");
+    await expect(loadingLink).toHaveCSS("font-size", "18px");
+    await expect(loadingLink).toHaveCSS("justify-content", "center");
+    await expect(loadingLink).toHaveCSS("min-height", "58px");
+    await expect(loadingLink).toHaveCSS("text-decoration-line", "none");
 
     routeCompleted = true;
     await page.reload();

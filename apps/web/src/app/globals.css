@@ -8329,6 +8329,20 @@ select:focus {
   background: #f3f7f5;
 }
 
+.driver-route-settlement .driver-route-start-link {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  font-size: 18px;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+}
+
 .driver-settlement-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

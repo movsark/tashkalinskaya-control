@@ -964,7 +964,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         <section className="returns-panel driver-route-settlement is-archive">
           <h2>Рейс на эту дату ещё не начат</h2>
           <p>Сначала выберите территорию и нажмите «Приступил к рейсу» в разделе «Моя погрузка».</p>
-          <Link className="primary-button" href="/logistics/today">
+          <Link className="primary-button driver-route-start-link" href="/logistics/today">
             Открыть «Мою погрузку»
           </Link>
         </section>
