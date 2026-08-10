@@ -834,6 +834,18 @@ export async function createLoadingLine(
   });
 }
 
+export async function sendLoadingToTerritory(
+  territoryId: string,
+  input: { dispatchDate: string; productId: string; quantity: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/territories/${territoryId}/lines`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function reviseLoadingLine(
   lineId: string,
   input: { comment: string; quantity: number; version: number },

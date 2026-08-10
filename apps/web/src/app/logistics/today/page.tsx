@@ -316,7 +316,7 @@ export default function DriverLogisticsPage() {
                               )
                             }
                           >
-                            Подтвердить {line.quantity}
+                            Принять {line.quantity} шт.
                           </button>
                           <button
                             className="secondary-button"

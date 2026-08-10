@@ -19,6 +19,7 @@ import {
   ReassignLoadingLineDto,
   RespondLoadingLineDto,
   ReviseLoadingLineDto,
+  SendTerritoryLoadingLineDto,
 } from "./loading.dto";
 import { LoadingService } from "./loading.service";
 
@@ -55,6 +56,15 @@ export class LoadingController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.createLine(id, dto, actor(request), correlationId(request));
+  }
+  @Post("territories/:id/lines")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  sendToTerritory(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SendTerritoryLoadingLineDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.sendToTerritory(id, dto, actor(request), correlationId(request));
   }
   @Put("lines/:id")
   @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")

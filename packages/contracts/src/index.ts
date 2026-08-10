@@ -1090,6 +1090,23 @@ export interface LoadingProductView {
   readonly freeQuantity: number;
   readonly id: string;
   readonly name: string;
+  readonly plannedQuantity: number;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+  readonly territories: readonly LoadingTerritoryDemandView[];
+}
+
+export interface LoadingTerritoryDemandView {
+  readonly canSend: boolean;
+  readonly driverName: string | null;
+  readonly plannedQuantity: number;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
 }
 
 export interface LoadingWarehouseDayView {

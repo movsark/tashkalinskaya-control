@@ -98,6 +98,20 @@ interface ProductRow extends QueryResultRow {
   id: string;
   name: string;
   product_code: string;
+  product_group_code: string;
+  product_group_name: string;
+}
+interface TerritoryDemandRow extends QueryResultRow {
+  driver_employee_id: string | null;
+  driver_name: string | null;
+  id: string;
+  name: string;
+  territory_number: number;
+}
+interface EffectiveNormRow extends QueryResultRow {
+  product_id: string;
+  quantity: number;
+  territory_id: string;
 }
 interface PlanRow extends QueryResultRow {
   allocated_free_stock: number;
@@ -157,17 +171,69 @@ export class LoadingRepository {
       );
       const sessions = await loadSessions(client, date, null);
       const products = await client.query<ProductRow>(
-        `select p.id,p.product_code,p.name,coalesce(sb.quantity,0)::int free_quantity,
+        `select p.id,p.product_code,p.name,c.code product_group_code,
+           case c.code
+             when 'BASIC_CAKES' then 'Торты Базовые'
+             when 'PREMIUM_CAKES' then 'Торты Премиум'
+             when 'PIES_AND_PASTRIES' then 'Пироги'
+             when 'DESSERTS' then 'Десерты'
+             when 'DRY_BAKERY' then 'Сухая выпечка'
+             else c.name
+           end product_group_name,
+           coalesce(sb.quantity,0)::int free_quantity,
            coalesce(array_agg(pb.barcode order by pb.barcode) filter(where pb.barcode is not null),'{}') barcodes
-         from catalog.product p left join warehouse.stock_balance sb on sb.warehouse_id=$1 and sb.product_id=p.id and sb.bucket='FREE_STOCK'
+         from catalog.product p join catalog.category c on c.id=p.category_id
+         left join warehouse.stock_balance sb on sb.warehouse_id=$1 and sb.product_id=p.id and sb.bucket='FREE_STOCK'
          left join catalog.product_barcode pb on pb.product_id=p.id and pb.status='ACTIVE'
-         where p.status='ACTIVE' group by p.id,p.product_code,p.name,sb.quantity order by p.name`,
+         where p.status='ACTIVE'
+           and c.code in ('BASIC_CAKES','PREMIUM_CAKES','PIES_AND_PASTRIES','DESSERTS','DRY_BAKERY')
+         group by p.id,p.product_code,p.name,c.code,c.name,sb.quantity
+         order by case c.code
+           when 'BASIC_CAKES' then 1 when 'PREMIUM_CAKES' then 2
+           when 'PIES_AND_PASTRIES' then 3 when 'DESSERTS' then 4
+           when 'DRY_BAKERY' then 5 else 6 end,p.name`,
         [warehouseId],
+      );
+      const territories = await client.query<TerritoryDemandRow>(
+        `select t.id,t.territory_number,t.name,
+           coalesce(r.driver_employee_id,q.requester_employee_id,d.employee_id) driver_employee_id,
+           coalesce(r.driver_name,q.driver_name,d.driver_name) driver_name
+         from logistics.territory t
+         left join lateral (
+           select x.driver_employee_id,e.full_name driver_name
+           from logistics.territory_run x join identity.employee e on e.id=x.driver_employee_id
+           where x.dispatch_date=$1 and x.territory_id=t.id and x.status<>'CANCELLED'
+             and x.driver_employee_id is not null
+           order by case x.status when 'LOADING' then 0 when 'READY_FOR_LOADING' then 1
+             when 'SCHEDULED' then 2 when 'COMPLETED' then 3 else 4 end,x.run_no desc limit 1
+         ) r on true
+         left join lateral (
+           select x.requester_employee_id,e.full_name driver_name
+           from logistics.driver_territory_request x
+           join identity.employee e on e.id=x.requester_employee_id
+           where x.dispatch_date=$1 and x.territory_id=t.id and x.status='APPROVED'
+           order by x.decided_at desc limit 1
+         ) q on r.driver_employee_id is null
+         left join lateral (
+           select x.employee_id,e.full_name driver_name
+           from logistics.driver_profile x join identity.employee e on e.id=x.employee_id
+           where x.home_territory_id=t.id and x.status='ACTIVE' limit 1
+         ) d on r.driver_employee_id is null and q.requester_employee_id is null
+         where t.status='ACTIVE' order by t.sort_order,t.territory_number`,
+        [date],
+      );
+      const norms = await client.query<EffectiveNormRow>(
+        `select territory_id,product_id,quantity::int
+         from planning.effective_territory_norms($1::date,null)
+         where quantity>0`,
+        [date],
       );
       return {
         dispatchDate: date,
         groups: groups.rows.map((group) => mapGroup(group, runs.rows, sessions)),
-        products: products.rows.map(mapProduct),
+        products: products.rows.map((product) =>
+          mapProduct(product, territories.rows, norms.rows, sessions),
+        ),
         serverTime: new Date().toISOString(),
       };
     });
@@ -402,6 +468,105 @@ export class LoadingRepository {
       );
       await outbox(client, "loading.line.sent", lineId, { sessionId: command.sessionId });
       return { lineId };
+    });
+  }
+
+  sendToTerritory(command: {
+    actor: LoadingActor;
+    correlationId: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    productId: string;
+    quantity: number;
+    territoryId: string;
+  }) {
+    assertRole(command.actor, ["ADMIN", "WAREHOUSE_KEEPER"]);
+    return this.database.transaction(async (client) => {
+      const repeated = await repeatedRevision(
+        client,
+        command.actor.employeeId,
+        command.idempotencyKey,
+      );
+      if (repeated) return { lineId: repeated };
+      await requireProduct(client, command.productId);
+      const session = await ensureTerritoryLoadingSession(client, command);
+      const existing = await client.query<LockedLineRow>(
+        `select id,loading_session_id,product_id,current_revision_no,status,version
+         from loading.loading_line where loading_session_id=$1 and product_id=$2 for update`,
+        [session.id, command.productId],
+      );
+      const line = existing.rows[0] ?? null;
+      const previous = line ? await currentRevision(client, line) : null;
+      const lineId = line?.id ?? randomUUID();
+      const revisionId = randomUUID();
+      const revisionNo = line ? line.current_revision_no + 1 : 1;
+      const totalQuantity = (previous?.quantity ?? 0) + command.quantity;
+      const plan = await planSnapshot(
+        client,
+        session.dispatch_date,
+        session.territory_id,
+        command.productId,
+      );
+      const reservation = await reserveForTerritory(client, {
+        actor: command.actor,
+        businessDate: session.dispatch_date,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        previous,
+        productId: command.productId,
+        quantity: totalQuantity,
+        sourceId: revisionId,
+        territoryId: session.territory_id,
+      });
+      if (line)
+        await client.query(
+          `update loading.loading_line
+           set current_revision_no=$2,status='SENT_TO_DRIVER',updated_at=now(),version=version+1
+           where id=$1`,
+          [lineId, revisionNo],
+        );
+      else
+        await client.query(
+          `insert into loading.loading_line(id,loading_session_id,product_id) values($1,$2,$3)`,
+          [lineId, session.id, command.productId],
+        );
+      await insertRevision(client, {
+        actor: command.actor,
+        comment: line ? "Добавлено при передаче водителю" : null,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        lineId,
+        plan,
+        quantity: totalQuantity,
+        reservationDocumentId: reservation.documentId,
+        reservedFreeQuantity: reservation.freeQuantity,
+        reservedReturnQuantity: reservation.returnQuantity,
+        returnAllocationId: reservation.allocationId,
+        revisionId,
+        revisionNo,
+      });
+      await client.query(`update loading.loading_session set version=version+1 where id=$1`, [
+        session.id,
+      ]);
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        line ? "LOADING_LINE_QUANTITY_ADDED" : "LOADING_LINE_SENT",
+        "LOADING_LINE",
+        lineId,
+        {
+          addedQuantity: command.quantity,
+          productId: command.productId,
+          quantity: totalQuantity,
+          territoryId: command.territoryId,
+        },
+      );
+      await outbox(client, "loading.line.sent", lineId, {
+        addedQuantity: command.quantity,
+        sessionId: session.id,
+      });
+      return { lineId, sessionId: session.id };
     });
   }
 
@@ -948,13 +1113,50 @@ function mapGroup(
     version: group.version,
   };
 }
-function mapProduct(row: ProductRow): LoadingProductView {
+function mapProduct(
+  row: ProductRow,
+  territories: TerritoryDemandRow[],
+  norms: EffectiveNormRow[],
+  sessions: LoadingSessionView[],
+): LoadingProductView {
+  const territoryViews = territories.map((territory) => {
+    const plannedQuantity =
+      norms.find((norm) => norm.product_id === row.id && norm.territory_id === territory.id)
+        ?.quantity ?? 0;
+    const territorySessions = sessions.filter(
+      (session) => session.territoryId === territory.id && session.status !== "CANCELLED",
+    );
+    const sentQuantity = territorySessions.reduce(
+      (sum, session) =>
+        sum + (session.lines.find((line) => line.productId === row.id)?.quantity ?? 0),
+      0,
+    );
+    const openSession = territorySessions.find((session) => session.status === "IN_PROGRESS");
+    return {
+      canSend: openSession !== undefined || territory.driver_employee_id !== null,
+      driverName: openSession?.driverName ?? territory.driver_name,
+      plannedQuantity,
+      remainingQuantity: Math.max(0, plannedQuantity - sentQuantity),
+      sentQuantity,
+      territoryId: territory.id,
+      territoryName: territory.name,
+      territoryNumber: territory.territory_number,
+    };
+  });
+  const plannedQuantity = territoryViews.reduce((sum, item) => sum + item.plannedQuantity, 0);
+  const sentQuantity = territoryViews.reduce((sum, item) => sum + item.sentQuantity, 0);
   return {
     barcodes: row.barcodes,
     code: row.product_code,
     freeQuantity: row.free_quantity,
     id: row.id,
     name: row.name,
+    plannedQuantity,
+    productGroupCode: row.product_group_code,
+    productGroupName: row.product_group_name,
+    remainingQuantity: Math.max(0, plannedQuantity - sentQuantity),
+    sentQuantity,
+    territories: territoryViews,
   };
 }
 function mapLine(row: LineRow): LoadingLineView {
@@ -979,6 +1181,173 @@ function mapLine(row: LineRow): LoadingLineView {
     status: row.status,
     version: row.version,
     weeklyNormQuantity: row.weekly_norm_quantity,
+  };
+}
+
+async function ensureTerritoryLoadingSession(
+  client: PoolClient,
+  command: {
+    actor: LoadingActor;
+    correlationId: string;
+    dispatchDate: string;
+    territoryId: string;
+  },
+): Promise<LockedSessionRow> {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `loading-territory:${command.dispatchDate}:${command.territoryId}`,
+  ]);
+  const current = await client.query<LockedSessionRow>(
+    `select id,dispatch_date::text,driver_employee_id,loading_group_id,status,territory_id,version
+     from loading.loading_session
+     where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'
+     order by started_at desc limit 1 for update`,
+    [command.dispatchDate, command.territoryId],
+  );
+  if (current.rows[0]) return current.rows[0];
+
+  const territory = await client.query<{
+    id: string;
+    name: string;
+    territory_number: number;
+  }>(
+    `select id,name,territory_number from logistics.territory
+     where id=$1 and status='ACTIVE' for share`,
+    [command.territoryId],
+  );
+  const target = territory.rows[0];
+  if (!target) throw new NotFoundException("Территория не найдена");
+  const driver = await client.query<{ employee_id: string; full_name: string }>(
+    `with candidates as (
+       select r.driver_employee_id employee_id,e.full_name,1 priority,r.run_no rank
+       from logistics.territory_run r join identity.employee e on e.id=r.driver_employee_id
+       where r.dispatch_date=$1 and r.territory_id=$2 and r.status<>'CANCELLED'
+         and r.driver_employee_id is not null
+       union all
+       select q.requester_employee_id,e.full_name,2 priority,0 rank
+       from logistics.driver_territory_request q
+       join identity.employee e on e.id=q.requester_employee_id
+       where q.dispatch_date=$1 and q.territory_id=$2 and q.status='APPROVED'
+       union all
+       select d.employee_id,e.full_name,3 priority,0 rank
+       from logistics.driver_profile d join identity.employee e on e.id=d.employee_id
+       where d.home_territory_id=$2 and d.status='ACTIVE'
+     )
+     select employee_id,full_name from candidates order by priority,rank desc limit 1`,
+    [command.dispatchDate, command.territoryId],
+  );
+  const assignedDriver = driver.rows[0];
+  if (!assignedDriver)
+    throw new ConflictException(
+      `Для территории ${target.territory_number} водитель ещё не выбрал постоянную территорию`,
+    );
+
+  const timeline = await client.query<{
+    group_no: number;
+    planned_end_at: Date;
+    planned_start_at: Date;
+  }>(
+    `select coalesce(max(group_no),0)::int+1 group_no,
+       greatest(
+         coalesce(max(planned_end_at),$1::date + time '05:00'),
+         $1::date + time '05:00'
+       ) planned_start_at,
+       greatest(
+         coalesce(max(planned_end_at),$1::date + time '05:00'),
+         $1::date + time '05:00'
+       ) + interval '1 hour' planned_end_at
+     from logistics.loading_group where dispatch_date=$1 and status<>'CANCELLED'`,
+    [command.dispatchDate],
+  );
+  const slot = timeline.rows[0]!;
+  const groupId = randomUUID();
+  const runId = randomUUID();
+  const sessionId = randomUUID();
+  const runNumber = await client.query<{ run_no: number }>(
+    `select coalesce(max(run_no),0)::int+1 run_no from logistics.territory_run
+     where dispatch_date=$1 and territory_id=$2`,
+    [command.dispatchDate, command.territoryId],
+  );
+  await client.query(
+    `insert into logistics.loading_group(
+       id,dispatch_date,group_no,planned_start_at,planned_end_at,loading_zone,status,created_by
+     ) values($1,$2,$3,$4,$5,'MAIN','IN_PROGRESS',$6)`,
+    [
+      groupId,
+      command.dispatchDate,
+      slot.group_no,
+      slot.planned_start_at,
+      slot.planned_end_at,
+      command.actor.employeeId,
+    ],
+  );
+  await client.query(
+    `insert into logistics.territory_run(
+       id,dispatch_date,territory_id,run_no,driver_employee_id,loading_group_id,sequence_no,
+       planned_start_at,planned_end_at,source,status,territory_code_snapshot,
+       territory_name_snapshot,driver_name_snapshot,vehicle_snapshot,loading_started_at,
+       created_by,updated_by,correlation_id
+     ) values($1,$2,$3,$4,$5,$6,1,$7,$8,'MANUAL','LOADING',$9,$10,$11,$12,now(),$13,$13,$14)`,
+    [
+      runId,
+      command.dispatchDate,
+      command.territoryId,
+      runNumber.rows[0]!.run_no,
+      assignedDriver.employee_id,
+      groupId,
+      slot.planned_start_at,
+      slot.planned_end_at,
+      `Т${target.territory_number}`,
+      target.name,
+      assignedDriver.full_name,
+      "Не закреплена",
+      command.actor.employeeId,
+      command.correlationId,
+    ],
+  );
+  await client.query(
+    `insert into loading.loading_session(
+       id,loading_group_id,territory_run_id,warehouse_id,dispatch_date,territory_id,
+       territory_code_snapshot,territory_name_snapshot,run_no,group_no,sequence_no,
+       driver_employee_id,driver_name_snapshot,vehicle_snapshot,started_by
+     ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,$11,$12,$13,$14)`,
+    [
+      sessionId,
+      groupId,
+      runId,
+      warehouseId,
+      command.dispatchDate,
+      command.territoryId,
+      `Т${target.territory_number}`,
+      target.name,
+      runNumber.rows[0]!.run_no,
+      slot.group_no,
+      assignedDriver.employee_id,
+      assignedDriver.full_name,
+      "Не закреплена",
+      command.actor.employeeId,
+    ],
+  );
+  await audit(
+    client,
+    command.actor,
+    command.correlationId,
+    "LOADING_TERRITORY_SESSION_OPENED",
+    "LOADING_SESSION",
+    sessionId,
+    { driverEmployeeId: assignedDriver.employee_id, territoryId: command.territoryId },
+  );
+  await outbox(client, "loading.session.opened", sessionId, {
+    dispatchDate: command.dispatchDate,
+    territoryId: command.territoryId,
+  });
+  return {
+    dispatch_date: command.dispatchDate,
+    driver_employee_id: assignedDriver.employee_id,
+    id: sessionId,
+    loading_group_id: groupId,
+    status: "IN_PROGRESS",
+    territory_id: command.territoryId,
+    version: 1,
   };
 }
 
@@ -1058,6 +1427,16 @@ async function planSnapshot(
     [date, territoryId, productId],
   );
   const row = result.rows[0];
+  const effective = row
+    ? 0
+    : ((
+        await client.query<{ quantity: number }>(
+          `select quantity::int from planning.effective_territory_norms(
+             $1::date,array[$2::uuid]
+           ) where product_id=$3 limit 1`,
+          [date, territoryId, productId],
+        )
+      ).rows[0]?.quantity ?? 0);
   const weekly = row?.weekly_norm_quantity ?? 0,
     free = row?.allocated_free_stock ?? 0,
     returned = row?.allocated_good_return ?? 0,
@@ -1067,8 +1446,8 @@ async function planSnapshot(
     allocatedGoodReturn: returned,
     newProduction: production,
     oneOffQuantity: row?.one_off_quantity ?? null,
-    plannedQuantity: free + returned + production,
-    weeklyNormQuantity: weekly,
+    plannedQuantity: row ? free + returned + production : effective,
+    weeklyNormQuantity: row ? weekly : effective,
   };
 }
 async function insertRevision(

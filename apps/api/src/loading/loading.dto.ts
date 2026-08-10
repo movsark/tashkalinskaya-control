@@ -1,4 +1,14 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } from "class-validator";
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Max,
+  Min,
+} from "class-validator";
 
 export class OpenLoadingGroupDto {
   @IsInt() @Min(1) version!: number;
@@ -11,6 +21,13 @@ export class CreateLoadingLineDto {
   @IsInt() @Min(1) sessionVersion!: number;
   @IsString() @Length(8, 100) idempotencyKey!: string;
   @IsOptional() @IsString() @Length(3, 500) comment?: string;
+}
+
+export class SendTerritoryLoadingLineDto {
+  @IsDateString() dispatchDate!: string;
+  @IsUUID() productId!: string;
+  @IsInt() @Min(1) @Max(100_000) quantity!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 
 export class ReviseLoadingLineDto {

@@ -7,6 +7,7 @@ import type {
   ReassignLoadingLineDto,
   RespondLoadingLineDto,
   ReviseLoadingLineDto,
+  SendTerritoryLoadingLineDto,
 } from "./loading.dto";
 import { LoadingRepository } from "./loading.repository";
 
@@ -35,6 +36,23 @@ export class LoadingService {
       quantity: dto.quantity,
       sessionId: id,
       sessionVersion: dto.sessionVersion,
+    });
+  }
+  sendToTerritory(
+    territoryId: string,
+    dto: SendTerritoryLoadingLineDto,
+    actor: AuthenticatedActor,
+    cid: string,
+  ) {
+    assertDate(dto.dispatchDate);
+    return this.repository.sendToTerritory({
+      actor: toActor(actor),
+      correlationId: cid,
+      dispatchDate: dto.dispatchDate,
+      idempotencyKey: dto.idempotencyKey,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      territoryId,
     });
   }
   reviseLine(id: string, dto: ReviseLoadingLineDto, actor: AuthenticatedActor, cid: string) {

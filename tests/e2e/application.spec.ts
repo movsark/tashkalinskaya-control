@@ -1056,10 +1056,116 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
     await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Подтвердить 10" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Принять 10 шт." })).toBeVisible();
     await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
     await page.getByText("Из чего сложилось количество", { exact: true }).click();
     await expect(page.getByText("Норма 10", { exact: true })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("a warehouse keeper searches a product and sends its quantity to a territory driver", async ({
+    page,
+  }) => {
+    const productId = "20000000-0000-4000-8000-000000000082";
+    const territoryOneId = "20000000-0000-4000-8000-000000000083";
+    const territoryTwoId = "20000000-0000-4000-8000-000000000084";
+    let sentQuantity = 0;
+    let sentPayload: Record<string, unknown> | null = null;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-warehouse-loading-ui",
+        deviceId: "20000000-0000-4000-8000-000000000085",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Тестовый Кладовщик",
+          id: "20000000-0000-4000-8000-000000000086",
+          login: "warehouse-loading-ui",
+          personnelNumber: "WAREHOUSE-LOADING-UI",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000087",
+              roleCode: "WAREHOUSE_KEEPER",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/loading/warehouse/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        groups: [],
+        products: [
+          {
+            barcodes: [],
+            code: "TB-015",
+            freeQuantity: 14 - sentQuantity,
+            id: productId,
+            name: "ТБ Рыжик (0,8кг)",
+            plannedQuantity: 16,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 16 - sentQuantity,
+            sentQuantity,
+            territories: [
+              {
+                canSend: false,
+                driverName: null,
+                plannedQuantity: 6,
+                remainingQuantity: 6,
+                sentQuantity: 0,
+                territoryId: territoryOneId,
+                territoryName: "Территория 1",
+                territoryNumber: 1,
+              },
+              {
+                canSend: true,
+                driverName: "Тестовый Водитель",
+                plannedQuantity: 10,
+                remainingQuantity: 10 - sentQuantity,
+                sentQuantity,
+                territoryId: territoryTwoId,
+                territoryName: "Территория 2",
+                territoryNumber: 2,
+              },
+            ],
+          },
+        ],
+        serverTime: "2026-08-10T06:15:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/loading/territories/*/lines", async (route) => {
+      sentPayload = route.request().postDataJSON() as Record<string, unknown>;
+      sentQuantity += Number(sentPayload.quantity);
+      await json(route, {
+        lineId: "20000000-0000-4000-8000-000000000088",
+        sessionId: "20000000-0000-4000-8000-000000000089",
+      });
+    });
+
+    await page.goto("/logistics/warehouse");
+    await expect(page.getByRole("heading", { name: "Управление погрузкой" })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    await page.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    const territoryOne = page.locator(".loading-territory-row").filter({ hasText: "Территория 1" });
+    const territoryTwo = page.locator(".loading-territory-row").filter({ hasText: "Территория 2" });
+    await expect(territoryOne.getByText("Водитель не выбран")).toBeVisible();
+    await expect(territoryOne.getByRole("spinbutton")).toBeDisabled();
+    await territoryTwo.getByRole("spinbutton").fill("3");
+    await territoryTwo.getByRole("button", { name: "Отправить водителю" }).click();
+    await expect.poll(() => sentPayload?.quantity).toBe(3);
+    await expect(page.getByRole("button", { name: /ТБ Рыжик.*Передано 3 шт\./u })).toBeVisible();
+    await expect(territoryTwo.getByText("7", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
