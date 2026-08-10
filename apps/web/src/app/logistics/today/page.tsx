@@ -4,7 +4,6 @@ import type {
   AuthenticatedUser,
   DriverLogisticsDayView,
   LoadingDriverDayView,
-  LoadingLineView,
 } from "@tashkalinskaya/contracts";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -21,12 +20,6 @@ import {
   respondLoadingLine,
 } from "../../../lib/api";
 
-interface ReplyDraft {
-  quantity: string;
-  reason: string;
-  type: "COUNTER" | "REJECT" | null;
-}
-
 type ProductFilter = "ACCEPTED" | "ALL" | "REMAINING";
 
 export default function DriverLogisticsPage() {
@@ -35,13 +28,15 @@ export default function DriverLogisticsPage() {
   const [routes, setRoutes] = useState<DriverLogisticsDayView | null>(null);
   const [loading, setLoading] = useState<LoadingDriverDayView | null>(null);
   const [dispatchDate, setDispatchDate] = useState(todayMoscow());
-  const [replies, setReplies] = useState<Record<string, ReplyDraft>>({});
   const [productSearch, setProductSearch] = useState("");
   const [productFilter, setProductFilter] = useState<ProductFilter>("ALL");
   const [expandedProductGroups, setExpandedProductGroups] = useState<string[]>([]);
   const [expandedProductId, setExpandedProductId] = useState("");
   const [routeTerritoryChoice, setRouteTerritoryChoice] = useState("");
   const [routeHandoverConfirmation, setRouteHandoverConfirmation] = useState(false);
+  const [selectedAcceptanceLineId, setSelectedAcceptanceLineId] = useState("");
+  const [rejectionOpen, setRejectionOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -236,6 +231,23 @@ export default function DriverLogisticsPage() {
     ALL: products.reduce((total, product) => total + product.plannedQuantity, 0),
     REMAINING: products.reduce((total, product) => total + product.remainingQuantity, 0),
   } satisfies Record<ProductFilter, number>;
+  const pendingTransfers = (loading?.sessions ?? []).flatMap((loadingSession) =>
+    loadingSession.lines
+      .filter((line) => line.status === "SENT_TO_DRIVER")
+      .map((line) => ({ line })),
+  );
+  const selectedAcceptance = pendingTransfers.find(
+    ({ line }) => line.id === selectedAcceptanceLineId,
+  );
+  const sessionsAwaitingDriverFinal = (loading?.sessions ?? []).filter(
+    (item) => item.status === "WAREHOUSE_CONFIRMED",
+  );
+
+  function closeAcceptanceDialog() {
+    setSelectedAcceptanceLineId("");
+    setRejectionOpen(false);
+    setRejectionReason("");
+  }
 
   return (
     <main className="workspace-layout logistics-role-layout driver-loading-workspace simple-workspace">
@@ -422,6 +434,68 @@ export default function DriverLogisticsPage() {
               </button>
             </div>
           )}
+        </section>
+      ) : null}
+
+      {pendingTransfers.length ? (
+        <section
+          aria-labelledby="driver-pending-loading-title"
+          className="driver-pending-loading"
+          hidden={requiresRouteStart}
+        >
+          <header>
+            <div>
+              <p className="eyebrow">Новая передача</p>
+              <h2 id="driver-pending-loading-title">Нужно подтвердить</h2>
+            </div>
+            <strong aria-label={`Ожидает подтверждения: ${pendingTransfers.length}`}>
+              {pendingTransfers.length}
+            </strong>
+          </header>
+          <div className="driver-pending-loading__list">
+            {pendingTransfers.map(({ line }) => (
+              <button
+                aria-label={`${line.productName}, ${line.quantity} шт.`}
+                key={line.id}
+                onClick={() => {
+                  setSelectedAcceptanceLineId(line.id);
+                  setRejectionOpen(false);
+                  setRejectionReason("");
+                }}
+                type="button"
+              >
+                <strong>{line.productName}</strong>
+                <b>{line.quantity} шт.</b>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {sessionsAwaitingDriverFinal.length ? (
+        <section className="driver-loading-final" hidden={requiresRouteStart}>
+          {sessionsAwaitingDriverFinal.map((item) => (
+            <article key={item.id}>
+              <div>
+                <strong>Склад завершил погрузку</strong>
+                <span>Проверьте итог {item.totalQuantity} шт. и подтвердите выезд.</span>
+              </div>
+              <button
+                className="primary-button"
+                disabled={busyId === item.id}
+                onClick={() =>
+                  void command(
+                    item.id,
+                    () => confirmLoadingByDriver(item.id, item.version, csrf()),
+                    "Погрузка завершена. Товар списан со склада",
+                  )
+                }
+                type="button"
+              >
+                Подтвердить завершение
+              </button>
+            </article>
+          ))}
         </section>
       ) : null}
 
@@ -669,289 +743,126 @@ export default function DriverLogisticsPage() {
         )}
       </section>
 
-      <section className="driver-loading-list" hidden={!routes || !session || requiresRouteStart}>
-        {loading?.sessions.length ? (
-          <div className="driver-loading-list__heading">
-            <p className="eyebrow">Передано складом</p>
-            <h2>Подтверждение товара</h2>
-          </div>
-        ) : null}
-        {loading?.sessions.length ? (
-          loading.sessions.map((item) => (
-            <article
-              className={`driver-loading-card is-${item.status.toLocaleLowerCase()}`}
-              key={item.id}
-            >
-              <header>
-                <div>
-                  <p className="eyebrow">
-                    Группа {item.groupNo} · рейс {item.runNo}
-                  </p>
-                  <h2>Территория {item.territoryNumber}</h2>
-                </div>
-                <div className="loading-session-total">
-                  <span>{sessionStatus(item.status)}</span>
-                  <strong>{item.totalQuantity} шт.</strong>
-                  <small>{elapsedLabel(item.startedAt, item.status)}</small>
-                </div>
-              </header>
-
-              <div className="driver-loading-lines">
-                {item.lines.map((line) => {
-                  const reply = replies[line.id] ?? {
-                    quantity: String(line.quantity),
-                    reason: "",
-                    type: null,
-                  };
-                  return (
-                    <div
-                      className={`driver-loading-line is-${line.status.toLocaleLowerCase()}`}
-                      key={line.id}
-                    >
-                      <div className="driver-loading-line__main">
-                        <div>
-                          <strong>{line.productName}</strong>
-                          <span>{line.productCode}</span>
-                        </div>
-                        <strong className="driver-loading-line__quantity">
-                          {line.quantity} шт.
-                        </strong>
-                      </div>
-                      <details className="driver-line-details">
-                        <summary>Из чего сложилось количество</summary>
-                        <div className="loading-plan-breakdown">
-                          <span>Норма {line.weeklyNormQuantity}</span>
-                          {line.oneOffQuantity !== null ? (
-                            <span>Изменение {line.oneOffQuantity}</span>
-                          ) : null}
-                          <span>Со склада {line.allocatedFreeStock}</span>
-                          <span>Возврат {line.allocatedGoodReturn}</span>
-                          <span>Новое {line.newProduction}</span>
-                        </div>
-                      </details>
-                      {line.acceptances?.length ? (
-                        <div className="driver-line-acceptances">
-                          <strong>Кто принимал товар</strong>
-                          {line.acceptances.map((acceptance) => (
-                            <span key={`${acceptance.acceptedAt}-${acceptance.driverName}`}>
-                              {acceptance.driverName} · {acceptance.quantity} шт.
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      {line.status === "SENT_TO_DRIVER" ? (
-                        <div className="driver-line-actions">
-                          <button
-                            className="primary-button"
-                            disabled={busyId === line.id}
-                            onClick={() =>
-                              void command(
-                                line.id,
-                                () =>
-                                  respondLoadingLine(
-                                    line.id,
-                                    {
-                                      responseType: "CONFIRM",
-                                      revisionId: line.currentRevisionId,
-                                      version: line.version,
-                                    },
-                                    csrf(),
-                                  ),
-                                `${line.productName}: принято`,
-                              )
-                            }
-                          >
-                            Принять {line.quantity} шт.
-                          </button>
-                          <button
-                            className="secondary-button"
-                            onClick={() =>
-                              setReplies((current) => ({
-                                ...current,
-                                [line.id]: { ...reply, type: "COUNTER" },
-                              }))
-                            }
-                          >
-                            Другое количество
-                          </button>
-                          <button
-                            className="text-button is-danger"
-                            onClick={() =>
-                              setReplies((current) => ({
-                                ...current,
-                                [line.id]: { ...reply, type: "REJECT" },
-                              }))
-                            }
-                          >
-                            Отклонить
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="driver-line-result">
-                          <Status line={line} />
-                          {line.responseDriverName ? (
-                            <span>
-                              {line.responseType === "CONFIRM" ? "Принял" : "Ответил"}:{" "}
-                              {line.responseDriverName}
-                            </span>
-                          ) : null}
-                          {line.responseReason ? <span>{line.responseReason}</span> : null}
-                        </div>
-                      )}
-                      {reply.type ? (
-                        <form
-                          className="driver-dispute-form"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void command(
-                              line.id,
-                              () =>
-                                respondLoadingLine(
-                                  line.id,
-                                  {
-                                    ...(reply.type === "COUNTER"
-                                      ? { counterQuantity: Number(reply.quantity) }
-                                      : {}),
-                                    reason: reply.reason,
-                                    responseType: reply.type!,
-                                    revisionId: line.currentRevisionId,
-                                    version: line.version,
-                                  },
-                                  csrf(),
-                                ),
-                              "Расхождение отправлено кладовщику",
-                            );
-                          }}
-                        >
-                          {reply.type === "COUNTER" ? (
-                            <label>
-                              Фактически получено
-                              <input
-                                min="1"
-                                inputMode="numeric"
-                                type="number"
-                                value={reply.quantity}
-                                onChange={(event) =>
-                                  setReplies((current) => ({
-                                    ...current,
-                                    [line.id]: { ...reply, quantity: event.target.value },
-                                  }))
-                                }
-                              />
-                            </label>
-                          ) : null}
-                          <label>
-                            Причина
-                            <input
-                              autoFocus
-                              placeholder="Коротко опишите расхождение"
-                              value={reply.reason}
-                              onChange={(event) =>
-                                setReplies((current) => ({
-                                  ...current,
-                                  [line.id]: { ...reply, reason: event.target.value },
-                                }))
-                              }
-                            />
-                          </label>
-                          <div>
-                            <button
-                              className="secondary-button"
-                              disabled={reply.reason.trim().length < 3 || busyId === line.id}
-                              type="submit"
-                            >
-                              Отправить кладовщику
-                            </button>
-                            <button
-                              className="text-button"
-                              type="button"
-                              onClick={() =>
-                                setReplies((current) => ({
-                                  ...current,
-                                  [line.id]: { ...reply, type: null },
-                                }))
-                              }
-                            >
-                              Отмена
-                            </button>
-                          </div>
-                        </form>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                {!item.lines.length ? (
-                  <div className="driver-loading-empty">
-                    <strong>Кладовщик ещё не передал товар</strong>
-                    <span>Новые строки появятся здесь автоматически после обновления.</span>
-                  </div>
-                ) : null}
+      {selectedAcceptance ? (
+        <div className="driver-acceptance-dialog-layer">
+          <button
+            aria-label="Закрыть подтверждение товара"
+            className="driver-acceptance-dialog-backdrop"
+            onClick={closeAcceptanceDialog}
+            type="button"
+          />
+          <form
+            aria-labelledby="driver-acceptance-dialog-title"
+            aria-modal="true"
+            className="driver-acceptance-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!rejectionOpen) return;
+              void command(
+                selectedAcceptance.line.id,
+                () =>
+                  respondLoadingLine(
+                    selectedAcceptance.line.id,
+                    {
+                      reason: rejectionReason,
+                      responseType: "REJECT",
+                      revisionId: selectedAcceptance.line.currentRevisionId,
+                      version: selectedAcceptance.line.version,
+                    },
+                    csrf(),
+                  ),
+                "Отказ отправлен кладовщику",
+              );
+            }}
+            role="dialog"
+          >
+            <header>
+              <div>
+                <small>Подтверждение товара</small>
+                <h2 id="driver-acceptance-dialog-title">{selectedAcceptance.line.productName}</h2>
               </div>
-
-              <footer className="driver-loading-footer">
-                {item.status === "WAREHOUSE_CONFIRMED" ? (
-                  <>
-                    <div>
-                      <strong>Склад завершил погрузку</strong>
-                      <span>Проверьте итог {item.totalQuantity} шт. и зафиксируйте выезд.</span>
-                    </div>
-                    <button
-                      className="primary-button"
-                      disabled={busyId === item.id}
-                      onClick={() =>
-                        void command(
-                          item.id,
-                          () => confirmLoadingByDriver(item.id, item.version, csrf()),
-                          "Погрузка завершена. Товар списан со склада",
-                        )
-                      }
-                    >
-                      Подтвердить завершение
-                    </button>
-                  </>
-                ) : item.status === "COMPLETED" ? (
-                  <div>
-                    <strong>Погрузка завершена</strong>
-                    <span>Двойное подтверждение сохранено.</span>
-                  </div>
-                ) : (
-                  <span>
-                    {item.unresolvedLines
-                      ? `Ожидают вашего ответа: ${item.unresolvedLines}`
-                      : "Все строки подтверждены. Ожидайте итог склада"}
-                  </span>
-                )}
-              </footer>
-            </article>
-          ))
-        ) : (
-          <div className="empty-state">
-            <h2>Погрузка ещё не началась</h2>
-            <p>Ваш опубликованный рейс появится здесь после запуска группы кладовщиком.</p>
-          </div>
-        )}
-      </section>
+              <button
+                aria-label="Закрыть подтверждение товара"
+                onClick={closeAcceptanceDialog}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <p className="driver-acceptance-dialog__quantity">
+              Количество <strong>{selectedAcceptance.line.quantity} шт.</strong>
+            </p>
+            {rejectionOpen ? (
+              <>
+                <label>
+                  Причина отклонения
+                  <input
+                    autoFocus
+                    onChange={(event) => setRejectionReason(event.target.value)}
+                    placeholder="Коротко опишите причину"
+                    value={rejectionReason}
+                  />
+                </label>
+                <div className="driver-acceptance-dialog__actions">
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      setRejectionOpen(false);
+                      setRejectionReason("");
+                    }}
+                    type="button"
+                  >
+                    Назад
+                  </button>
+                  <button
+                    className="primary-button is-danger"
+                    disabled={
+                      rejectionReason.trim().length < 3 || busyId === selectedAcceptance.line.id
+                    }
+                    type="submit"
+                  >
+                    Отклонить
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="driver-acceptance-dialog__actions">
+                <button
+                  className="secondary-button is-danger"
+                  onClick={() => setRejectionOpen(true)}
+                  type="button"
+                >
+                  Отклонить
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={busyId === selectedAcceptance.line.id}
+                  onClick={() =>
+                    void command(
+                      selectedAcceptance.line.id,
+                      () =>
+                        respondLoadingLine(
+                          selectedAcceptance.line.id,
+                          {
+                            responseType: "CONFIRM",
+                            revisionId: selectedAcceptance.line.currentRevisionId,
+                            version: selectedAcceptance.line.version,
+                          },
+                          csrf(),
+                        ),
+                      `${selectedAcceptance.line.productName}: принято`,
+                    )
+                  }
+                  type="button"
+                >
+                  Подтвердить
+                </button>
+              </div>
+            )}
+          </form>
+        </div>
+      ) : null}
     </main>
-  );
-}
-
-function Status({ line }: { line: LoadingLineView }) {
-  return (
-    <strong className={`loading-status is-${line.status.toLocaleLowerCase()}`}>
-      {line.status === "CONFIRMED" ? "Подтверждено" : "Отправлено кладовщику"}
-    </strong>
-  );
-}
-
-function sessionStatus(value: string): string {
-  return (
-    (
-      {
-        COMPLETED: "Завершено",
-        IN_PROGRESS: "Идёт погрузка",
-        WAREHOUSE_CONFIRMED: "Ждёт вашего итога",
-      } as Record<string, string>
-    )[value] ?? value
   );
 }
 
@@ -961,12 +872,6 @@ function timeLabel(value: string): string {
     minute: "2-digit",
     timeZone: "Europe/Moscow",
   }).format(new Date(value));
-}
-
-function elapsedLabel(startedAt: string, status: string): string {
-  if (status === "COMPLETED") return "Двойное подтверждение сохранено";
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 60_000));
-  return minutes < 1 ? "Начато сейчас" : `В работе ${minutes} мин.`;
 }
 
 function messageOf(caught: unknown, fallback: string): string {

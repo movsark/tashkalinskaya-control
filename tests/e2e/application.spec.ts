@@ -1246,7 +1246,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/");
     await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
     const driverNavigation = page.getByRole("navigation", { name: "Основная навигация" });
-    await expect(driverNavigation.getByText("Погрузка", { exact: true })).toBeVisible();
+    const loadingTab = driverNavigation.getByRole("link", { name: /Погрузка/u });
+    await expect(loadingTab).toBeVisible();
+    await expect(loadingTab.getByLabel("Ожидает подтверждения: 1")).toBeVisible();
     await driverNavigation.getByRole("button", { name: "Меню" }).click();
     const driverMenu = page.getByRole("dialog", { name: "Разделы приложения" });
     await expect(driverMenu.getByRole("link", { exact: true, name: "Моя норма" })).toBeVisible();
@@ -1273,8 +1275,27 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText(/Рейсов:/u)).toHaveCount(0);
     await expect(page.getByText(/Машина:/u)).toHaveCount(0);
     await expect(page.getByText("Газель 03", { exact: true })).toHaveCount(0);
+    const pendingLoading = page.locator(".driver-pending-loading");
+    await expect(pendingLoading.getByRole("heading", { name: "Нужно подтвердить" })).toBeVisible();
+    await expect(pendingLoading.getByLabel("Ожидает подтверждения: 1")).toBeVisible();
+    const pendingProduct = pendingLoading.getByRole("button", {
+      name: "Торт тестовый, 10 шт.",
+    });
+    await expect(pendingProduct).toBeVisible();
+    const pendingProductBox = await pendingProduct.boundingBox();
+    expect(pendingProductBox).not.toBeNull();
+    expect(pendingProductBox?.height ?? 0).toBeLessThanOrEqual(72);
     await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
     const assortment = page.locator(".driver-assortment");
+    expect(
+      await pendingLoading.evaluate((element) => {
+        const assortmentElement = document.querySelector(".driver-assortment");
+        return Boolean(
+          assortmentElement &&
+          element.compareDocumentPosition(assortmentElement) & Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    ).toBe(true);
     await expect(assortment).toContainText("Принято5 шт.");
     await expect(assortment).toContainText("Ждёт подтверждения10 шт.");
     await expect(assortment).toContainText("Осталось добрать32 шт.");
@@ -1326,10 +1347,20 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(assortment.getByText("СВ Тестовая выпечка", { exact: true })).toBeVisible();
     await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Принять 10 шт." })).toBeVisible();
-    await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
-    await page.getByText("Из чего сложилось количество", { exact: true }).click();
-    await expect(page.getByText("Норма 10", { exact: true })).toBeVisible();
+    await expect(page.getByText("Из чего сложилось количество", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Кто принимал товар", { exact: true })).toHaveCount(0);
+    await pendingProduct.click();
+    const acceptanceDialog = page.getByRole("dialog", { name: "Торт тестовый" });
+    await expect(acceptanceDialog).toBeVisible();
+    await expect(acceptanceDialog).toContainText("Количество 10 шт.");
+    await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
+    await acceptanceDialog.getByRole("button", { name: "Отклонить" }).click();
+    await expect(acceptanceDialog.getByLabel("Причина отклонения")).toBeVisible();
+    await expect(acceptanceDialog.getByRole("button", { name: "Отклонить" })).toBeDisabled();
+    await acceptanceDialog.getByRole("button", { name: "Назад" }).click();
+    await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
+    await acceptanceDialog.getByRole("button", { name: "Закрыть подтверждение товара" }).click();
+    await expect(acceptanceDialog).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

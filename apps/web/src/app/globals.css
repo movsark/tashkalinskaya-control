@@ -3450,11 +3450,239 @@ select:focus {
   text-align: center;
 }
 
+.driver-pending-loading {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid #e7cdb1;
+  border-radius: 20px;
+  background: #fff8ed;
+  box-shadow: var(--shadow-soft);
+}
+
+.driver-pending-loading > header,
+.driver-loading-final article,
+.driver-pending-loading__list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.driver-pending-loading > header h2,
+.driver-pending-loading > header p {
+  margin: 0;
+}
+
+.driver-pending-loading > header > strong {
+  display: grid;
+  min-width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: #b33c32;
+}
+
+.driver-pending-loading__list {
+  display: grid;
+  gap: 8px;
+}
+
+.driver-pending-loading__list button {
+  width: 100%;
+  min-height: 62px;
+  padding: 13px 16px;
+  border: 1px solid rgb(23 72 61 / 14%);
+  border-radius: 15px;
+  color: var(--ink);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.driver-pending-loading__list button:hover,
+.driver-pending-loading__list button:focus-visible {
+  border-color: var(--forest);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(23 72 61 / 10%);
+}
+
+.driver-pending-loading__list button > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.driver-pending-loading__list button > b {
+  flex: 0 0 auto;
+  color: var(--forest);
+  font-size: 1.08rem;
+  white-space: nowrap;
+}
+
+.driver-loading-final {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.driver-loading-final article {
+  padding: 16px 18px;
+  border: 1px solid #a9c8d8;
+  border-radius: 18px;
+  background: #f1f8fb;
+}
+
+.driver-loading-final article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.driver-loading-final article span {
+  color: var(--muted);
+}
+
+.driver-acceptance-dialog-layer {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.driver-acceptance-dialog-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgb(16 31 27 / 52%);
+  cursor: default;
+  backdrop-filter: blur(3px);
+}
+
+.driver-acceptance-dialog {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(430px, 100%);
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgb(23 72 61 / 16%);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgb(16 31 27 / 28%);
+}
+
+.driver-acceptance-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.driver-acceptance-dialog > header small {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.driver-acceptance-dialog > header h2 {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 1.35rem;
+}
+
+.driver-acceptance-dialog > header > button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--forest);
+  background: var(--forest-soft);
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.driver-acceptance-dialog__quantity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 15px 16px;
+  border-radius: 14px;
+  color: var(--muted);
+  background: #f3f5f1;
+}
+
+.driver-acceptance-dialog__quantity strong {
+  color: var(--forest);
+  font-size: 1.25rem;
+}
+
+.driver-acceptance-dialog > label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.driver-acceptance-dialog > label input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid #b9c6c0;
+  border-radius: 13px;
+  background: #fff;
+  font: inherit;
+}
+
+.driver-acceptance-dialog__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.driver-acceptance-dialog__actions > button {
+  min-height: 56px;
+}
+
+.driver-acceptance-dialog__actions .is-danger {
+  border-color: #c75848;
+  color: #a43e2a;
+}
+
+.driver-acceptance-dialog__actions .primary-button.is-danger {
+  color: #fff;
+  background: #a43e2a;
+}
+
 .text-button.is-danger {
   color: #a43e2a;
 }
 
 @media (max-width: 720px) {
+  .driver-pending-loading {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .driver-loading-final article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .driver-loading-final article button {
+    width: 100%;
+  }
+
   .driver-assortment {
     gap: 14px;
     padding: 14px;
