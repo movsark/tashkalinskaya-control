@@ -15,6 +15,9 @@ export class SpoilageService {
   workspace(actor: AuthenticatedActor) {
     return this.repository.workspace(toActor(actor));
   }
+  summary(fromDate: string | null, toDate: string | null, actor: AuthenticatedActor) {
+    return this.repository.summary(fromDate, toDate, toActor(actor));
+  }
   driverWorkspace(dispatchDate: string, actor: AuthenticatedActor) {
     return this.repository.driverWorkspace(dispatchDate, toActor(actor));
   }

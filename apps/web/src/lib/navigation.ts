@@ -59,6 +59,22 @@ export const appDestinations: readonly AppDestination[] = [
     symbol: "С",
   },
   {
+    driverLabel: "Возвраты и порча",
+    driverShortLabel: "Возвраты",
+    href: "/returns",
+    label: "Годный возврат",
+    roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
+    shortLabel: "Возврат",
+    symbol: "В",
+  },
+  {
+    href: "/spoilage",
+    label: "Склад порчи",
+    roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
+    shortLabel: "Порча",
+    symbol: "Б",
+  },
+  {
     href: "/logistics",
     label: "Территории и водители",
     roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
@@ -109,13 +125,6 @@ export const appDestinations: readonly AppDestination[] = [
     roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
     shortLabel: "Пересчёт",
     symbol: "И",
-  },
-  {
-    href: "/returns",
-    label: "Возвраты и порча",
-    roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
-    shortLabel: "Возвраты",
-    symbol: "В",
   },
   {
     href: "/catalog",

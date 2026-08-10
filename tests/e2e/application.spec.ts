@@ -176,6 +176,14 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       menu.getByRole("link", { exact: true, name: "Управление погрузкой" }),
     ).toBeVisible();
+    await expect(menu.getByRole("link", { exact: true, name: "Годный возврат" })).toHaveAttribute(
+      "href",
+      "/returns",
+    );
+    await expect(menu.getByRole("link", { exact: true, name: "Склад порчи" })).toHaveAttribute(
+      "href",
+      "/spoilage",
+    );
     await expect(menu.getByRole("link", { exact: true, name: "Моя погрузка" })).toHaveCount(0);
   });
 
@@ -379,9 +387,10 @@ test.describe("B20 browser and HTTP regression", () => {
     const warehousePrimary = page.getByRole("link", { name: /Основная работа Склад/ });
     await expect(warehousePrimary).toBeVisible();
     await expect(warehousePrimary.getByLabel("На складе ожидают 2 товара")).toHaveText("2");
-    const returnsLink = page.getByRole("link", { name: /Возвраты и порча/ });
+    const returnsLink = page.getByRole("link", { name: /Годный возврат/ });
     await expect(returnsLink).toHaveClass(/has-attention/u);
-    await expect(returnsLink.getByLabel("Ожидают приёмки: 1")).toHaveText("1");
+    await expect(returnsLink.getByLabel("Ожидают приёмки возвраты: 1")).toHaveText("1");
+    await expect(page.getByRole("link", { name: /Склад порчи/ })).toBeVisible();
     await warehousePrimary.click();
     await expect(page).toHaveURL(/\/warehouse$/);
     const reminder = page.getByRole("status");
@@ -2545,6 +2554,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const productId = "20000000-0000-4000-8000-000000000111";
     const acceptedReturnIds = new Set<string>();
     const acceptedSpoilageIds = new Set<string>();
+    const summaryQueries: string[] = [];
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -2766,6 +2776,50 @@ test.describe("B20 browser and HTTP regression", () => {
           writtenOffQuantity: 0,
         });
       }
+      if (path.endsWith("/spoilage/summary")) {
+        summaryQueries.push(new URL(route.request().url()).search);
+        return json(route, {
+          fromDate: "2026-08-10",
+          pendingQuantity: 3,
+          receivedQuantity: 4,
+          territories: [
+            {
+              pendingQuantity: 0,
+              products: [
+                {
+                  pendingQuantity: 0,
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  receivedQuantity: 4,
+                  totalQuantity: 4,
+                },
+              ],
+              receivedQuantity: 4,
+              territoryNumber: 1,
+              totalQuantity: 4,
+            },
+            {
+              pendingQuantity: 3,
+              products: [
+                {
+                  pendingQuantity: 3,
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  receivedQuantity: 0,
+                  totalQuantity: 3,
+                },
+              ],
+              receivedQuantity: 0,
+              territoryNumber: 2,
+              totalQuantity: 3,
+            },
+          ],
+          toDate: "2026-08-10",
+          totalQuantity: 7,
+        });
+      }
       if (path.endsWith("/notifications/workspace")) {
         return json(route, notificationWorkspace());
       }
@@ -2779,7 +2833,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
-    const returnsSwitch = page.getByRole("navigation", { name: "Возвраты и порча" });
+    const returnsSwitch = page.getByRole("navigation", {
+      name: "Годный возврат и склад порчи",
+    });
     await expect(returnsSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
     await expect(returnsSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
     await expect(page.getByText("Территория 2 · вывоз 10 августа")).toBeVisible();
@@ -2810,11 +2866,31 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Последние приёмки", { exact: true })).toHaveCount(0);
 
     await page.goto("/spoilage");
-    await expect(page.getByRole("heading", { name: "Приёмка и склад порчи" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Порча от водителей" })).toBeVisible();
-    const spoilageSwitch = page.getByRole("navigation", { name: "Возвраты и порча" });
+    const spoilageSwitch = page.getByRole("navigation", {
+      name: "Годный возврат и склад порчи",
+    });
     await expect(spoilageSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
     await expect(spoilageSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
+    await expect(page.getByRole("heading", { name: "Порча за 10 августа 2026 г." })).toBeVisible();
+    const periodTotals = page.locator(".spoilage-period-totals");
+    await expect(periodTotals).toContainText("Общая порча · все территории");
+    await expect(periodTotals).toContainText("7 шт.");
+    await expect(page.locator(".spoilage-territory-group")).toHaveCount(2);
+    const territoryTwo = page.locator(".spoilage-territory-group").filter({
+      hasText: "Территория 2",
+    });
+    await expect(territoryTwo).toContainText("3 шт.");
+    await territoryTwo.locator("summary").click();
+    await expect(territoryTwo).toContainText("Принято 0 · ожидает 3");
+    await page.getByRole("button", { name: "За месяц" }).click();
+    await expect(page.getByRole("heading", { name: "Порча за август 2026 г." })).toBeVisible();
+    await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-01");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-31");
+    await page.getByRole("button", { name: "За всё время" }).click();
+    await expect(page.getByRole("heading", { name: "Порча за всё время" })).toBeVisible();
+    await expect.poll(() => summaryQueries.at(-1)).toBe("");
     const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
     await expect(pendingSpoilage).toHaveCount(1);
     await expect(pendingSpoilage).toContainText("Территория 2");
@@ -2833,7 +2909,9 @@ test.describe("B20 browser and HTTP regression", () => {
     expect([...acceptedSpoilageIds].sort()).toEqual(
       ["20000000-0000-4000-8000-000000000118", "20000000-0000-4000-8000-00000000011b"].sort(),
     );
-    await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Текущий остаток склада порчи", exact: true }),
+    ).toBeVisible();
     const spoilageStock = page.locator(".spoilage-stock-group");
     await expect(spoilageStock).toContainText("Территория 1");
     await expect(spoilageStock).toContainText("Водитель Территории 1");

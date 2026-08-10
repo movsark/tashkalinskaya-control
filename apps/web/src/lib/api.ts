@@ -26,6 +26,7 @@ import type {
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
   SpoilagePhotoView,
+  SpoilageSummaryView,
   SpoilageWorkspaceView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
@@ -1633,6 +1634,15 @@ export async function cancelGoodReturnAllocation(
 
 export async function getSpoilageWorkspace(): Promise<SpoilageWorkspaceView> {
   return request("/spoilage/workspace");
+}
+
+export async function getSpoilageSummary(
+  period: { fromDate: string; toDate: string } | null,
+): Promise<SpoilageSummaryView> {
+  const query = period
+    ? `?fromDate=${encodeURIComponent(period.fromDate)}&toDate=${encodeURIComponent(period.toDate)}`
+    : "";
+  return request(`/spoilage/summary${query}`);
 }
 
 export async function getDriverSpoilageWorkspace(

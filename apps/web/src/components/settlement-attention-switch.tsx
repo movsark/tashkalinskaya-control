@@ -11,7 +11,7 @@ export function SettlementAttentionSwitch({
   spoilageCount: number;
 }) {
   return (
-    <nav className="driver-settlement-switch" aria-label="Возвраты и порча">
+    <nav className="driver-settlement-switch" aria-label="Годный возврат и склад порчи">
       <Link
         aria-current={active === "RETURNS" ? "page" : undefined}
         className={active === "RETURNS" ? "is-active" : undefined}
@@ -28,7 +28,7 @@ export function SettlementAttentionSwitch({
         className={active === "SPOILAGE" ? "is-active" : undefined}
         href="/spoilage"
       >
-        Порча и списание
+        Склад порчи
         <SettlementBadge count={spoilageCount} label={`Ожидает приёмки порча: ${spoilageCount}`} />
       </Link>
     </nav>

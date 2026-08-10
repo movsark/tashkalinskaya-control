@@ -44,6 +44,16 @@ export class SpoilageController {
     return this.service.workspace(actor(request));
   }
 
+  @Get("summary")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER")
+  summary(
+    @Query("fromDate") fromDate: string | undefined,
+    @Query("toDate") toDate: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.summary(fromDate ?? null, toDate ?? null, actor(request));
+  }
+
   @Get("me/workspace")
   @RequireRoles("DRIVER")
   driverWorkspace(

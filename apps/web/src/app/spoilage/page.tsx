@@ -2,6 +2,7 @@
 
 import type {
   AuthenticatedUser,
+  SpoilageSummaryView,
   SpoilageWorkspaceView,
   WriteoffRequestView,
 } from "@tashkalinskaya/contracts";
@@ -20,8 +21,11 @@ import {
   ApiRequestError,
   getGoodReturnsWorkspace,
   getSession,
+  getSpoilageSummary,
   getSpoilageWorkspace,
 } from "../../lib/api";
+
+type SpoilagePeriod = "ALL" | "DAY" | "MONTH";
 
 interface SpoilageStockGroup {
   readonly dispatchDate: string | null;
@@ -56,6 +60,10 @@ export default function SpoilagePage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [data, setData] = useState<SpoilageWorkspaceView | null>(null);
+  const [summary, setSummary] = useState<SpoilageSummaryView | null>(null);
+  const [period, setPeriod] = useState<SpoilagePeriod>("DAY");
+  const [selectedDate, setSelectedDate] = useState(moscowDate());
+  const [selectedMonth, setSelectedMonth] = useState(moscowDate().slice(0, 7));
   const [returnPendingCount, setReturnPendingCount] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -68,11 +76,13 @@ export default function SpoilagePage() {
   const canReceive = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
 
   async function reload(message?: string) {
-    const [nextSpoilage, nextReturns] = await Promise.all([
+    const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
       getSpoilageWorkspace(),
       getGoodReturnsWorkspace(moscowDate()),
+      getSpoilageSummary(spoilagePeriodRange(period, selectedDate, selectedMonth)),
     ]);
     setData(nextSpoilage);
+    setSummary(nextSummary);
     setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
     if (message) setSuccess(message);
   }
@@ -81,12 +91,14 @@ export default function SpoilagePage() {
     let active = true;
     const refresh = async () => {
       try {
-        const [nextSpoilage, nextReturns] = await Promise.all([
+        const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
           getSpoilageWorkspace(),
           getGoodReturnsWorkspace(moscowDate()),
+          getSpoilageSummary(spoilagePeriodRange(period, selectedDate, selectedMonth)),
         ]);
         if (!active) return;
         setData(nextSpoilage);
+        setSummary(nextSummary);
         setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
       } catch (caught) {
         if (active) setError(messageOf(caught));
@@ -111,7 +123,7 @@ export default function SpoilagePage() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [router]);
+  }, [period, router, selectedDate, selectedMonth]);
 
   async function acceptGroup(group: PendingSpoilageGroup) {
     if (!session) return;
@@ -146,7 +158,7 @@ export default function SpoilagePage() {
     }
   }
 
-  if (!data || !session)
+  if (!data || !session || !summary)
     return (
       <main className="workspace-layout spoilage-page simple-workspace">
         <header className="workspace-header">
@@ -174,7 +186,7 @@ export default function SpoilagePage() {
         <div className="workspace-user">
           <span>{session.employee.fullName}</span>
           <small>
-            Приёмка порчи · <Link href="/returns">годный возврат</Link> ·{" "}
+            Склад порчи · <Link href="/returns">годный возврат</Link> ·{" "}
             <Link href="/warehouse">склад</Link>
           </small>
         </div>
@@ -183,10 +195,10 @@ export default function SpoilagePage() {
       <section className="spoilage-hero spoilage-receipt-hero">
         <div>
           <p className="eyebrow">Склад</p>
-          <h1>Приёмка и склад порчи</h1>
+          <h1>Склад порчи</h1>
           <p>
-            Водитель передаёт порчу, а складовщик подтверждает фактическую приёмку. Порча хранится
-            отдельно и не увеличивает обычный складской остаток.
+            Порча хранится отдельно от обычного склада. Здесь можно принять её от водителя и
+            проверить итоги за день, месяц или всё время.
           </p>
         </div>
         <div className="spoilage-summary">
@@ -207,6 +219,111 @@ export default function SpoilagePage() {
 
       {error ? <p className="form-error spoilage-notice">{error}</p> : null}
       {success ? <p className="logistics-success spoilage-notice">{success}</p> : null}
+
+      <section className="spoilage-panel spoilage-period-panel">
+        <div className="spoilage-period-heading">
+          <div>
+            <p className="eyebrow">Контроль отдельно от обычного склада</p>
+            <h2>{spoilagePeriodTitle(period, selectedDate, selectedMonth)}</h2>
+          </div>
+          <div className="spoilage-period-controls">
+            <div
+              aria-label="Период отчёта по порче"
+              className="spoilage-period-switch"
+              role="group"
+            >
+              {(
+                [
+                  ["DAY", "За день"],
+                  ["MONTH", "За месяц"],
+                  ["ALL", "За всё время"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  aria-pressed={period === value}
+                  className={period === value ? "is-active" : undefined}
+                  key={value}
+                  onClick={() => setPeriod(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {period === "DAY" ? (
+              <label>
+                Дата
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                />
+              </label>
+            ) : null}
+            {period === "MONTH" ? (
+              <label>
+                Месяц
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(event) => setSelectedMonth(event.target.value)}
+                />
+              </label>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="spoilage-period-totals">
+          <article>
+            <span>Общая порча · все территории</span>
+            <strong>{summary.totalQuantity} шт.</strong>
+          </article>
+          <article>
+            <span>Принято в склад порчи</span>
+            <strong>{summary.receivedQuantity} шт.</strong>
+          </article>
+          <article>
+            <span>Ожидает приёмки</span>
+            <strong>{summary.pendingQuantity} шт.</strong>
+          </article>
+        </div>
+
+        <div className="spoilage-territory-list">
+          {summary.territories.map((territory) => (
+            <details className="spoilage-territory-group" key={territory.territoryNumber}>
+              <summary>
+                <span>
+                  <strong>Территория {territory.territoryNumber}</strong>
+                  <small>
+                    Принято {territory.receivedQuantity} шт. · ожидает {territory.pendingQuantity}
+                    {" шт."}
+                  </small>
+                </span>
+                <b>{territory.totalQuantity} шт.</b>
+              </summary>
+              <div className="spoilage-territory-products">
+                {territory.products.map((product) => (
+                  <div className="spoilage-territory-product" key={product.productId}>
+                    <span>
+                      <small>{product.productCode}</small>
+                      <strong>{product.productName}</strong>
+                    </span>
+                    <div>
+                      <b>{product.totalQuantity} шт.</b>
+                      <small>
+                        Принято {product.receivedQuantity} · ожидает {product.pendingQuantity}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+          {!summary.territories.length ? (
+            <p className="logistics-empty">За выбранный период порчи от территорий нет.</p>
+          ) : null}
+        </div>
+      </section>
 
       <section className="spoilage-panel spoilage-receipt-panel">
         <div className="spoilage-heading">
@@ -258,7 +375,7 @@ export default function SpoilagePage() {
         <div className="spoilage-heading">
           <div>
             <p className="eyebrow">Отдельное хранение до списания</p>
-            <h2>Склад порчи</h2>
+            <h2>Текущий остаток склада порчи</h2>
           </div>
           <b>{data.blockedQuantity} шт.</b>
         </div>
@@ -393,6 +510,43 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "long",
   });
+}
+
+function spoilagePeriodRange(
+  period: SpoilagePeriod,
+  selectedDate: string,
+  selectedMonth: string,
+): { fromDate: string; toDate: string } | null {
+  if (period === "ALL") return null;
+  if (period === "DAY") {
+    const date = /^\d{4}-\d{2}-\d{2}$/u.test(selectedDate) ? selectedDate : moscowDate();
+    return { fromDate: date, toDate: date };
+  }
+  const month = /^\d{4}-\d{2}$/u.test(selectedMonth) ? selectedMonth : moscowDate().slice(0, 7);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year!, monthNumber!, 0)).getUTCDate();
+  return {
+    fromDate: `${month}-01`,
+    toDate: `${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function spoilagePeriodTitle(period: SpoilagePeriod, selectedDate: string, selectedMonth: string) {
+  if (period === "ALL") return "Порча за всё время";
+  if (period === "DAY") {
+    const date = spoilagePeriodRange(period, selectedDate, selectedMonth)!.fromDate;
+    return `Порча за ${new Date(`${date}T12:00:00+03:00`).toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  const month = spoilagePeriodRange(period, selectedDate, selectedMonth)!.fromDate.slice(0, 7);
+  const label = new Date(`${month}-01T12:00:00+03:00`).toLocaleDateString("ru-RU", {
+    month: "long",
+    year: "numeric",
+  });
+  return `Порча за ${label}`;
 }
 
 function moscowDate() {

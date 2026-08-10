@@ -18,6 +18,7 @@ import { countPendingDriverSpoilage, countPendingGoodReturns } from "./settlemen
 export function AppHome() {
   const [session, setSession] = useState<AuthenticatedUser | null | undefined>(undefined);
   const [returnAttentionCount, setReturnAttentionCount] = useState(0);
+  const [spoilageAttentionCount, setSpoilageAttentionCount] = useState(0);
   const [warehouseAttentionCount, setWarehouseAttentionCount] = useState(0);
 
   useEffect(() => {
@@ -40,7 +41,9 @@ export function AppHome() {
   );
   const destinations = useMemo(() => destinationsFor(roles), [roles]);
   const canSeeWarehouse = destinations.some((destination) => destination.href === "/warehouse");
-  const canReceiveReturns = roles.some((role) => role === "ADMIN" || role === "WAREHOUSE_KEEPER");
+  const canReviewSettlements = roles.some((role) =>
+    ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role),
+  );
 
   useEffect(() => {
     if (!canSeeWarehouse) {
@@ -65,8 +68,9 @@ export function AppHome() {
   }, [canSeeWarehouse]);
 
   useEffect(() => {
-    if (!canReceiveReturns) {
+    if (!canReviewSettlements) {
       setReturnAttentionCount(0);
+      setSpoilageAttentionCount(0);
       return;
     }
     let active = true;
@@ -77,13 +81,14 @@ export function AppHome() {
           getSpoilageWorkspace(),
         ]);
         if (active) {
-          setReturnAttentionCount(
-            countPendingGoodReturns(returns.requests) +
-              countPendingDriverSpoilage(spoilage.requests),
-          );
+          setReturnAttentionCount(countPendingGoodReturns(returns.requests));
+          setSpoilageAttentionCount(countPendingDriverSpoilage(spoilage.requests));
         }
       } catch {
-        if (active) setReturnAttentionCount(0);
+        if (active) {
+          setReturnAttentionCount(0);
+          setSpoilageAttentionCount(0);
+        }
       }
     };
     void refresh();
@@ -92,7 +97,7 @@ export function AppHome() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [canReceiveReturns]);
+  }, [canReviewSettlements]);
 
   if (session === undefined) {
     return <main className="app-home app-home--loading">Загружаем…</main>;
@@ -153,11 +158,12 @@ export function AppHome() {
         <div className="app-home__grid">
           {destinations
             .filter((destination) => destination.href !== primary.href)
-            .slice(0, 8)
+            .slice(0, 10)
             .map((destination) => {
               const hasAttention =
                 (destination.href === "/warehouse" && warehouseAttentionCount > 0) ||
-                (destination.href === "/returns" && returnAttentionCount > 0);
+                (destination.href === "/returns" && returnAttentionCount > 0) ||
+                (destination.href === "/spoilage" && spoilageAttentionCount > 0);
               return (
                 <Link
                   className={hasAttention ? "has-attention" : undefined}
@@ -170,7 +176,16 @@ export function AppHome() {
                     <WarehouseAttentionBadge count={warehouseAttentionCount} />
                   ) : null}
                   {destination.href === "/returns" ? (
-                    <ReturnAttentionBadge count={returnAttentionCount} />
+                    <SettlementAttentionBadge
+                      count={returnAttentionCount}
+                      label="Ожидают приёмки возвраты"
+                    />
+                  ) : null}
+                  {destination.href === "/spoilage" ? (
+                    <SettlementAttentionBadge
+                      count={spoilageAttentionCount}
+                      label="Ожидает приёмки порча"
+                    />
                   ) : null}
                 </Link>
               );
@@ -190,9 +205,9 @@ function WarehouseAttentionBadge({ count }: { count: number }) {
   return <AttentionBadge count={count} label={`На складе ${formatWaitingProducts(count)}`} />;
 }
 
-function ReturnAttentionBadge({ count }: { count: number }) {
+function SettlementAttentionBadge({ count, label }: { count: number; label: string }) {
   if (count === 0) return null;
-  return <AttentionBadge count={count} label={`Ожидают приёмки: ${count}`} />;
+  return <AttentionBadge count={count} label={`${label}: ${count}`} />;
 }
 
 function AttentionBadge({ count, label }: { count: number; label: string }) {
