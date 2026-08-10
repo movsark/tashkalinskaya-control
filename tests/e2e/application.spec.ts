@@ -1376,7 +1376,9 @@ test.describe("B20 browser and HTTP regression", () => {
     const territoryTwoId = "20000000-0000-4000-8000-000000000084";
     let sentQuantity = 0;
     let sentPayload: Record<string, unknown> | null = null;
+    let cancelPayload: Record<string, unknown> | null = null;
     let cancelled = false;
+    let rejected = false;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -1433,9 +1435,10 @@ test.describe("B20 browser and HTTP regression", () => {
                           productId,
                           productName: "ТБ Рыжик (0,8кг)",
                           quantity: sentQuantity,
-                          responseReason: null,
-                          responseType: null,
-                          status: "SENT_TO_DRIVER",
+                          responseDriverName: rejected ? "Тестовый Водитель" : null,
+                          responseReason: rejected ? "Перепутано наименование" : null,
+                          responseType: rejected ? "REJECT" : null,
+                          status: rejected ? "DISPUTED" : "SENT_TO_DRIVER",
                           version: 1,
                           weeklyNormQuantity: 10,
                         },
@@ -1500,8 +1503,10 @@ test.describe("B20 browser and HTTP regression", () => {
       });
     });
     await page.route("**/api/v1/loading/lines/*/cancel", async (route) => {
+      cancelPayload = route.request().postDataJSON() as Record<string, unknown>;
       cancelled = true;
       sentQuantity = 0;
+      rejected = false;
       await json(route, { lineId: "20000000-0000-4000-8000-000000000088" });
     });
 
@@ -1571,11 +1576,28 @@ test.describe("B20 browser and HTTP regression", () => {
       productRow.locator(".loading-transfer-item > header strong", { hasText: "Территория 2" }),
     ).toBeVisible();
     await expect(productRow.getByText("Ждём приёмку")).toBeVisible();
-    await productRow.getByRole("button", { name: "Отменить передачу" }).click();
-    await productRow.getByRole("button", { name: "Да, отменить" }).click();
+    rejected = true;
+    await page.reload();
+    const rejectedStage = page.getByRole("region", { name: "Водитель отклонил товар" });
+    await expect(rejectedStage).toBeVisible();
+    await expect(rejectedStage.getByLabel("Отклонено передач: 1")).toBeVisible();
+    await rejectedStage
+      .getByRole("button", { name: /ТБ Рыжик.*отклонено 3 шт.*Территория 2/u })
+      .click();
+    const rejectedDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await expect(rejectedDialog).toContainText("Перепутано наименование");
+    await expect(rejectedDialog).toContainText("Тестовый Водитель");
+    await expect(rejectedDialog).toContainText("Территория2");
+    await rejectedDialog.getByRole("button", { name: "Подтвердить возврат на склад" }).click();
     await expect.poll(() => cancelled).toBe(true);
-    await expect(productRow).toContainText("На складе27 шт.");
-    await expect(productRow.getByRole("button", { name: /Передано.*0 шт\./u })).toBeDisabled();
+    expect(cancelPayload?.reason).toBe("Возвращено на склад после отклонения водителем");
+    await expect(rejectedStage).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    const returnedProductRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
+    await expect(returnedProductRow).toContainText("На складе27 шт.");
+    await expect(
+      returnedProductRow.getByRole("button", { name: /Передано.*0 шт\./u }),
+    ).toBeDisabled();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

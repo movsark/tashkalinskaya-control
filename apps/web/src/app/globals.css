@@ -3778,6 +3778,163 @@ select:focus {
   }
 }
 
+.loading-rejection-stage {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(164, 62, 42, 0.28);
+  border-radius: 20px;
+  background: #fff4f0;
+}
+
+.loading-rejection-stage__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.loading-rejection-stage__heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.loading-rejection-stage__heading h2,
+.loading-rejection-stage__heading p {
+  margin: 0;
+}
+
+.loading-rejection-stage__heading > div > p:last-child {
+  color: var(--muted);
+}
+
+.loading-rejection-stage__heading > strong {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #a43e2a;
+  font-size: 1.1rem;
+}
+
+.loading-rejection-list {
+  display: grid;
+  gap: 8px;
+}
+
+.loading-rejection-list > button {
+  display: grid;
+  min-height: 58px;
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  padding: 10px 13px;
+  border: 1px solid rgba(164, 62, 42, 0.22);
+  border-radius: 14px;
+  color: var(--ink);
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.loading-rejection-list > button:hover,
+.loading-rejection-list > button:focus-visible {
+  border-color: #a43e2a;
+  background: #fffaf8;
+}
+
+.loading-rejection-list > button span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.loading-rejection-list > button span:nth-child(2) {
+  justify-items: end;
+}
+
+.loading-rejection-list small,
+.loading-rejection-dialog__hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.loading-rejection-list b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loading-rejection-list i {
+  color: #a43e2a;
+  font-size: 1.4rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.loading-rejection-dialog__facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.loading-rejection-dialog__facts > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f3f6f2;
+}
+
+.loading-rejection-dialog__facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.loading-rejection-dialog__facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--forest);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 850;
+}
+
+.loading-rejection-dialog__comment,
+.loading-rejection-dialog__explanation,
+.loading-rejection-dialog__hint {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.loading-rejection-dialog__comment {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #fff4f0;
+}
+
+.loading-rejection-dialog__comment small {
+  color: #a43e2a;
+  font-weight: 800;
+}
+
+.loading-rejection-dialog__explanation {
+  color: var(--ink);
+}
+
+.loading-rejection-dialog > .primary-button {
+  width: 100%;
+  min-height: 58px;
+}
+
 .loading-product-stage {
   padding: 22px;
   border: 1px solid var(--line);

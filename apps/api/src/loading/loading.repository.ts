@@ -1048,9 +1048,16 @@ export class LoadingRepository {
         command.lineId,
         { counterQuantity: command.counterQuantity },
       );
-      await outbox(client, "loading.line.responded", command.lineId, {
-        responseType: command.responseType,
-      });
+      await outbox(
+        client,
+        command.responseType === "REJECT" ? "loading.line.rejected" : "loading.line.responded",
+        command.lineId,
+        {
+          driverEmployeeId: command.actor.employeeId,
+          sessionId: session.id,
+          responseType: command.responseType,
+        },
+      );
       return { lineId: command.lineId };
     });
   }

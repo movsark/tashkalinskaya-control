@@ -235,7 +235,8 @@ function TransferItem({
     Number.isInteger(quantity) && quantity > 0 && quantity <= maximum && quantity !== line.quantity;
   const editable =
     session.status === "IN_PROGRESS" &&
-    (line.status === "SENT_TO_DRIVER" || line.status === "DISPUTED");
+    (line.status === "SENT_TO_DRIVER" ||
+      (line.status === "DISPUTED" && line.responseType !== "REJECT"));
   return (
     <article className="loading-transfer-item">
       <header>
@@ -245,7 +246,7 @@ function TransferItem({
         </div>
         <div>
           <b>{line.quantity} шт.</b>
-          <Status value={line.status} />
+          <Status responseType={line.responseType} value={line.status} />
         </div>
       </header>
       {line.responseReason ? <p>{line.responseReason}</p> : null}
@@ -317,6 +318,10 @@ function TransferItem({
             </button>
           )}
         </div>
+      ) : line.status === "DISPUTED" && line.responseType === "REJECT" ? (
+        <p className="loading-transfer-locked">
+          Водитель отклонил товар. Подтвердите его физический возврат в уведомлении сверху.
+        </p>
       ) : (
         <p className="loading-transfer-locked">
           Водитель уже принял товар — исправление проводится отдельной складской операцией.
@@ -420,7 +425,13 @@ function TerritorySendDialog({
   );
 }
 
-function Status({ value }: { value: string }) {
+function Status({
+  responseType,
+  value,
+}: {
+  responseType: LoadingLineView["responseType"];
+  value: string;
+}) {
   const labels: Record<string, string> = {
     CONFIRMED: "Принято водителем",
     DISPUTED: "Есть расхождение",
@@ -428,7 +439,9 @@ function Status({ value }: { value: string }) {
   };
   return (
     <span className={`loading-status is-${value.toLocaleLowerCase()}`}>
-      {labels[value] ?? value}
+      {value === "DISPUTED" && responseType === "REJECT"
+        ? "Отклонено водителем"
+        : (labels[value] ?? value)}
     </span>
   );
 }

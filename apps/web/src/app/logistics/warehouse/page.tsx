@@ -2,6 +2,7 @@
 
 import type {
   AuthenticatedUser,
+  LoadingLineView,
   LoadingSessionView,
   LoadingWarehouseDayView,
 } from "@tashkalinskaya/contracts";
@@ -43,6 +44,7 @@ export default function WarehouseLogisticsPage() {
   const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [openProductId, setOpenProductId] = useState<string | null>(null);
   const [openProductMode, setOpenProductMode] = useState<"send" | "sent">("send");
+  const [selectedRejectedLineId, setSelectedRejectedLineId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
@@ -96,6 +98,14 @@ export default function WarehouseLogisticsPage() {
 
   const sessions = (loading?.groups.flatMap((group) => group.sessions) ?? []).filter(
     (item) => item.lines.length > 0,
+  );
+  const rejectedTransfers = sessions.flatMap((warehouseSession) =>
+    warehouseSession.lines
+      .filter((line) => line.status === "DISPUTED" && line.responseType === "REJECT")
+      .map((line) => ({ line, session: warehouseSession })),
+  );
+  const selectedRejectedTransfer = rejectedTransfers.find(
+    ({ line }) => line.id === selectedRejectedLineId,
   );
   const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
   const filteredProducts = useMemo(
@@ -164,6 +174,44 @@ export default function WarehouseLogisticsPage() {
       </section>
       {error ? <p className="form-error loading-message">{error}</p> : null}
       {success ? <p className="logistics-success loading-message">{success}</p> : null}
+
+      {rejectedTransfers.length ? (
+        <section aria-labelledby="rejected-loading-title" className="loading-rejection-stage">
+          <div className="loading-rejection-stage__heading">
+            <div>
+              <p className="eyebrow">Нужно решение склада</p>
+              <h2 id="rejected-loading-title">Водитель отклонил товар</h2>
+              <p>
+                Проверьте возвращённый товар. На свободный остаток он попадёт только после вашего
+                подтверждения.
+              </p>
+            </div>
+            <strong aria-label={`Отклонено передач: ${rejectedTransfers.length}`}>
+              {rejectedTransfers.length}
+            </strong>
+          </div>
+          <div className="loading-rejection-list">
+            {rejectedTransfers.map(({ line, session: rejectedSession }) => (
+              <button
+                aria-label={`${line.productName}, отклонено ${line.quantity} шт., Территория ${rejectedSession.territoryNumber}`}
+                key={line.id}
+                onClick={() => setSelectedRejectedLineId(line.id)}
+                type="button"
+              >
+                <span>
+                  <small>{line.productCode}</small>
+                  <b>{line.productName}</b>
+                </span>
+                <span>
+                  <small>Территория {rejectedSession.territoryNumber}</small>
+                  <b>{line.quantity} шт.</b>
+                </span>
+                <i aria-hidden="true">›</i>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="loading-stage loading-product-stage">
         <div className="loading-stage__heading">
@@ -292,7 +340,10 @@ export default function WarehouseLogisticsPage() {
                                 cancelLoadingLine(
                                   line.id,
                                   {
-                                    reason: "Отменено складом до приёмки водителем",
+                                    reason:
+                                      line.responseType === "REJECT"
+                                        ? "Возвращено на склад после отклонения водителем"
+                                        : "Отменено складом до приёмки водителем",
                                     version: line.version,
                                   },
                                   csrf(),
@@ -394,7 +445,109 @@ export default function WarehouseLogisticsPage() {
           )}
         </div>
       </section>
+      {selectedRejectedTransfer ? (
+        <RejectedLoadingDialog
+          busy={busyId === `return-${selectedRejectedTransfer.line.id}`}
+          line={selectedRejectedTransfer.line}
+          onClose={() => setSelectedRejectedLineId(null)}
+          onReturn={() =>
+            command(
+              `return-${selectedRejectedTransfer.line.id}`,
+              () =>
+                cancelLoadingLine(
+                  selectedRejectedTransfer.line.id,
+                  {
+                    reason: "Возвращено на склад после отклонения водителем",
+                    version: selectedRejectedTransfer.line.version,
+                  },
+                  csrf(),
+                ),
+              `${selectedRejectedTransfer.line.productName}: ${selectedRejectedTransfer.line.quantity} шт. возвращено на склад`,
+            )
+          }
+          session={selectedRejectedTransfer.session}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function RejectedLoadingDialog({
+  busy,
+  line,
+  onClose,
+  onReturn,
+  session,
+}: {
+  busy: boolean;
+  line: LoadingLineView;
+  onClose: () => void;
+  onReturn: () => Promise<void>;
+  session: LoadingSessionView;
+}) {
+  const titleId = `rejected-loading-${line.id}`;
+  return (
+    <div className="loading-territory-dialog-layer">
+      <button
+        aria-label="Закрыть отклонённую передачу"
+        className="loading-territory-dialog-backdrop"
+        onClick={onClose}
+        type="button"
+      />
+      <section
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="loading-territory-dialog loading-rejection-dialog"
+        role="dialog"
+      >
+        <header>
+          <div>
+            <small>Водитель отклонил товар</small>
+            <h2 id={titleId}>{line.productName}</h2>
+            <p>{line.productCode}</p>
+          </div>
+          <button aria-label="Закрыть отклонённую передачу" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <dl className="loading-rejection-dialog__facts">
+          <div>
+            <dt>Количество</dt>
+            <dd>{line.quantity} шт.</dd>
+          </div>
+          <div>
+            <dt>Территория</dt>
+            <dd>{session.territoryNumber}</dd>
+          </div>
+          <div>
+            <dt>Водитель</dt>
+            <dd>{line.responseDriverName ?? session.driverName}</dd>
+          </div>
+        </dl>
+        {line.responseReason ? (
+          <p className="loading-rejection-dialog__comment">
+            <small>Комментарий водителя</small>
+            {line.responseReason}
+          </p>
+        ) : null}
+        <p className="loading-rejection-dialog__explanation">
+          Убедитесь, что товар физически вернулся. После подтверждения резерв будет снят, а
+          количество снова появится на складе.
+        </p>
+        <button
+          className="primary-button"
+          disabled={busy}
+          onClick={() => void onReturn()}
+          type="button"
+        >
+          {busy ? "Возвращаем…" : "Подтвердить возврат на склад"}
+        </button>
+        <p className="loading-rejection-dialog__hint">
+          Если перепутано наименование: верните эту позицию на склад, затем выберите правильный
+          товар и создайте новую передачу. История отклонения сохранится.
+        </p>
+      </section>
+    </div>
   );
 }
 
@@ -411,6 +564,9 @@ function WarehouseSession({
 }) {
   const [revisions, setRevisions] = useState<Record<string, RevisionDraft>>({});
   const editable = session.status === "IN_PROGRESS";
+  const rejectedCount = session.lines.filter(
+    (line) => line.status === "DISPUTED" && line.responseType === "REJECT",
+  ).length;
   const canFinish = editable && session.lines.length > 0 && session.unresolvedLines === 0;
   return (
     <article className={`loading-session-card is-${session.status.toLocaleLowerCase()}`}>
@@ -444,10 +600,10 @@ function WarehouseSession({
                 <strong>{line.quantity} шт.</strong>
               </div>
               <div className="loading-line__state">
-                <Status value={line.status} />
+                <Status responseType={line.responseType} value={line.status} />
                 {line.responseReason ? <small>{line.responseReason}</small> : null}
               </div>
-              {line.status === "DISPUTED" && editable ? (
+              {line.status === "DISPUTED" && line.responseType !== "REJECT" && editable ? (
                 <div className="loading-line__resolution">
                   <label>
                     Новое количество
@@ -507,9 +663,11 @@ function WarehouseSession({
       </div>
       <footer className="loading-session-footer">
         <span>
-          {session.unresolvedLines
-            ? `Ожидают ответа водителя: ${session.unresolvedLines}`
-            : "Все позиции приняты водителем"}
+          {rejectedCount
+            ? `Нужно подтвердить возврат на склад: ${rejectedCount}`
+            : session.unresolvedLines
+              ? `Ожидают ответа водителя: ${session.unresolvedLines}`
+              : "Все позиции приняты водителем"}
         </span>
         {canFinish ? (
           <button
@@ -543,9 +701,19 @@ function Metric({ label, suffix = "", value }: { label: string; suffix?: string;
   );
 }
 
-function Status({ value }: { value: string }) {
+function Status({
+  responseType,
+  value,
+}: {
+  responseType?: LoadingLineView["responseType"];
+  value: string;
+}) {
   return (
-    <span className={`loading-status is-${value.toLocaleLowerCase()}`}>{statusLabel(value)}</span>
+    <span className={`loading-status is-${value.toLocaleLowerCase()}`}>
+      {value === "DISPUTED" && responseType === "REJECT"
+        ? "Отклонено водителем"
+        : statusLabel(value)}
+    </span>
   );
 }
 
