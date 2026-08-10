@@ -1083,10 +1083,12 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
     await expect(page.getByText("Кто вышел на рейс")).toBeVisible();
     await expect(page.getByText("Подтверждение администратора не требуется.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Открыть «Мою норму»" })).toHaveAttribute(
-      "href",
-      "/planning",
-    );
+    const planningLink = page.getByRole("link", { name: "Открыть «Мою норму»" });
+    await expect(planningLink).toHaveAttribute("href", "/planning");
+    await expect(planningLink).toHaveCSS("align-items", "center");
+    await expect(planningLink).toHaveCSS("justify-content", "center");
+    await expect(planningLink).toHaveCSS("font-size", "18px");
+    await expect(planningLink).toHaveCSS("text-decoration-line", "none");
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
     await expect(

@@ -188,7 +188,7 @@ export default function DriverLogisticsPage() {
             норма». Подтверждение администратора не требуется.
           </p>
         </div>
-        <Link className="primary-button" href="/planning">
+        <Link className="primary-button driver-territory-request__link" href="/planning">
           Открыть «Мою норму»
         </Link>
       </section>

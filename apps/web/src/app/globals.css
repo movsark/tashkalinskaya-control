@@ -10734,6 +10734,20 @@ label:has(input[type="datetime-local"]) {
   box-shadow: var(--shadow-soft);
 }
 
+.driver-territory-request__link {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  font-size: 18px;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+}
+
 .driver-territory-request form {
   display: grid;
   grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.4fr) auto;
