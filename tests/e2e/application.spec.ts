@@ -1511,6 +1511,8 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       unavailableDialog.getByText(/водитель ещё не нажал «Приступил к рейсу»/u),
     ).toBeVisible();
+    await expect(unavailableDialog).toContainText("Норма: 18 шт.");
+    await expect(unavailableDialog.getByRole("spinbutton")).toHaveValue("18");
     await expect(unavailableDialog.getByRole("spinbutton")).toBeDisabled();
     await unavailableDialog.getByRole("button", { name: "Закрыть окно передачи" }).click();
     await productRow.getByRole("button", { name: /Территория 2/u }).click();
@@ -1519,8 +1521,8 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     await expect(sendDialog).toBeVisible();
     await expect(sendDialog).toContainText("ТБ Рыжик (0,8кг)");
-    await expect(sendDialog).toContainText("Можно передать сейчас: 10 шт.");
-    await expect(sendDialog.getByText("Норма", { exact: true })).toHaveCount(0);
+    await expect(sendDialog).toContainText("Норма: 10 шт.");
+    await expect(sendDialog.getByRole("spinbutton")).toHaveValue("10");
     await sendDialog.getByRole("spinbutton").fill("28");
     await expect(sendDialog.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
     await expect(sendDialog.getByText("Можно передать не более 10 шт.")).toBeVisible();

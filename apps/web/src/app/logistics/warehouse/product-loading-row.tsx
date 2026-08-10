@@ -140,6 +140,10 @@ export function ProductLoadingRow({
                 key={territory.territoryId}
                 onClick={() => {
                   setSelectedTerritoryId(territory.territoryId);
+                  onDraft(
+                    territory.territoryId,
+                    String(Math.min(product.freeQuantity, territory.remainingQuantity)),
+                  );
                   setSendDialogOpen(true);
                 }}
                 type="button"
@@ -375,7 +379,7 @@ function TerritorySendDialog({
           </button>
         </header>
         <p className="loading-territory-dialog__limit">
-          Можно передать сейчас: <strong>{maximum} шт.</strong>
+          Норма: <strong>{territory.remainingQuantity} шт.</strong>
         </p>
         <label>
           <span>Количество</span>
