@@ -2702,6 +2702,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
+    const returnsSwitch = page.getByRole("navigation", { name: "Возвраты и порча" });
+    await expect(returnsSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
+    await expect(returnsSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
     await expect(page.getByText("Территория 2 · вывоз 10 августа")).toBeVisible();
     await expect(page.getByText("Водитель Территории 2")).toBeVisible();
     const pendingReturn = page.locator(".returns-request-list > article.is-pending");
@@ -2722,6 +2725,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/spoilage");
     await expect(page.getByRole("heading", { name: "Приёмка и склад порчи" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Порча от водителей" })).toBeVisible();
+    const spoilageSwitch = page.getByRole("navigation", { name: "Возвраты и порча" });
+    await expect(spoilageSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
+    await expect(spoilageSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
     const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
     await expect(pendingSpoilage).toContainText("Территория 2");
     await expect(pendingSpoilage).toContainText("Водитель Территории 2");

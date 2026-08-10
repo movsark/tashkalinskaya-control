@@ -8885,6 +8885,7 @@ select:focus {
 
 .driver-settlement-switch button,
 .driver-settlement-switch a {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 54px;
@@ -8897,6 +8898,24 @@ select:focus {
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+}
+
+.driver-settlement-switch__badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0 7px;
+  border: 3px solid var(--paper);
+  border-radius: 999px;
+  color: #fff;
+  background: #c84b37;
+  box-shadow: 0 6px 16px rgb(114 37 26 / 26%);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .driver-settlement-switch button.is-active,

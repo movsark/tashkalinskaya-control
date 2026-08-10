@@ -14,6 +14,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
+  countPendingDriverSpoilage,
+  countPendingGoodReturns,
+  SettlementAttentionSwitch,
+} from "../../components/settlement-attention-switch";
+import {
   acceptGoodReturnRequest,
   ApiRequestError,
   createDriverSpoilageRequest,
@@ -23,6 +28,7 @@ import {
   getDriverSpoilageWorkspace,
   getGoodReturnsWorkspace,
   getSession,
+  getSpoilageWorkspace,
   submitGoodReturnRequest,
 } from "../../lib/api";
 
@@ -70,6 +76,7 @@ export default function GoodReturnsPage() {
 function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const [date, setDate] = useState(moscowDate());
   const [data, setData] = useState<GoodReturnsWorkspaceView | null>(null);
+  const [spoilagePendingCount, setSpoilagePendingCount] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -80,18 +87,36 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const canChange = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
 
   async function reload(nextDate = date, message?: string) {
-    setData(await getGoodReturnsWorkspace(nextDate));
+    const [nextReturns, nextSpoilage] = await Promise.all([
+      getGoodReturnsWorkspace(nextDate),
+      getSpoilageWorkspace(),
+    ]);
+    setData(nextReturns);
+    setSpoilagePendingCount(countPendingDriverSpoilage(nextSpoilage.requests));
     if (message) setSuccess(message);
   }
 
   useEffect(() => {
-    void (async () => {
+    let active = true;
+    const refresh = async () => {
       try {
-        setData(await getGoodReturnsWorkspace(date));
+        const [nextReturns, nextSpoilage] = await Promise.all([
+          getGoodReturnsWorkspace(date),
+          getSpoilageWorkspace(),
+        ]);
+        if (!active) return;
+        setData(nextReturns);
+        setSpoilagePendingCount(countPendingDriverSpoilage(nextSpoilage.requests));
       } catch (caught) {
-        setError(messageOf(caught));
+        if (active) setError(messageOf(caught));
       }
-    })();
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [date]);
 
   async function command(id: string, action: () => Promise<unknown>, message: string) {
@@ -151,12 +176,11 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         </label>
       </section>
 
-      <nav className="driver-settlement-switch" aria-label="Возвраты и порча">
-        <Link aria-current="page" className="is-active" href="/returns">
-          Годный возврат
-        </Link>
-        <Link href="/spoilage">Порча и списание</Link>
-      </nav>
+      <SettlementAttentionSwitch
+        active="RETURNS"
+        returnCount={countPendingGoodReturns(data.requests)}
+        spoilageCount={spoilagePendingCount}
+      />
 
       {error ? <p className="form-error returns-notice">{error}</p> : null}
       {success ? <p className="logistics-success returns-notice">{success}</p> : null}

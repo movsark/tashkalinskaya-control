@@ -11,8 +11,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
+  countPendingDriverSpoilage,
+  countPendingGoodReturns,
+  SettlementAttentionSwitch,
+} from "../../components/settlement-attention-switch";
+import {
   acceptDriverSpoilageRequest,
   ApiRequestError,
+  getGoodReturnsWorkspace,
   getSession,
   getSpoilageWorkspace,
 } from "../../lib/api";
@@ -35,6 +41,7 @@ export default function SpoilagePage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [data, setData] = useState<SpoilageWorkspaceView | null>(null);
+  const [returnPendingCount, setReturnPendingCount] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -46,16 +53,36 @@ export default function SpoilagePage() {
   const canReceive = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
 
   async function reload(message?: string) {
-    setData(await getSpoilageWorkspace());
+    const [nextSpoilage, nextReturns] = await Promise.all([
+      getSpoilageWorkspace(),
+      getGoodReturnsWorkspace(moscowDate()),
+    ]);
+    setData(nextSpoilage);
+    setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
     if (message) setSuccess(message);
   }
 
   useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const [nextSpoilage, nextReturns] = await Promise.all([
+          getSpoilageWorkspace(),
+          getGoodReturnsWorkspace(moscowDate()),
+        ]);
+        if (!active) return;
+        setData(nextSpoilage);
+        setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
+      } catch (caught) {
+        if (active) setError(messageOf(caught));
+      }
+    };
     void (async () => {
       try {
         const current = await getSession();
+        if (!active) return;
         setSession(current);
-        setData(await getSpoilageWorkspace());
+        await refresh();
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace("/login");
@@ -64,6 +91,11 @@ export default function SpoilagePage() {
         setError(messageOf(caught));
       }
     })();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [router]);
 
   async function accept(item: WriteoffRequestView) {
@@ -137,12 +169,11 @@ export default function SpoilagePage() {
         </div>
       </section>
 
-      <nav className="driver-settlement-switch" aria-label="Возвраты и порча">
-        <Link href="/returns">Годный возврат</Link>
-        <Link aria-current="page" className="is-active" href="/spoilage">
-          Порча
-        </Link>
-      </nav>
+      <SettlementAttentionSwitch
+        active="SPOILAGE"
+        returnCount={returnPendingCount}
+        spoilageCount={countPendingDriverSpoilage(data.requests)}
+      />
 
       {error ? <p className="form-error spoilage-notice">{error}</p> : null}
       {success ? <p className="logistics-success spoilage-notice">{success}</p> : null}
@@ -279,6 +310,10 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "long",
   });
+}
+
+function moscowDate() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }
 
 function messageOf(value: unknown) {
