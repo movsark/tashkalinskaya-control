@@ -135,13 +135,37 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     };
   }, [date]);
 
-  async function command(id: string, action: () => Promise<unknown>, message: string) {
-    setBusy(id);
+  async function acceptGroup(group: PendingGoodReturnGroup) {
+    setBusy(group.key);
     setError("");
     setSuccess("");
     try {
-      await action();
-      await reload(date, message);
+      const results = await Promise.allSettled(
+        group.requests.map((request) =>
+          acceptGoodReturnRequest(
+            request.id,
+            {
+              idempotencyKey: crypto.randomUUID(),
+              version: request.version,
+            },
+            csrf(),
+          ),
+        ),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (!failures.length) {
+        await reload(
+          date,
+          `Возврат принят: ${group.totalQuantity} шт. добавлено в общий остаток склада.`,
+        );
+      } else {
+        await reload(date);
+        setError(
+          failures.length === results.length
+            ? messageOf(failures[0]!.reason)
+            : "Часть заявок уже изменилась. Очередь обновлена — примите оставшийся товар.",
+        );
+      }
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -239,34 +263,13 @@ function StaffGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 ))}
                 {canChange ? (
                   <div className="returns-request-actions">
-                    {group.requests.map((request) => (
-                      <button
-                        className="primary-button"
-                        disabled={busy === request.id}
-                        key={request.id}
-                        onClick={() =>
-                          void command(
-                            request.id,
-                            () =>
-                              acceptGoodReturnRequest(
-                                request.id,
-                                {
-                                  idempotencyKey: crypto.randomUUID(),
-                                  version: request.version,
-                                },
-                                csrf(),
-                              ),
-                            "Возврат принят и добавлен в общий остаток склада.",
-                          )
-                        }
-                      >
-                        {busy === request.id
-                          ? "Принимаем…"
-                          : group.requests.length === 1
-                            ? "Принять возврат"
-                            : `Принять ${request.totalQuantity} шт.`}
-                      </button>
-                    ))}
+                    <button
+                      className="primary-button"
+                      disabled={busy === group.key}
+                      onClick={() => void acceptGroup(group)}
+                    >
+                      {busy === group.key ? "Принимаем…" : `Принять ${group.totalQuantity} шт.`}
+                    </button>
                   </div>
                 ) : null}
               </article>
@@ -286,7 +289,13 @@ function groupPendingGoodReturns(
   const grouped = new Map<string, GoodReturnRequestView[]>();
   for (const request of requests) {
     if (request.status !== "PENDING") continue;
-    const key = [request.territoryId, request.sourceDriverId, request.dispatchDate].join(":");
+    const contextKey = [request.territoryId, request.sourceDriverId, request.dispatchDate].join(
+      ":",
+    );
+    const key =
+      request.lines.length === 1
+        ? `${contextKey}:product:${request.lines[0]!.productId}`
+        : `${contextKey}:request:${request.id}`;
     grouped.set(key, [...(grouped.get(key) ?? []), request]);
   }
 

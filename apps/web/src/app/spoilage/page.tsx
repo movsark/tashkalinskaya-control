@@ -113,18 +113,32 @@ export default function SpoilagePage() {
     };
   }, [router]);
 
-  async function accept(item: WriteoffRequestView) {
+  async function acceptGroup(group: PendingSpoilageGroup) {
     if (!session) return;
-    setBusy(item.id);
+    setBusy(group.key);
     setError("");
     setSuccess("");
     try {
-      await acceptDriverSpoilageRequest(
-        item.id,
-        { idempotencyKey: crypto.randomUUID(), version: item.version },
-        session.csrfToken,
+      const results = await Promise.allSettled(
+        group.requests.map((request) =>
+          acceptDriverSpoilageRequest(
+            request.id,
+            { idempotencyKey: crypto.randomUUID(), version: request.version },
+            session.csrfToken,
+          ),
+        ),
       );
-      await reload("Порча принята в отдельный склад порчи.");
+      const failures = results.filter((result) => result.status === "rejected");
+      if (!failures.length) {
+        await reload(`Порча принята: ${group.total} шт. добавлено в отдельный склад порчи.`);
+      } else {
+        await reload();
+        setError(
+          failures.length === results.length
+            ? messageOf(failures[0]!.reason)
+            : "Часть заявок уже изменилась. Очередь обновлена — примите оставшийся товар.",
+        );
+      }
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -224,21 +238,14 @@ export default function SpoilagePage() {
               </div>
               {canReceive ? (
                 <div className="spoilage-receipt-card__actions">
-                  {group.requests.map((request) => (
-                    <button
-                      className="primary-button"
-                      disabled={busy === request.id}
-                      key={request.id}
-                      onClick={() => void accept(request)}
-                      type="button"
-                    >
-                      {busy === request.id
-                        ? "Принимаем…"
-                        : group.requests.length === 1
-                          ? "Принять порчу"
-                          : `Принять ${request.quantity} шт.`}
-                    </button>
-                  ))}
+                  <button
+                    className="primary-button"
+                    disabled={busy === group.key}
+                    onClick={() => void acceptGroup(group)}
+                    type="button"
+                  >
+                    {busy === group.key ? "Принимаем…" : `Принять ${group.total} шт.`}
+                  </button>
                 </div>
               ) : null}
             </article>
@@ -296,6 +303,7 @@ function groupPendingSpoilage(items: readonly WriteoffRequestView[]): PendingSpo
       item.sourceTerritoryNumber,
       item.sourceDriverName ?? item.createdByName,
       item.sourceDispatchDate ?? item.businessDate,
+      item.productId,
     ].join(":");
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }

@@ -2543,9 +2543,12 @@ test.describe("B20 browser and HTTP regression", () => {
   test("support workspaces keep rare actions collapsed on a phone", async ({ page }) => {
     const employeeId = "20000000-0000-4000-8000-000000000110";
     const productId = "20000000-0000-4000-8000-000000000111";
+    const acceptedReturnIds = new Set<string>();
+    const acceptedSpoilageIds = new Set<string>();
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      const method = route.request().method();
       if (path.endsWith("/auth/session")) {
         return json(route, {
           csrfToken: "csrf-support-ui",
@@ -2592,6 +2595,16 @@ test.describe("B20 browser and HTTP regression", () => {
         });
       }
       if (path.endsWith("/store/late-requests")) return json(route, []);
+      const returnAcceptance = path.match(/\/returns\/requests\/([^/]+)\/accept$/u);
+      if (method === "POST" && returnAcceptance) {
+        acceptedReturnIds.add(returnAcceptance[1]!);
+        return json(route, { receiptId: crypto.randomUUID(), requestId: returnAcceptance[1] });
+      }
+      const spoilageAcceptance = path.match(/\/spoilage\/requests\/([^/]+)\/acceptance$/u);
+      if (method === "POST" && spoilageAcceptance) {
+        acceptedSpoilageIds.add(spoilageAcceptance[1]!);
+        return json(route, { receiptId: crypto.randomUUID(), requestId: spoilageAcceptance[1] });
+      }
       if (path.endsWith("/returns/workspace")) {
         return json(route, {
           allocations: [],
@@ -2780,8 +2793,15 @@ test.describe("B20 browser and HTTP regression", () => {
     const returnRequestLines = page.locator(".returns-request-lines");
     await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
     await expect(returnRequestLines.getByText("5 шт.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Принять 3 шт." })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Принять 2 шт." })).toBeVisible();
+    const acceptReturns = page.getByRole("button", { name: "Принять 5 шт." });
+    await expect(acceptReturns).toHaveCount(1);
+    await acceptReturns.click();
+    await expect(
+      page.getByText("Возврат принят: 5 шт. добавлено в общий остаток склада."),
+    ).toBeVisible();
+    expect([...acceptedReturnIds].sort()).toEqual(
+      ["20000000-0000-4000-8000-000000000115", "20000000-0000-4000-8000-00000000011a"].sort(),
+    );
     await expect(page.getByText(/сразу добавится в общий свободный остаток склада/u)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Принять возврат" })).toHaveCount(0);
     await expect(page.getByText("Распределить возврат", { exact: true })).toHaveCount(0);
@@ -2804,8 +2824,15 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(
       await pendingSpoilage.evaluate((element) => getComputedStyle(element).backgroundColor),
     ).toBe("rgb(255, 247, 221)");
-    await expect(page.getByRole("button", { name: "Принять 2 шт." })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Принять 1 шт." })).toBeVisible();
+    const acceptSpoilage = page.getByRole("button", { name: "Принять 3 шт." });
+    await expect(acceptSpoilage).toHaveCount(1);
+    await acceptSpoilage.click();
+    await expect(
+      page.getByText("Порча принята: 3 шт. добавлено в отдельный склад порчи."),
+    ).toBeVisible();
+    expect([...acceptedSpoilageIds].sort()).toEqual(
+      ["20000000-0000-4000-8000-000000000118", "20000000-0000-4000-8000-00000000011b"].sort(),
+    );
     await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
     const spoilageStock = page.locator(".spoilage-stock-group");
     await expect(spoilageStock).toContainText("Территория 1");
