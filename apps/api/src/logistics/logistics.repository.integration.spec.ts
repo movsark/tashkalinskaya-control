@@ -11,6 +11,7 @@ const database = new DatabaseService(loadApiConfig(process.env));
 const repository = new LogisticsRepository(database);
 const actorEmployeeId = randomUUID();
 const driverEmployeeId = randomUUID();
+const replacementDriverEmployeeId = randomUUID();
 const correlationId = randomUUID();
 const departmentId = randomUUID();
 const productId = randomUUID();
@@ -40,13 +41,16 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
           id, personnel_number, personnel_number_normalized, full_name
         ) values
           ($1, $2, $2, 'Администратор B08'),
-          ($3, $4, $4, 'Водитель B08')
+          ($3, $4, $4, 'Водитель B08'),
+          ($5, $6, $6, 'Сменщик B08')
       `,
       [
         actorEmployeeId,
         `B08-A-${actorEmployeeId.slice(0, 12)}`,
         driverEmployeeId,
         `B08-D-${driverEmployeeId.slice(0, 12)}`,
+        replacementDriverEmployeeId,
+        `B08-R-${replacementDriverEmployeeId.slice(0, 12)}`,
       ],
     );
     await database.query(
@@ -56,6 +60,12 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
         ) values ($1, $2, 'DRIVER', 'TERRITORY', $3, $4)
       `,
       [randomUUID(), driverEmployeeId, territoryOneId, actorEmployeeId],
+    );
+    await database.query(
+      `insert into identity.role_assignment (
+         id, employee_id, role_code, scope_type, scope_id, created_by
+       ) values ($1, $2, 'DRIVER', 'FACTORY', null, $3)`,
+      [randomUUID(), replacementDriverEmployeeId, actorEmployeeId],
     );
   });
 
@@ -75,6 +85,21 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
       version: null,
     });
     expect(driver).toMatchObject({ employeeId: driverEmployeeId, status: "ACTIVE", version: 1 });
+    const replacement = await repository.upsertDriver({
+      actorEmployeeId,
+      canDriveFrom: null,
+      canDriveTo: null,
+      comment: "Тестовый сменщик",
+      correlationId,
+      employeeId: replacementDriverEmployeeId,
+      status: "ACTIVE",
+      version: null,
+    });
+    expect(replacement).toMatchObject({
+      employeeId: replacementDriverEmployeeId,
+      status: "ACTIVE",
+      version: 1,
+    });
 
     const vehicle = await repository.createVehicle({
       actorEmployeeId,
@@ -101,6 +126,84 @@ describe.runIf(hasDatabase)("LogisticsRepository with PostgreSQL", () => {
       vehicleId,
     });
     expect(assignment).toMatchObject({ territoryNumber: 1, driverEmployeeId, vehicleId });
+  });
+
+  it("hands a territory from one driver to the next only after the first route is ended", async () => {
+    const firstKey = `route-start-${actorEmployeeId}`;
+    const started = await repository.activateDriverRoute({
+      actorEmployeeId: driverEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: firstKey,
+      territoryId: territoryOneId,
+    });
+    const repeated = await repository.activateDriverRoute({
+      actorEmployeeId: driverEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: firstKey,
+      territoryId: territoryOneId,
+    });
+    expect(repeated).toEqual(started);
+    expect(started).toMatchObject({
+      driverEmployeeId,
+      status: "ACTIVE",
+      territoryNumber: 1,
+    });
+
+    await expect(
+      repository.activateDriverRoute({
+        actorEmployeeId: replacementDriverEmployeeId,
+        correlationId: randomUUID(),
+        idempotencyKey: `route-conflict-${actorEmployeeId}`,
+        territoryId: territoryOneId,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const firstEnded = await repository.endDriverRoute({
+      actorEmployeeId: driverEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: `route-first-end-${actorEmployeeId}`,
+      routeShiftId: started.id,
+      version: started.version,
+    });
+    expect(firstEnded).toMatchObject({ status: "ENDED" });
+
+    const replacement = await repository.activateDriverRoute({
+      actorEmployeeId: replacementDriverEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: `route-replacement-${actorEmployeeId}`,
+      territoryId: territoryOneId,
+    });
+    expect(replacement).toMatchObject({
+      driverEmployeeId: replacementDriverEmployeeId,
+      status: "ACTIVE",
+      territoryNumber: 1,
+    });
+
+    const day = await repository.getDriverDay(
+      replacement.dispatchDate,
+      replacementDriverEmployeeId,
+    );
+    expect(day.activeRoutes).toMatchObject([
+      { driverEmployeeId: replacementDriverEmployeeId, territoryNumber: 1 },
+    ]);
+    expect(day.availableTerritoryIds).toContain(territoryOneId);
+
+    const ended = await repository.endDriverRoute({
+      actorEmployeeId: replacementDriverEmployeeId,
+      correlationId: randomUUID(),
+      idempotencyKey: `route-end-${actorEmployeeId}`,
+      routeShiftId: replacement.id,
+      version: replacement.version,
+    });
+    expect(ended).toMatchObject({ status: "ENDED" });
+
+    const history = await database.query<{ count: number }>(
+      `select count(*)::int count
+       from logistics.driver_route_shift_event
+       where route_shift_id in ($1, $2)`,
+      [started.id, replacement.id],
+    );
+    expect(history.rows[0]?.count).toBe(4);
   });
 
   it("generates one idempotent run per active territory", async () => {

@@ -17,6 +17,7 @@ const driverOneId = randomUUID();
 const driverTwoId = randomUUID();
 const driverThreeId = randomUUID();
 const driverFourId = randomUUID();
+const driverFiveId = randomUUID();
 const departmentId = randomUUID();
 const productId = randomUUID();
 const directProductId = randomUUID();
@@ -35,6 +36,7 @@ const keeper = actor(keeperId, "WAREHOUSE_KEEPER", "WAREHOUSE", null);
 const drivers = [driverOneId, driverTwoId, driverThreeId, driverFourId].map((id, index) =>
   actor(id, "DRIVER", "TERRITORY", territoryIds[index]!),
 );
+const replacementDriver = actor(driverFiveId, "DRIVER", "FACTORY", null);
 let sessionOneId = "";
 let sessionTwoId = "";
 let sessionThreeId = "";
@@ -49,7 +51,8 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
       `insert into identity.employee(id,personnel_number,personnel_number_normalized,full_name) values
        ($1,$2,$2,'Админ B13'),($3,$4,$4,'Кладовщик B13'),
        ($5,$6,$6,'Водитель 1 B13'),($7,$8,$8,'Водитель 2 B13'),
-       ($9,$10,$10,'Водитель 3 B13'),($11,$12,$12,'Водитель 4 B13')`,
+       ($9,$10,$10,'Водитель 3 B13'),($11,$12,$12,'Водитель 4 B13'),
+       ($13,$14,$14,'Сменщик B13')`,
       [
         adminId,
         `B13-A-${seed.slice(0, 20)}`,
@@ -63,13 +66,28 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
         `B13-D3-${seed.slice(0, 20)}`,
         driverFourId,
         `B13-D4-${seed.slice(0, 20)}`,
+        driverFiveId,
+        `B13-D5-${seed.slice(0, 20)}`,
       ],
     );
     await database.query(
       `insert into logistics.driver_profile(employee_id,home_territory_id)
-       values($1,null),($2,null),($3,null),($4,null)`,
-      [driverOneId, driverTwoId, driverThreeId, driverFourId],
+       values($1,null),($2,null),($3,null),($4,null),($5,null)`,
+      [driverOneId, driverTwoId, driverThreeId, driverFourId, driverFiveId],
     );
+    for (const [index, driverId] of [
+      driverOneId,
+      driverTwoId,
+      driverThreeId,
+      driverFourId,
+    ].entries()) {
+      await database.query(
+        `insert into logistics.driver_route_shift(
+           id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+         ) values($1,$2,$3,$4,$5,$6)`,
+        [randomUUID(), dispatchDate, territoryIds[index], driverId, adminId, randomUUID()],
+      );
+    }
     const vehicleIds = [randomUUID(), randomUUID(), randomUUID()];
     for (const [index, vehicleId] of vehicleIds.entries())
       await database.query(
@@ -385,6 +403,74 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
       territoryId: territoryIds[3]!,
     });
     expect(await directBalances()).toMatchObject({ FREE_STOCK: 10, RESERVED_FOR_LOADING: 2 });
+  });
+
+  it("keeps one territory load and gives the whole assortment to the next route driver", async () => {
+    const firstDriverLine = (await repository.driverDay(dispatchDate, drivers[3]!)).sessions
+      .flatMap((session) => session.lines)
+      .find((line) => line.productId === directProductId)!;
+    expect(firstDriverLine).toMatchObject({ quantity: 2, status: "SENT_TO_DRIVER" });
+    await repository.respondLine({
+      actor: drivers[3]!,
+      correlationId: randomUUID(),
+      counterQuantity: null,
+      idempotencyKey: `direct-first-driver-confirm-${seed}`,
+      lineId: firstDriverLine.id,
+      reason: null,
+      responseType: "CONFIRM",
+      revisionId: firstDriverLine.currentRevisionId,
+      version: firstDriverLine.version,
+    });
+
+    await database.transaction(async (client) => {
+      await client.query(
+        `update logistics.driver_route_shift
+         set status='ENDED',ended_at=now(),end_reason='Водитель закончил рейс',version=version+1
+         where dispatch_date=$1 and territory_id=$2 and status='ACTIVE'`,
+        [dispatchDate, territoryIds[3]],
+      );
+      await client.query(
+        `insert into logistics.driver_route_shift(
+           id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+         ) values($1,$2,$3,$4,$5,$6)`,
+        [randomUUID(), dispatchDate, territoryIds[3], driverFiveId, adminId, randomUUID()],
+      );
+    });
+
+    const warehouse = await repository.warehouseDay(dispatchDate, keeper);
+    expect(
+      warehouse.products
+        .find((product) => product.id === directProductId)
+        ?.territories.find((territory) => territory.territoryId === territoryIds[3]),
+    ).toMatchObject({ canSend: true, driverName: "Сменщик B13" });
+
+    await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `direct-after-takeover-${seed}`,
+      productId: directProductId,
+      quantity: 1,
+      territoryId: territoryIds[3]!,
+    });
+
+    expect((await repository.driverDay(dispatchDate, drivers[3]!)).sessions).toHaveLength(0);
+    expect(
+      (await repository.driverDay(dispatchDate, replacementDriver)).sessions
+        .flatMap((session) => session.lines)
+        .find((line) => line.productId === directProductId),
+    ).toMatchObject({
+      acceptances: [{ driverName: "Водитель 4 B13", quantity: 2 }],
+      quantity: 3,
+      status: "SENT_TO_DRIVER",
+    });
+    const territorySessions = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_session
+       where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'`,
+      [dispatchDate, territoryIds[3]],
+    );
+    expect(territorySessions.rows[0]?.count).toBe(1);
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 9, RESERVED_FOR_LOADING: 3 });
   });
 
   it("preserves revisions and writes off stock only after both confirmations", async () => {

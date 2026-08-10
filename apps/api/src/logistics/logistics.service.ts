@@ -3,12 +3,14 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 
 import type {
+  ActivateDriverRouteDto,
   CreateExtraRunDto,
   CreateDriverTerritoryRequestDto,
   CreateDefaultAssignmentDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
   DecideDriverTerritoryRequestDto,
+  EndDriverRouteDto,
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
@@ -48,6 +50,34 @@ export class LogisticsService {
         actorEmployeeId,
         correlationId,
         territoryId: dto.territoryId,
+        version: dto.version,
+      }),
+    );
+  }
+
+  activateDriverRoute(dto: ActivateDriverRouteDto, actorEmployeeId: string, correlationId: string) {
+    return this.withConflictMapping(() =>
+      this.repository.activateDriverRoute({
+        actorEmployeeId,
+        correlationId,
+        idempotencyKey: dto.idempotencyKey,
+        territoryId: dto.territoryId,
+      }),
+    );
+  }
+
+  endDriverRoute(
+    routeShiftId: string,
+    dto: EndDriverRouteDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    return this.withConflictMapping(() =>
+      this.repository.endDriverRoute({
+        actorEmployeeId,
+        correlationId,
+        idempotencyKey: dto.idempotencyKey,
+        routeShiftId,
         version: dto.version,
       }),
     );

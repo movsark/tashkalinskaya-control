@@ -87,10 +87,17 @@ interface LineRow extends QueryResultRow {
   product_name: string;
   quantity: number;
   reason: string | null;
+  response_driver_name: string | null;
   response_type: LoadingLineView["responseType"];
   status: LoadingLineView["status"];
   version: number;
   weekly_norm_quantity: number;
+}
+interface LineAcceptanceRow extends QueryResultRow {
+  accepted_at: Date;
+  driver_name: string;
+  loading_line_id: string;
+  quantity: number;
 }
 interface ProductRow extends QueryResultRow {
   barcodes: string[];
@@ -196,29 +203,16 @@ export class LoadingRepository {
       );
       const territories = await client.query<TerritoryDemandRow>(
         `select t.id,t.territory_number,t.name,
-           coalesce(r.driver_employee_id,q.requester_employee_id,d.employee_id) driver_employee_id,
-           coalesce(r.driver_name,q.driver_name,d.driver_name) driver_name
+           active_route.driver_employee_id,
+           active_route.driver_name
          from logistics.territory t
          left join lateral (
-           select x.driver_employee_id,e.full_name driver_name
-           from logistics.territory_run x join identity.employee e on e.id=x.driver_employee_id
-           where x.dispatch_date=$1 and x.territory_id=t.id and x.status<>'CANCELLED'
-             and x.driver_employee_id is not null
-           order by case x.status when 'LOADING' then 0 when 'READY_FOR_LOADING' then 1
-             when 'SCHEDULED' then 2 when 'COMPLETED' then 3 else 4 end,x.run_no desc limit 1
-         ) r on true
-         left join lateral (
-           select x.requester_employee_id,e.full_name driver_name
-           from logistics.driver_territory_request x
-           join identity.employee e on e.id=x.requester_employee_id
-           where x.dispatch_date=$1 and x.territory_id=t.id and x.status='APPROVED'
-           order by x.decided_at desc limit 1
-         ) q on r.driver_employee_id is null
-         left join lateral (
-           select x.employee_id,e.full_name driver_name
-           from logistics.driver_profile x join identity.employee e on e.id=x.employee_id
-           where x.home_territory_id=t.id and x.status='ACTIVE' limit 1
-         ) d on r.driver_employee_id is null and q.requester_employee_id is null
+           select s.driver_employee_id,e.full_name driver_name
+           from logistics.driver_route_shift s
+           join identity.employee e on e.id=s.driver_employee_id
+           where s.dispatch_date=$1 and s.territory_id=t.id and s.status='ACTIVE'
+           order by s.started_at desc limit 1
+         ) active_route on true
          where t.status='ACTIVE' order by t.sort_order,t.territory_number`,
         [date],
       );
@@ -259,8 +253,10 @@ export class LoadingRepository {
            a.territory_id,t.territory_number,a.allocated_quantity,a.reserved_quantity,a.consumed_quantity,a.status
          from returns.return_allocation a join catalog.product p on p.id=a.product_id
          join logistics.territory t on t.id=a.territory_id
-         join logistics.territory_run r on r.dispatch_date=a.dispatch_date and r.territory_id=a.territory_id
-         where a.dispatch_date=$1 and r.driver_employee_id=$2 and a.status<>'CANCELLED'
+         join logistics.driver_route_shift s
+           on s.dispatch_date=a.dispatch_date and s.territory_id=a.territory_id
+          and s.status='ACTIVE' and s.driver_employee_id=$2
+         where a.dispatch_date=$1 and a.status<>'CANCELLED'
          order by t.territory_number,p.name`,
         [date, actor.employeeId],
       );
@@ -994,8 +990,7 @@ export class LoadingRepository {
       const session = await lockSession(client, line.loading_session_id);
       if (session.status !== "IN_PROGRESS")
         throw new ConflictException("Склад уже зафиксировал итог");
-      if (session.driver_employee_id !== command.actor.employeeId)
-        throw new ForbiddenException("Это не ваш рейс");
+      await requireActiveDriverForSession(client, session, command.actor.employeeId);
       const revision = await currentRevision(client, line);
       if (revision.id !== command.revisionId) throw versionConflict();
       if (
@@ -1108,8 +1103,7 @@ export class LoadingRepository {
       if (session.version !== version) throw versionConflict();
       if (session.status !== "WAREHOUSE_CONFIRMED")
         throw new ConflictException("Итог ещё не зафиксирован складом");
-      if (session.driver_employee_id !== actor.employeeId)
-        throw new ForbiddenException("Это не ваш рейс");
+      await requireActiveDriverForSession(client, session, actor.employeeId);
       const lines = await confirmedLines(client, sessionId, true);
       const summary = summaryOf(lines);
       const warehouseFinal = await client.query<{ summary_hash: string }>(
@@ -1238,14 +1232,24 @@ async function loadSessions(
 ): Promise<LoadingSessionView[]> {
   const sessions = await client.query<SessionRow>(
     `select s.id,s.loading_group_id,s.territory_run_id,s.dispatch_date::text,s.territory_id,t.territory_number,
-       s.territory_name_snapshot,s.run_no,s.group_no,s.sequence_no,s.driver_employee_id,s.driver_name_snapshot,
+       s.territory_name_snapshot,s.run_no,s.group_no,s.sequence_no,
+       coalesce(active_route.driver_employee_id,s.driver_employee_id) driver_employee_id,
+       coalesce(active_driver.full_name,s.driver_name_snapshot) driver_name_snapshot,
        s.vehicle_snapshot,s.status,s.started_at,s.completed_at,s.version,
        max(c.confirmed_at) filter(where c.confirmation_kind='WAREHOUSE_FINAL') warehouse_final_at,
        max(c.confirmed_at) filter(where c.confirmation_kind='DRIVER_FINAL') driver_final_at
      from loading.loading_session s join logistics.territory t on t.id=s.territory_id
+     left join lateral (
+       select r.driver_employee_id
+       from logistics.driver_route_shift r
+       where r.dispatch_date=s.dispatch_date and r.territory_id=s.territory_id and r.status='ACTIVE'
+       order by r.started_at desc limit 1
+     ) active_route on true
+     left join identity.employee active_driver on active_driver.id=active_route.driver_employee_id
      left join loading.session_confirmation c on c.loading_session_id=s.id
-     where s.dispatch_date=$1 and ($2::uuid is null or s.driver_employee_id=$2)
-     group by s.id,t.territory_number order by s.group_no,s.sequence_no`,
+     where s.dispatch_date=$1 and ($2::uuid is null or active_route.driver_employee_id=$2)
+     group by s.id,t.territory_number,active_route.driver_employee_id,active_driver.full_name
+     order by s.group_no,s.sequence_no`,
     [date, driverId],
   );
   const ids = sessions.rows.map((item) => item.id);
@@ -1253,16 +1257,38 @@ async function loadSessions(
     ? await client.query<LineRow>(
         `select l.id,l.loading_session_id,l.product_id,p.product_code,p.name product_name,l.current_revision_no,l.status,l.version,
            r.id current_revision_id,r.quantity,r.weekly_norm_quantity,r.one_off_quantity,r.allocated_free_stock,
-           r.allocated_good_return,r.new_production,r.planned_quantity,r.comment,x.response_type,x.counter_quantity,x.reason
+           r.allocated_good_return,r.new_production,r.planned_quantity,r.comment,x.response_type,x.counter_quantity,x.reason,
+           response_driver.full_name response_driver_name
          from loading.loading_line l join catalog.product p on p.id=l.product_id
          join loading.loading_line_revision r on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
          left join loading.loading_line_response x on x.loading_line_revision_id=r.id
+         left join identity.employee response_driver on response_driver.id=x.driver_employee_id
          where l.loading_session_id=any($1::uuid[]) and l.status<>'CANCELLED' order by p.name`,
         [ids],
       )
     : { rows: [] as LineRow[] };
+  const acceptances = ids.length
+    ? await client.query<LineAcceptanceRow>(
+        `select r.loading_line_id,x.responded_at accepted_at,e.full_name driver_name,r.quantity
+         from loading.loading_line_response x
+         join loading.loading_line_revision r on r.id=x.loading_line_revision_id
+         join identity.employee e on e.id=x.driver_employee_id
+         where r.loading_line_id in (
+           select id from loading.loading_line where loading_session_id=any($1::uuid[])
+         ) and x.response_type='CONFIRM'
+         order by x.responded_at`,
+        [ids],
+      )
+    : { rows: [] as LineAcceptanceRow[] };
   return sessions.rows.map((session) => {
-    const items = lines.rows.filter((line) => line.loading_session_id === session.id).map(mapLine);
+    const items = lines.rows
+      .filter((line) => line.loading_session_id === session.id)
+      .map((line) =>
+        mapLine(
+          line,
+          acceptances.rows.filter((acceptance) => acceptance.loading_line_id === line.id),
+        ),
+      );
     return {
       completedAt: session.completed_at?.toISOString() ?? null,
       dispatchDate: session.dispatch_date,
@@ -1336,10 +1362,9 @@ function mapProduct(
         sum + (session.lines.find((line) => line.productId === row.id)?.quantity ?? 0),
       0,
     );
-    const openSession = territorySessions.find((session) => session.status === "IN_PROGRESS");
     return {
-      canSend: openSession !== undefined || territory.driver_employee_id !== null,
-      driverName: openSession?.driverName ?? territory.driver_name,
+      canSend: territory.driver_employee_id !== null,
+      driverName: territory.driver_name,
       plannedQuantity,
       remainingQuantity: Math.max(0, plannedQuantity - sentQuantity),
       sentQuantity,
@@ -1364,8 +1389,13 @@ function mapProduct(
     territories: territoryViews,
   };
 }
-function mapLine(row: LineRow): LoadingLineView {
+function mapLine(row: LineRow, acceptances: LineAcceptanceRow[]): LoadingLineView {
   return {
+    acceptances: acceptances.map((acceptance) => ({
+      acceptedAt: acceptance.accepted_at.toISOString(),
+      driverName: acceptance.driver_name,
+      quantity: acceptance.quantity,
+    })),
     allocatedFreeStock: row.allocated_free_stock,
     allocatedGoodReturn: row.allocated_good_return,
     comment: row.comment,
@@ -1382,6 +1412,7 @@ function mapLine(row: LineRow): LoadingLineView {
     productName: row.product_name,
     quantity: row.quantity,
     responseReason: row.reason,
+    responseDriverName: row.response_driver_name,
     responseType: row.response_type,
     status: row.status,
     version: row.version,
@@ -1401,15 +1432,6 @@ async function ensureTerritoryLoadingSession(
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [
     `loading-territory:${command.dispatchDate}:${command.territoryId}`,
   ]);
-  const current = await client.query<LockedSessionRow>(
-    `select id,dispatch_date::text,driver_employee_id,loading_group_id,status,territory_id,version
-     from loading.loading_session
-     where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'
-     order by started_at desc limit 1 for update`,
-    [command.dispatchDate, command.territoryId],
-  );
-  if (current.rows[0]) return current.rows[0];
-
   const territory = await client.query<{
     id: string;
     name: string;
@@ -1422,29 +1444,26 @@ async function ensureTerritoryLoadingSession(
   const target = territory.rows[0];
   if (!target) throw new NotFoundException("Территория не найдена");
   const driver = await client.query<{ employee_id: string; full_name: string }>(
-    `with candidates as (
-       select r.driver_employee_id employee_id,e.full_name,1 priority,r.run_no rank
-       from logistics.territory_run r join identity.employee e on e.id=r.driver_employee_id
-       where r.dispatch_date=$1 and r.territory_id=$2 and r.status<>'CANCELLED'
-         and r.driver_employee_id is not null
-       union all
-       select q.requester_employee_id,e.full_name,2 priority,0 rank
-       from logistics.driver_territory_request q
-       join identity.employee e on e.id=q.requester_employee_id
-       where q.dispatch_date=$1 and q.territory_id=$2 and q.status='APPROVED'
-       union all
-       select d.employee_id,e.full_name,3 priority,0 rank
-       from logistics.driver_profile d join identity.employee e on e.id=d.employee_id
-       where d.home_territory_id=$2 and d.status='ACTIVE'
-     )
-     select employee_id,full_name from candidates order by priority,rank desc limit 1`,
+    `select s.driver_employee_id employee_id,e.full_name
+     from logistics.driver_route_shift s
+     join identity.employee e on e.id=s.driver_employee_id
+     where s.dispatch_date=$1 and s.territory_id=$2 and s.status='ACTIVE'
+     order by s.started_at desc limit 1`,
     [command.dispatchDate, command.territoryId],
   );
   const assignedDriver = driver.rows[0];
   if (!assignedDriver)
     throw new ConflictException(
-      `Для территории ${target.territory_number} водитель ещё не выбрал постоянную территорию`,
+      `Для территории ${target.territory_number} водитель ещё не нажал «Приступил к рейсу»`,
     );
+  const current = await client.query<LockedSessionRow>(
+    `select id,dispatch_date::text,driver_employee_id,loading_group_id,status,territory_id,version
+     from loading.loading_session
+     where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'
+     order by started_at desc limit 1 for update`,
+    [command.dispatchDate, command.territoryId],
+  );
+  if (current.rows[0]) return current.rows[0];
 
   const timeline = await client.query<{
     group_no: number;
@@ -1564,6 +1583,22 @@ async function lockSession(client: PoolClient, id: string): Promise<LockedSessio
   );
   if (!result.rows[0]) throw new NotFoundException("Сессия погрузки не найдена");
   return result.rows[0];
+}
+
+async function requireActiveDriverForSession(
+  client: PoolClient,
+  session: LockedSessionRow,
+  driverEmployeeId: string,
+): Promise<void> {
+  const active = await client.query(
+    `select 1
+     from logistics.driver_route_shift
+     where dispatch_date=$1 and territory_id=$2 and driver_employee_id=$3 and status='ACTIVE'`,
+    [session.dispatch_date, session.territory_id, driverEmployeeId],
+  );
+  if (!active.rowCount) {
+    throw new ForbiddenException("Сначала нажмите «Приступил к рейсу» для этой территории");
+  }
 }
 async function lockLine(client: PoolClient, id: string): Promise<LockedLineRow> {
   const result = await client.query<LockedLineRow>(

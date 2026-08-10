@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  DriverRouteShiftView,
   DriverTerritoryRequestView,
   DriverLogisticsDayView,
   DriverHomeTerritoryView,
@@ -117,6 +118,21 @@ interface DriverTerritoryRequestRow {
   readonly version: number;
 }
 
+interface DriverRouteShiftRow {
+  readonly dispatch_date: string;
+  readonly driver_employee_id: string;
+  readonly driver_name: string;
+  readonly ended_at: Date | null;
+  readonly end_reason: string | null;
+  readonly id: string;
+  readonly started_at: Date;
+  readonly status: DriverRouteShiftView["status"];
+  readonly territory_id: string;
+  readonly territory_name: string;
+  readonly territory_number: number;
+  readonly version: number;
+}
+
 const runSelect = `
   select
     r.id, r.dispatch_date::text, r.territory_id, t.territory_number,
@@ -139,6 +155,15 @@ const driverRequestSelect = `
   from logistics.driver_territory_request q
   join logistics.territory t on t.id = q.territory_id
   join identity.employee e on e.id = q.requester_employee_id
+`;
+
+const driverRouteShiftSelect = `
+  select s.id, s.dispatch_date::text, s.territory_id, t.territory_number,
+    t.name as territory_name, s.driver_employee_id, e.full_name as driver_name,
+    s.status, s.started_at, s.ended_at, s.end_reason, s.version
+  from logistics.driver_route_shift s
+  join logistics.territory t on t.id = s.territory_id
+  join identity.employee e on e.id = s.driver_employee_id
 `;
 
 @Injectable()
@@ -420,6 +445,196 @@ export class LogisticsRepository {
         territoryId: command.territoryId,
         version: row.version,
       };
+    });
+  }
+
+  async activateDriverRoute(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    idempotencyKey: string;
+    territoryId: string;
+  }): Promise<DriverRouteShiftView> {
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ route_shift_id: string }>(
+        `select route_shift_id from logistics.driver_route_shift_event
+         where actor_employee_id = $1 and idempotency_key = $2`,
+        [command.actorEmployeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) {
+        return getDriverRouteShift(client, repeated.rows[0].route_shift_id);
+      }
+
+      const references = await client.query<{
+        dispatch_date: string;
+        driver_name: string;
+        driver_ok: boolean;
+        territory_ok: boolean;
+      }>(
+        `select
+           (now() at time zone 'Europe/Moscow')::date::text as dispatch_date,
+           coalesce((select full_name from identity.employee where id = $1), '') driver_name,
+           exists (
+             select 1 from logistics.driver_profile d
+             join identity.employee e on e.id = d.employee_id
+             where d.employee_id = $1 and d.status = 'ACTIVE'
+               and e.employment_status = 'ACTIVE'
+               and (d.can_drive_from is null or d.can_drive_from <= (now() at time zone 'Europe/Moscow')::date)
+               and (d.can_drive_to is null or d.can_drive_to >= (now() at time zone 'Europe/Moscow')::date)
+           ) driver_ok,
+           exists (
+             select 1 from logistics.territory t where t.id = $2 and t.status = 'ACTIVE'
+           ) territory_ok`,
+        [command.actorEmployeeId, command.territoryId],
+      );
+      const reference = references.rows[0];
+      if (!reference?.driver_ok || !reference.territory_ok) {
+        throw new NotFoundException("Активный водитель или территория не найдены");
+      }
+      const dispatchDate = reference.dispatch_date;
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:route:${dispatchDate}:${command.territoryId}`,
+      ]);
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `logistics:route-driver:${dispatchDate}:${command.actorEmployeeId}`,
+      ]);
+
+      const ownActive = await client.query<DriverRouteShiftRow>(
+        `${driverRouteShiftSelect}
+         where s.dispatch_date = $1 and s.driver_employee_id = $2 and s.status = 'ACTIVE'
+         for update of s`,
+        [dispatchDate, command.actorEmployeeId],
+      );
+      if (ownActive.rows[0]) {
+        if (ownActive.rows[0].territory_id !== command.territoryId) {
+          throw new ConflictException(
+            `Вы уже вышли на рейс Территории ${ownActive.rows[0].territory_number}`,
+          );
+        }
+        return mapDriverRouteShift(ownActive.rows[0]);
+      }
+
+      const occupied = await client.query<DriverRouteShiftRow>(
+        `${driverRouteShiftSelect}
+         where s.dispatch_date = $1 and s.territory_id = $2 and s.status = 'ACTIVE'
+         for update of s`,
+        [dispatchDate, command.territoryId],
+      );
+      const previous = occupied.rows[0];
+      if (previous) {
+        throw new ConflictException(
+          `Рейс Территории ${previous.territory_number} ещё ведёт ${previous.driver_name}. Сначала он должен завершить рейс`,
+        );
+      }
+
+      const routeShiftId = randomUUID();
+      await client.query(
+        `insert into logistics.driver_route_shift(
+           id, dispatch_date, territory_id, driver_employee_id,
+           created_by, correlation_id
+         ) values($1,$2,$3,$4,$4,$5)`,
+        [
+          routeShiftId,
+          dispatchDate,
+          command.territoryId,
+          command.actorEmployeeId,
+          command.correlationId,
+        ],
+      );
+      await client.query(
+        `insert into logistics.driver_route_shift_event(
+           id, route_shift_id, event_type, actor_employee_id,
+           related_driver_employee_id, reason, idempotency_key, correlation_id
+         ) values($1,$2,'STARTED',$3,$4,$5,$6,$7)`,
+        [
+          randomUUID(),
+          routeShiftId,
+          command.actorEmployeeId,
+          null,
+          null,
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      await insertAudit(
+        client,
+        { ...command, activeRole: "DRIVER" },
+        "DRIVER_ROUTE_STARTED",
+        "DRIVER_ROUTE_SHIFT",
+        routeShiftId,
+        {
+          territoryId: command.territoryId,
+        },
+      );
+      await insertOutbox(client, "logistics.driver-route.started", routeShiftId, {
+        driverEmployeeId: command.actorEmployeeId,
+        territoryId: command.territoryId,
+      });
+      return getDriverRouteShift(client, routeShiftId);
+    });
+  }
+
+  async endDriverRoute(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    idempotencyKey: string;
+    routeShiftId: string;
+    version: number;
+  }): Promise<DriverRouteShiftView> {
+    return this.database.transaction(async (client) => {
+      const repeated = await client.query<{ route_shift_id: string }>(
+        `select route_shift_id from logistics.driver_route_shift_event
+         where actor_employee_id = $1 and idempotency_key = $2`,
+        [command.actorEmployeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) {
+        return getDriverRouteShift(client, repeated.rows[0].route_shift_id);
+      }
+      const current = await client.query<DriverRouteShiftRow>(
+        `${driverRouteShiftSelect} where s.id = $1 for update of s`,
+        [command.routeShiftId],
+      );
+      const route = current.rows[0];
+      if (!route) throw new NotFoundException("Активный рейс не найден");
+      if (route.driver_employee_id !== command.actorEmployeeId) {
+        throw new ConflictException("Завершить рейс может только активный водитель");
+      }
+      if (route.status !== "ACTIVE" || route.version !== command.version) {
+        throw new ConflictException("Рейс уже завершён или передан другому водителю");
+      }
+      const reason = "Водитель завершил или передал рейс";
+      await client.query(
+        `update logistics.driver_route_shift
+         set status = 'ENDED', ended_at = now(), end_reason = $2, version = version + 1
+         where id = $1`,
+        [route.id, reason],
+      );
+      await client.query(
+        `insert into logistics.driver_route_shift_event(
+           id, route_shift_id, event_type, actor_employee_id,
+           reason, idempotency_key, correlation_id
+         ) values($1,$2,'ENDED',$3,$4,$5,$6)`,
+        [
+          randomUUID(),
+          route.id,
+          command.actorEmployeeId,
+          reason,
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      await insertAudit(
+        client,
+        { ...command, activeRole: "DRIVER" },
+        "DRIVER_ROUTE_ENDED",
+        "DRIVER_ROUTE_SHIFT",
+        route.id,
+        { territoryId: route.territory_id },
+      );
+      await insertOutbox(client, "logistics.driver-route.ended", route.id, {
+        driverEmployeeId: command.actorEmployeeId,
+        territoryId: route.territory_id,
+      });
+      return getDriverRouteShift(client, route.id);
     });
   }
 
@@ -998,7 +1213,7 @@ export class LogisticsRepository {
     dispatchDate: string,
     driverEmployeeId: string,
   ): Promise<DriverLogisticsDayView> {
-    const [runs, normTotal, territories, requests, availableTerritories, profile] =
+    const [runs, normTotal, territories, requests, availableTerritories, profile, activeRoutes] =
       await Promise.all([
         this.database.query<RunRow>(
           `${runSelect}
@@ -1009,10 +1224,14 @@ export class LogisticsRepository {
         ),
         this.database.query<{ total_norm_quantity: number }>(
           `with driver_territories as (
-             select distinct r.territory_id
-             from logistics.territory_run r
-             where r.dispatch_date = $1 and r.driver_employee_id = $2
-               and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+           select distinct r.territory_id
+           from logistics.territory_run r
+           where r.dispatch_date = $1 and r.driver_employee_id = $2
+             and r.status in ('SCHEDULED', 'READY_FOR_LOADING', 'LOADING', 'COMPLETED')
+           union
+           select s.territory_id
+           from logistics.driver_route_shift s
+           where s.dispatch_date = $1 and s.driver_employee_id = $2 and s.status = 'ACTIVE'
            )
            select coalesce(sum(n.quantity), 0)::integer as total_norm_quantity
            from driver_territories dt
@@ -1047,6 +1266,10 @@ export class LogisticsRepository {
            from logistics.driver_profile d
            where d.employee_id = $2 and d.status = 'ACTIVE'
              and d.home_territory_id is not null
+           union
+           select s.territory_id
+           from logistics.driver_route_shift s
+           where s.dispatch_date = $1 and s.driver_employee_id = $2 and s.status = 'ACTIVE'
          ) allowed`,
           [dispatchDate, driverEmployeeId],
         ),
@@ -1055,10 +1278,17 @@ export class LogisticsRepository {
          where employee_id = $1 and status = 'ACTIVE'`,
           [driverEmployeeId],
         ),
+        this.database.query<DriverRouteShiftRow>(
+          `${driverRouteShiftSelect}
+           where s.dispatch_date = $1 and s.status = 'ACTIVE'
+           order by t.sort_order, t.territory_number`,
+          [dispatchDate],
+        ),
       ]);
     const driverProfile = profile.rows[0];
     if (driverProfile === undefined) throw new NotFoundException("Профиль водителя не найден");
     return {
+      activeRoutes: activeRoutes.rows.map(mapDriverRouteShift),
       availableTerritoryIds: availableTerritories.rows.map((row) => row.territory_id),
       dispatchDate,
       driverProfileVersion: driverProfile.version,
@@ -1505,4 +1735,34 @@ function mapDriverTerritoryRequest(row: DriverTerritoryRequestRow): DriverTerrit
     territoryRunId: row.territory_run_id,
     version: row.version,
   };
+}
+
+function mapDriverRouteShift(row: DriverRouteShiftRow): DriverRouteShiftView {
+  return {
+    dispatchDate: row.dispatch_date,
+    driverEmployeeId: row.driver_employee_id,
+    driverName: row.driver_name,
+    endedAt: row.ended_at?.toISOString() ?? null,
+    endReason: row.end_reason,
+    id: row.id,
+    startedAt: row.started_at.toISOString(),
+    status: row.status,
+    territoryId: row.territory_id,
+    territoryName: row.territory_name,
+    territoryNumber: row.territory_number,
+    version: row.version,
+  };
+}
+
+async function getDriverRouteShift(
+  client: PoolClient,
+  routeShiftId: string,
+): Promise<DriverRouteShiftView> {
+  const result = await client.query<DriverRouteShiftRow>(
+    `${driverRouteShiftSelect} where s.id = $1`,
+    [routeShiftId],
+  );
+  const row = result.rows[0];
+  if (!row) throw new NotFoundException("Рейс водителя не найден");
+  return mapDriverRouteShift(row);
 }

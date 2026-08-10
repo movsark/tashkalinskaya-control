@@ -243,6 +243,14 @@ export class NotificationProcessor {
       );
       return result.rows.map((item) => item.employee_id);
     }
+    if (message.event_name.startsWith("logistics.driver-route.")) {
+      const result = await client.query<{ employee_id: string }>(
+        `select driver_employee_id employee_id
+         from logistics.driver_route_shift where id=$1`,
+        [message.aggregate_id],
+      );
+      return result.rows.map((item) => item.employee_id);
+    }
     if (message.event_name.startsWith("logistics.run.")) {
       const result = await client.query<{ employee_id: string }>(
         `select driver_employee_id employee_id from logistics.territory_run where id=$1`,

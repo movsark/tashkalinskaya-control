@@ -871,7 +871,6 @@ test.describe("B20 browser and HTTP regression", () => {
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
     page,
   }) => {
-    let territoryRequest: unknown = null;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/health/live", (route) =>
       json(route, {
@@ -1006,25 +1005,6 @@ test.describe("B20 browser and HTTP regression", () => {
         ],
       }),
     );
-    await page.route("**/api/v1/logistics/me/territory-requests", async (route) => {
-      territoryRequest = route.request().postDataJSON();
-      await json(route, {
-        createdAt: "2026-08-04T04:00:00.000Z",
-        decisionComment: null,
-        dispatchDate: "2026-08-04",
-        driverName: "Водитель теста",
-        id: "20000000-0000-4000-8000-000000000081",
-        reason: "Заменяю водителя",
-        requesterEmployeeId: "20000000-0000-4000-8000-000000000071",
-        status: "SUBMITTED",
-        territoryId: "20000000-0000-4000-8000-000000000075",
-        territoryName: "Территория 3",
-        territoryNumber: 3,
-        territoryRunId: null,
-        version: 1,
-      });
-    });
-
     await page.goto("/");
     await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
     const driverNavigation = page.getByRole("navigation", { name: "Основная навигация" });
@@ -1039,20 +1019,13 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
-    await expect(page.getByText("Запросить другую территорию")).toBeVisible();
+    await expect(page.getByText("Кто вышел на рейс")).toBeVisible();
+    await expect(page.getByText("Подтверждение администратора не требуется.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть «Мою норму»" })).toHaveAttribute(
+      "href",
+      "/planning",
+    );
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
-    await page
-      .locator(".driver-territory-request select")
-      .selectOption("20000000-0000-4000-8000-000000000075", { force: true });
-    await page.locator(".driver-territory-request input").fill("Заменяю водителя");
-    await page.getByRole("button", { name: "Отправить запрос" }).click();
-    await expect
-      .poll(() => territoryRequest)
-      .toEqual({
-        dispatchDate: "2026-08-04",
-        reason: "Заменяю водителя",
-        territoryId: "20000000-0000-4000-8000-000000000075",
-      });
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
     await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
@@ -1271,6 +1244,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const productId = "20000000-0000-4000-8000-000000000091";
     const dryProductId = "20000000-0000-4000-8000-000000000097";
     let driverRequests: Array<Record<string, unknown>> = [];
+    let activeRoute: Record<string, unknown> | null = null;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -1299,6 +1273,7 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
+        activeRoutes: activeRoute ? [activeRoute] : [],
         availableTerritoryIds: [territoryId],
         dispatchDate: "2026-08-10",
         driverProfileVersion: 1,
@@ -1309,6 +1284,29 @@ test.describe("B20 browser and HTTP regression", () => {
         totalNormQuantity: 0,
       }),
     );
+    await page.route("**/api/v1/logistics/me/route/activate", async (route) => {
+      const input = route.request().postDataJSON() as { territoryId: string };
+      activeRoute = {
+        dispatchDate: "2026-08-10",
+        driverEmployeeId: "20000000-0000-4000-8000-000000000093",
+        driverName: "Водитель нормы",
+        endedAt: null,
+        endReason: null,
+        id: "20000000-0000-4000-8000-000000000089",
+        startedAt: "2026-08-10T04:00:00.000Z",
+        status: "ACTIVE",
+        territoryId: input.territoryId,
+        territoryName: "Территория 3",
+        territoryNumber: 3,
+        version: 1,
+      };
+      await json(route, activeRoute);
+    });
+    await page.route("**/api/v1/logistics/me/route/*/end", async (route) => {
+      const ended = { ...activeRoute, endedAt: "2026-08-10T08:00:00.000Z", status: "ENDED" };
+      activeRoute = null;
+      await json(route, ended);
+    });
     await page.route("**/api/v1/planning/setup", (route) =>
       json(route, {
         productGroups: [
@@ -1434,6 +1432,15 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
+    const routePanel = page.getByRole("region", { name: "Рейс сегодня" });
+    await expect(routePanel.getByText("Территория свободна")).toBeVisible();
+    await routePanel.getByRole("button", { name: "Приступил к рейсу" }).click();
+    await routePanel.getByRole("button", { name: "Да, подтверждаю" }).click();
+    await expect(routePanel.getByText("Вы на рейсе", { exact: true })).toBeVisible();
+    await expect(routePanel.getByText("Территория 3", { exact: true })).toBeVisible();
+    await routePanel.getByRole("button", { name: "Закончил рейс" }).click();
+    await routePanel.getByRole("button", { name: "Да, подтверждаю" }).click();
+    await expect(routePanel.getByText("Рейс не начат", { exact: true })).toBeVisible();
     const weekdayButtons = page.locator(".driver-weekday-accordion__trigger");
     const monday = weekdayButtons.filter({ hasText: "Понедельник" });
     const tuesday = weekdayButtons.filter({ hasText: "Вторник" });

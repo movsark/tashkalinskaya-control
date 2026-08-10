@@ -93,6 +93,25 @@ export class SelectDriverHomeTerritoryDto {
   version!: number;
 }
 
+export class ActivateDriverRouteDto {
+  @IsUUID()
+  territoryId!: string;
+
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+}
+
+export class EndDriverRouteDto {
+  @IsString()
+  @Length(8, 100)
+  idempotencyKey!: string;
+
+  @IsInt()
+  @Min(1)
+  version!: number;
+}
+
 export class CreateDefaultAssignmentDto {
   @IsUUID()
   territoryId!: string;

@@ -397,6 +397,7 @@ export interface TerritoryRunView {
 }
 
 export interface DriverLogisticsDayView {
+  readonly activeRoutes: readonly DriverRouteShiftView[];
   readonly availableTerritoryIds: readonly string[];
   readonly dispatchDate: string;
   readonly driverProfileVersion: number;
@@ -405,6 +406,23 @@ export interface DriverLogisticsDayView {
   readonly runs: readonly TerritoryRunView[];
   readonly territories: readonly TerritoryView[];
   readonly totalNormQuantity: number;
+}
+
+export type DriverRouteShiftStatus = "ACTIVE" | "ENDED" | "TAKEN_OVER";
+
+export interface DriverRouteShiftView {
+  readonly dispatchDate: string;
+  readonly driverEmployeeId: string;
+  readonly driverName: string;
+  readonly endedAt: string | null;
+  readonly endReason: string | null;
+  readonly id: string;
+  readonly startedAt: string;
+  readonly status: DriverRouteShiftStatus;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly version: number;
 }
 
 export interface DriverHomeTerritoryView {
@@ -1019,7 +1037,14 @@ export interface LoadingPlanSnapshotView {
   readonly weeklyNormQuantity: number;
 }
 
+export interface LoadingAcceptanceView {
+  readonly acceptedAt: string;
+  readonly driverName: string;
+  readonly quantity: number;
+}
+
 export interface LoadingLineView extends LoadingPlanSnapshotView {
+  readonly acceptances: readonly LoadingAcceptanceView[];
   readonly comment: string | null;
   readonly counterQuantity: number | null;
   readonly currentRevisionId: string;
@@ -1031,6 +1056,7 @@ export interface LoadingLineView extends LoadingPlanSnapshotView {
   readonly productName: string;
   readonly quantity: number;
   readonly responseReason: string | null;
+  readonly responseDriverName: string | null;
   readonly responseType: "CONFIRM" | "COUNTER" | "REJECT" | null;
   readonly status: "CANCELLED" | "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
   readonly version: number;

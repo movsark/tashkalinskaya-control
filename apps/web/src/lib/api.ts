@@ -18,6 +18,7 @@ import type {
   EmployeeSummary,
   DriverLogisticsDayView,
   DriverHomeTerritoryView,
+  DriverRouteShiftView,
   DriverTerritoryRequestView,
   GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
@@ -756,6 +757,29 @@ export async function selectDriverHomeTerritory(
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "PUT",
+  });
+}
+
+export async function activateDriverRoute(
+  input: { idempotencyKey: string; territoryId: string },
+  csrfToken: string,
+): Promise<DriverRouteShiftView> {
+  return request("/logistics/me/route/activate", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function endDriverRoute(
+  routeShiftId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<DriverRouteShiftView> {
+  return request(`/logistics/me/route/${routeShiftId}/end`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
   });
 }
 

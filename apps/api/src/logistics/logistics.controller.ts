@@ -15,12 +15,14 @@ import { ApiTags } from "@nestjs/swagger";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  ActivateDriverRouteDto,
   CreateDefaultAssignmentDto,
   CreateDriverTerritoryRequestDto,
   CreateExtraRunDto,
   CreateLoadingGroupDto,
   CreateVehicleDto,
   DecideDriverTerritoryRequestDto,
+  EndDriverRouteDto,
   GenerateDayDto,
   MarkRunReadyDto,
   PublishDayDto,
@@ -131,6 +133,31 @@ export class LogisticsController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.logistics.selectDriverHomeTerritory(
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("me/route/activate")
+  @RequireRoles("DRIVER")
+  activateRoute(@Body() dto: ActivateDriverRouteDto, @Req() request: AuthenticatedRequest) {
+    return this.logistics.activateDriverRoute(
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Post("me/route/:routeShiftId/end")
+  @RequireRoles("DRIVER")
+  endRoute(
+    @Param("routeShiftId", ParseUUIDPipe) routeShiftId: string,
+    @Body() dto: EndDriverRouteDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.logistics.endDriverRoute(
+      routeShiftId,
       dto,
       requireActorId(request),
       requireCorrelationId(request),

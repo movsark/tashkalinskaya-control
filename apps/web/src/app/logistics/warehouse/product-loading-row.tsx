@@ -372,7 +372,7 @@ function TerritorySendPanel({
         {busyId === key ? "Отправляем…" : "Отправить водителю"}
       </button>
       {!territory.canSend ? (
-        <p>Для этой территории пока не выбран водитель.</p>
+        <p>Для этой территории водитель ещё не нажал «Приступил к рейсу».</p>
       ) : territory.remainingQuantity === 0 ? (
         <p>Норма этой территории уже передана.</p>
       ) : product.freeQuantity === 0 ? (
