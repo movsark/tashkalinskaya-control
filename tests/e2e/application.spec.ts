@@ -2877,7 +2877,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const productId = "20000000-0000-4000-8000-000000000122";
     const storeReturnProductId = "20000000-0000-4000-8000-000000000126";
     let submitted: Record<string, unknown> | null = null;
-    let submittedSpoilage: Record<string, unknown> | null = null;
+    const submittedSpoilage: Record<string, unknown>[] = [];
     let requestCreated = false;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
@@ -2970,9 +2970,9 @@ test.describe("B20 browser and HTTP regression", () => {
           dispatchDate: "2026-08-10",
           reasons: [
             {
-              code: "PACKAGING_DAMAGE",
-              displayName: "Повреждение упаковки",
-              id: "16000000-0000-4000-8000-000000000001",
+              code: "OTHER",
+              displayName: "Другое",
+              id: "16000000-0000-4000-8000-000000000006",
               photoRequired: false,
             },
           ],
@@ -3010,7 +3010,7 @@ test.describe("B20 browser and HTTP regression", () => {
         });
       }
       if (path.endsWith("/spoilage/me/requests") && request.method() === "POST") {
-        submittedSpoilage = request.postDataJSON() as Record<string, unknown>;
+        submittedSpoilage.push(request.postDataJSON() as Record<string, unknown>);
         return json(route, { requestId: "20000000-0000-4000-8000-000000000128" });
       }
       if (path.endsWith("/logistics/me/days/2026-08-10")) {
@@ -3097,7 +3097,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(spoilageDialog.getByText("SV-001 · Сухая выпечка")).toBeVisible();
     await expect(spoilageDialog.getByText("Порча из магазина")).toBeVisible();
     await expect(spoilageDialog.getByLabel("Количество порчи")).toBeVisible();
-    await expect(spoilageDialog.getByLabel("Причина")).toBeVisible();
+    await expect(spoilageDialog.getByLabel("Причина")).toHaveCount(0);
+    await expect(spoilageDialog.getByText(/Фото/u)).toHaveCount(0);
+    await expect(spoilageDialog.getByLabel("Что произошло")).toHaveCount(0);
     await expect(spoilageResults.locator("form")).toHaveCount(0);
     await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
     const spoilageDialogBox = await spoilageDialog.boundingBox();
@@ -3116,16 +3118,22 @@ test.describe("B20 browser and HTTP regression", () => {
     const groupedSpoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
     await expect(groupedSpoilageDialog).toBeVisible();
     await groupedSpoilageDialog.getByLabel("Количество порчи").fill("2");
-    await groupedSpoilageDialog
-      .getByLabel("Причина")
-      .selectOption({ label: "Повреждение упаковки" });
-    await groupedSpoilageDialog.getByLabel("Что произошло").fill("Повреждена упаковка");
     await groupedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
     await expect(page.getByText(/Порча «СВ Бакусы» зафиксирована/u)).toBeVisible();
-    expect(submittedSpoilage).toMatchObject({
+    expect(submittedSpoilage[0]).toMatchObject({
       productId: storeReturnProductId,
       quantity: 2,
-      reasonId: "16000000-0000-4000-8000-000000000001",
+      reasonId: "16000000-0000-4000-8000-000000000006",
+      territoryId,
+    });
+    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    const repeatedSpoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await repeatedSpoilageDialog.getByLabel("Количество порчи").fill("1");
+    await repeatedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    expect(submittedSpoilage).toHaveLength(2);
+    expect(submittedSpoilage[1]).toMatchObject({
+      productId: storeReturnProductId,
+      quantity: 1,
       territoryId,
     });
   });

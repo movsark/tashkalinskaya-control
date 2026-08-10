@@ -24,7 +24,6 @@ import {
   getGoodReturnsWorkspace,
   getSession,
   submitGoodReturnRequest,
-  uploadDriverSpoilagePhoto,
 } from "../../lib/api";
 
 type DriverSpoilageTerritory = DriverSpoilageWorkspaceView["territories"][number];
@@ -253,9 +252,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     territoryId: string;
   } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
-  const [spoilageDrafts, setSpoilageDrafts] = useState<
-    Record<string, { comment: string; photo: File | null; quantity: string; reasonId: string }>
-  >({});
+  const [spoilageDrafts, setSpoilageDrafts] = useState<Record<string, { quantity: string }>>({});
   const [completeConfirmation, setCompleteConfirmation] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -341,43 +338,33 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     productName: string,
     availableQuantity: number | null,
   ) {
-    const draft = spoilageDrafts[productId] ?? {
-      comment: "",
-      photo: null,
-      quantity: "",
-      reasonId: "",
-    };
+    const draft = spoilageDrafts[productId] ?? { quantity: "" };
     try {
       const quantity = positive(draft.quantity);
       if (availableQuantity !== null && quantity > availableQuantity)
         throw new Error(`Можно оформить не более ${availableQuantity} шт.`);
-      if (!draft.reasonId) throw new Error("Выберите причину порчи");
-      if (draft.comment.trim().length < 3) throw new Error("Коротко опишите порчу");
-      const reason = spoilage?.reasons.find((item) => item.id === draft.reasonId);
-      if (reason?.photoRequired && !draft.photo)
-        throw new Error(`Для причины «${reason.displayName}» нужна фотография`);
+      const reason =
+        spoilage?.reasons.find((item) => item.code === "OTHER") ??
+        spoilage?.reasons.find((item) => !item.photoRequired);
+      if (!reason) throw new Error("Не удалось подготовить заявку на порчу");
       setBusy(`spoilage:${productId}`);
       setError("");
       setSuccess("");
-      const uploaded = draft.photo
-        ? await uploadDriverSpoilagePhoto(draft.photo, session.csrfToken)
-        : null;
       await createDriverSpoilageRequest(
         {
-          comment: draft.comment.trim(),
+          comment: "Заявлено водителем",
           dispatchDate: date,
           idempotencyKey: crypto.randomUUID(),
-          ...(uploaded ? { photoUploadId: uploaded.id } : {}),
           productId,
           quantity,
-          reasonId: draft.reasonId,
+          reasonId: reason.id,
           territoryId,
         },
         session.csrfToken,
       );
       setSpoilageDrafts((current) => ({
         ...current,
-        [productId]: { comment: "", photo: null, quantity: "", reasonId: "" },
+        [productId]: { quantity: "" },
       }));
       setSelectedSpoilageProduct(null);
       await reload(`Порча «${productName}» зафиксирована и отправлена администратору.`);
@@ -443,16 +430,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
           0,
         ) ?? 0);
   const selectedSpoilageDraft = selectedSpoilageProduct
-    ? (spoilageDrafts[selectedSpoilageProduct.productId] ?? {
-        comment: "",
-        photo: null,
-        quantity: "",
-        reasonId: "",
-      })
-    : { comment: "", photo: null, quantity: "", reasonId: "" };
-  const selectedSpoilageReason = spoilage?.reasons.find(
-    (item) => item.id === selectedSpoilageDraft.reasonId,
-  );
+    ? (spoilageDrafts[selectedSpoilageProduct.productId] ?? { quantity: "" })
+    : { quantity: "" };
 
   function renderSpoilageProduct(
     territory: DriverSpoilageTerritory,
@@ -908,66 +887,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                         [selectedSpoilageProduct.productId]: {
                           ...selectedSpoilageDraft,
                           quantity: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Причина
-                  <select
-                    required
-                    value={selectedSpoilageDraft.reasonId}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [selectedSpoilageProduct.productId]: {
-                          ...selectedSpoilageDraft,
-                          reasonId: event.target.value,
-                        },
-                      }))
-                    }
-                  >
-                    <option value="">Выберите причину</option>
-                    {spoilage?.reasons.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.displayName}
-                        {item.photoRequired ? " · нужно фото" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Фото{" "}
-                  {selectedSpoilageReason?.photoRequired ? "· обязательно" : "· при необходимости"}
-                  <input
-                    accept="image/jpeg,image/png,image/webp"
-                    required={selectedSpoilageReason?.photoRequired}
-                    type="file"
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [selectedSpoilageProduct.productId]: {
-                          ...selectedSpoilageDraft,
-                          photo: event.target.files?.[0] ?? null,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Что произошло
-                  <input
-                    minLength={3}
-                    placeholder="Коротко опишите порчу"
-                    required
-                    value={selectedSpoilageDraft.comment}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [selectedSpoilageProduct.productId]: {
-                          ...selectedSpoilageDraft,
-                          comment: event.target.value,
                         },
                       }))
                     }

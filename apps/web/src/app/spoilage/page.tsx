@@ -169,7 +169,6 @@ export default function SpoilagePage() {
               <div className="spoilage-receipt-card__product">
                 <small>{item.productCode}</small>
                 <strong>{item.productName}</strong>
-                <span>{item.reasonName}</span>
               </div>
               <b className="spoilage-receipt-card__quantity">{item.quantity} шт.</b>
               {canReceive ? (
