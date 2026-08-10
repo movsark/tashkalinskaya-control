@@ -27,6 +27,9 @@ import {
   uploadDriverSpoilagePhoto,
 } from "../../lib/api";
 
+type DriverSpoilageTerritory = DriverSpoilageWorkspaceView["territories"][number];
+type DriverSpoilageProduct = DriverSpoilageTerritory["products"][number];
+
 export default function GoodReturnsPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
@@ -432,6 +435,165 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
           0,
         ) ?? 0);
 
+  function renderSpoilageProduct(
+    territory: DriverSpoilageTerritory,
+    product: DriverSpoilageProduct,
+    showGroupName = false,
+  ) {
+    const productKey = `spoilage:${territory.id}:${product.productId}`;
+    const productOpen = expandedProduct === productKey;
+    const draft = spoilageDrafts[product.productId] ?? {
+      comment: "",
+      photo: null,
+      quantity: "",
+      reasonId: "",
+    };
+    const reason = spoilage?.reasons.find((item) => item.id === draft.reasonId);
+    const fromTodayRoute = product.dispatchedQuantity > 0;
+
+    return (
+      <article key={productKey}>
+        <button
+          aria-expanded={productOpen}
+          className="driver-return-product__button"
+          onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
+          type="button"
+        >
+          <span>
+            <small>
+              {product.productCode}
+              {showGroupName ? ` · ${product.productGroupName}` : ""}
+            </small>
+            <strong>{product.productName}</strong>
+          </span>
+          <span className="driver-return-product__counts">
+            <small>
+              {fromTodayRoute
+                ? `Сегодня вывезено ${product.dispatchedQuantity}`
+                : "Порча из магазина"}
+            </small>
+            <b>
+              {fromTodayRoute
+                ? `Оформить до ${product.availableSpoilageQuantity}`
+                : "Указать количество"}
+            </b>
+          </span>
+          <i>{productOpen ? "−" : "+"}</i>
+        </button>
+        {productOpen ? (
+          <form
+            className="driver-return-form driver-spoilage-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitSpoilage(
+                territory.id,
+                product.productId,
+                product.productName,
+                fromTodayRoute ? product.availableSpoilageQuantity : null,
+              );
+            }}
+          >
+            {fromTodayRoute ? (
+              <div className="driver-return-product-stats">
+                <span>
+                  Получено <b>{product.dispatchedQuantity}</b>
+                </span>
+                <span>
+                  Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
+                </span>
+                <span>
+                  Доступно <b>{product.availableSpoilageQuantity}</b>
+                </span>
+              </div>
+            ) : null}
+            {!fromTodayRoute || product.availableSpoilageQuantity ? (
+              <>
+                <label>
+                  Количество порчи
+                  <input
+                    inputMode="numeric"
+                    max={fromTodayRoute ? product.availableSpoilageQuantity : undefined}
+                    min="1"
+                    required
+                    type="number"
+                    value={draft.quantity}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [product.productId]: { ...draft, quantity: event.target.value },
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Причина
+                  <select
+                    required
+                    value={draft.reasonId}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [product.productId]: { ...draft, reasonId: event.target.value },
+                      }))
+                    }
+                  >
+                    <option value="">Выберите причину</option>
+                    {spoilage?.reasons.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.displayName}
+                        {item.photoRequired ? " · нужно фото" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Фото {reason?.photoRequired ? "· обязательно" : "· при необходимости"}
+                  <input
+                    accept="image/jpeg,image/png,image/webp"
+                    required={reason?.photoRequired}
+                    type="file"
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [product.productId]: {
+                          ...draft,
+                          photo: event.target.files?.[0] ?? null,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Что произошло
+                  <input
+                    minLength={3}
+                    placeholder="Коротко опишите порчу"
+                    required
+                    value={draft.comment}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [product.productId]: { ...draft, comment: event.target.value },
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={busy === `spoilage:${product.productId}`}
+                >
+                  {busy === `spoilage:${product.productId}` ? "Отправляем…" : "Зафиксировать порчу"}
+                </button>
+              </>
+            ) : (
+              <p className="logistics-empty">Всё доступное количество уже оформлено.</p>
+            )}
+          </form>
+        ) : null}
+      </article>
+    );
+  }
+
   return (
     <main className="workspace-layout returns-page simple-workspace driver-returns-page">
       <header className="workspace-header">
@@ -463,7 +625,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       {activeRoute ? (
         <section className="returns-panel driver-route-settlement">
           <div className="returns-heading">
-            <div>
+            <div className="driver-return-search-control">
               <p className="eyebrow">Активный рейс</p>
               <h2>Территория {activeRoute.territoryNumber}</h2>
             </div>
@@ -536,6 +698,20 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   ? "Поиск среди фактически принятого товара"
                   : "Поиск по всему активному каталогу"}
             </small>
+            {section === "SPOILAGE" && normalizedProductSearch && spoilage ? (
+              <div className="driver-spoilage-search-results" aria-label="Результаты поиска порчи">
+                {spoilage.territories.flatMap((territory) =>
+                  territory.products
+                    .filter((product) => matchesDriverProduct(product, normalizedProductSearch))
+                    .map((product) => renderSpoilageProduct(territory, product, true)),
+                )}
+                {visibleProductCount === 0 ? (
+                  <p className="logistics-empty">
+                    По запросу «{productSearch.trim()}» испорченные товары не найдены.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </section>
       ) : completedRoute ? (
@@ -733,21 +909,15 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
 
       {section === "SPOILAGE" && !spoilage ? (
         <p className="warehouse-loading">Загружаем ассортимент для фиксации порчи…</p>
-      ) : section === "SPOILAGE" && spoilage?.territories.length ? (
+      ) : section === "SPOILAGE" && !normalizedProductSearch && spoilage?.territories.length ? (
         spoilage.territories.map((territory) => {
-          const groups = filterDriverProductGroups(
-            groupSpoilageProducts(territory.products),
-            normalizedProductSearch,
-          );
+          const groups = groupSpoilageProducts(territory.products);
           return (
-            <section className="returns-panel driver-return-territory" key={territory.id}>
-              <div className="returns-heading">
-                <div>
-                  <p className="eyebrow">Порча · весь каталог</p>
-                  <h2>Территория {territory.number}</h2>
-                </div>
-                <b>{territory.products.length} поз.</b>
-              </div>
+            <section
+              aria-label="Каталог товаров для порчи"
+              className="returns-panel driver-return-territory driver-spoilage-catalog"
+              key={territory.id}
+            >
               <div className="driver-return-groups">
                 {groups.map((group) => {
                   const groupKey = `spoilage:${territory.id}:${group.code}`;
@@ -769,190 +939,19 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                       </button>
                       {isOpen ? (
                         <div className="driver-return-products">
-                          {group.products.map((product) => {
-                            const productKey = `spoilage:${territory.id}:${product.productId}`;
-                            const productOpen = expandedProduct === productKey;
-                            const draft = spoilageDrafts[product.productId] ?? {
-                              comment: "",
-                              photo: null,
-                              quantity: "",
-                              reasonId: "",
-                            };
-                            const reason = spoilage.reasons.find(
-                              (item) => item.id === draft.reasonId,
-                            );
-                            const fromTodayRoute = product.dispatchedQuantity > 0;
-                            return (
-                              <article key={product.productId}>
-                                <button
-                                  aria-expanded={productOpen}
-                                  className="driver-return-product__button"
-                                  onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
-                                  type="button"
-                                >
-                                  <span>
-                                    <small>{product.productCode}</small>
-                                    <strong>{product.productName}</strong>
-                                  </span>
-                                  <span className="driver-return-product__counts">
-                                    <small>
-                                      {fromTodayRoute
-                                        ? `Сегодня вывезено ${product.dispatchedQuantity}`
-                                        : "Порча из магазина"}
-                                    </small>
-                                    <b>
-                                      {fromTodayRoute
-                                        ? `Оформить до ${product.availableSpoilageQuantity}`
-                                        : "Указать количество"}
-                                    </b>
-                                  </span>
-                                  <i>{productOpen ? "−" : "+"}</i>
-                                </button>
-                                {productOpen ? (
-                                  <form
-                                    className="driver-return-form driver-spoilage-form"
-                                    onSubmit={(event) => {
-                                      event.preventDefault();
-                                      void submitSpoilage(
-                                        territory.id,
-                                        product.productId,
-                                        product.productName,
-                                        fromTodayRoute ? product.availableSpoilageQuantity : null,
-                                      );
-                                    }}
-                                  >
-                                    {fromTodayRoute ? (
-                                      <div className="driver-return-product-stats">
-                                        <span>
-                                          Получено <b>{product.dispatchedQuantity}</b>
-                                        </span>
-                                        <span>
-                                          Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
-                                        </span>
-                                        <span>
-                                          Доступно <b>{product.availableSpoilageQuantity}</b>
-                                        </span>
-                                      </div>
-                                    ) : null}
-                                    {!fromTodayRoute || product.availableSpoilageQuantity ? (
-                                      <>
-                                        <label>
-                                          Количество порчи
-                                          <input
-                                            inputMode="numeric"
-                                            max={
-                                              fromTodayRoute
-                                                ? product.availableSpoilageQuantity
-                                                : undefined
-                                            }
-                                            min="1"
-                                            required
-                                            type="number"
-                                            value={draft.quantity}
-                                            onChange={(event) =>
-                                              setSpoilageDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  quantity: event.target.value,
-                                                },
-                                              }))
-                                            }
-                                          />
-                                        </label>
-                                        <label>
-                                          Причина
-                                          <select
-                                            required
-                                            value={draft.reasonId}
-                                            onChange={(event) =>
-                                              setSpoilageDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  reasonId: event.target.value,
-                                                },
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Выберите причину</option>
-                                            {spoilage.reasons.map((item) => (
-                                              <option key={item.id} value={item.id}>
-                                                {item.displayName}
-                                                {item.photoRequired ? " · нужно фото" : ""}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
-                                        <label>
-                                          Фото{" "}
-                                          {reason?.photoRequired
-                                            ? "· обязательно"
-                                            : "· при необходимости"}
-                                          <input
-                                            accept="image/jpeg,image/png,image/webp"
-                                            required={reason?.photoRequired}
-                                            type="file"
-                                            onChange={(event) =>
-                                              setSpoilageDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  photo: event.target.files?.[0] ?? null,
-                                                },
-                                              }))
-                                            }
-                                          />
-                                        </label>
-                                        <label>
-                                          Что произошло
-                                          <input
-                                            minLength={3}
-                                            required
-                                            value={draft.comment}
-                                            onChange={(event) =>
-                                              setSpoilageDrafts((current) => ({
-                                                ...current,
-                                                [product.productId]: {
-                                                  ...draft,
-                                                  comment: event.target.value,
-                                                },
-                                              }))
-                                            }
-                                          />
-                                        </label>
-                                        <button
-                                          className="primary-button"
-                                          disabled={busy === `spoilage:${product.productId}`}
-                                        >
-                                          Зафиксировать порчу
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <p className="logistics-empty">
-                                        Весь доступный остаток уже оформлен.
-                                      </p>
-                                    )}
-                                  </form>
-                                ) : null}
-                              </article>
-                            );
-                          })}
+                          {group.products.map((product) =>
+                            renderSpoilageProduct(territory, product),
+                          )}
                         </div>
                       ) : null}
                     </article>
                   );
                 })}
               </div>
-              {normalizedProductSearch && groups.length === 0 ? (
-                <p className="logistics-empty">
-                  По запросу «{productSearch.trim()}» товары в каталоге не найдены.
-                </p>
-              ) : null}
             </section>
           );
         })
-      ) : section === "SPOILAGE" ? (
+      ) : section === "SPOILAGE" && !normalizedProductSearch ? (
         <section className="returns-panel">
           <h2>Нет активного каталога для порчи</h2>
           <p>Проверьте активный рейс и справочник товаров.</p>

@@ -3072,10 +3072,21 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.getByRole("button", { name: "Порча" }).click();
-    await page.getByLabel("Найти испорченный товар").fill("бакус");
-    await expect(page.getByRole("button", { name: /СВ Бакусы/u })).toBeVisible();
+    const spoilageSearch = page.locator(".driver-return-search");
+    const spoilageSearchInput = page.getByLabel("Найти испорченный товар");
+    await spoilageSearchInput.fill("бакус");
+    const spoilageResults = spoilageSearch.locator(".driver-spoilage-search-results");
+    await expect(spoilageResults.getByRole("button", { name: /СВ Бакусы/u })).toBeVisible();
     await expect(page.getByRole("button", { name: /ТБ Рыжик/u })).toHaveCount(0);
-    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    await expect(page.getByText("Порча · весь каталог", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Территория 2" })).toHaveCount(1);
+    await expect(page.getByLabel("Каталог товаров для порчи")).toHaveCount(0);
+    const searchInputBox = await spoilageSearchInput.boundingBox();
+    const searchResultsBox = await spoilageResults.boundingBox();
+    expect(searchInputBox).not.toBeNull();
+    expect(searchResultsBox).not.toBeNull();
+    expect(searchResultsBox!.y - (searchInputBox!.y + searchInputBox!.height)).toBeLessThan(80);
+    await spoilageResults.getByRole("button", { name: /СВ Бакусы/u }).click();
     await expect(page.getByText("Порча из магазина")).toBeVisible();
     await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
     expect(

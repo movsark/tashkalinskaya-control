@@ -8914,7 +8914,7 @@ select:focus {
   font-weight: 850;
 }
 
-.driver-return-search > div {
+.driver-return-search-control {
   position: relative;
 }
 
@@ -8940,7 +8940,7 @@ select:focus {
   outline: 0;
 }
 
-.driver-return-search button {
+.driver-return-search-control > button {
   position: absolute;
   top: 11px;
   right: 11px;
@@ -8958,6 +8958,34 @@ select:focus {
 
 .driver-return-search > small {
   color: var(--muted);
+}
+
+.driver-spoilage-search-results {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.driver-spoilage-search-results > article {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.driver-spoilage-search-results .logistics-empty {
+  margin: 0;
+}
+
+.driver-spoilage-catalog {
+  padding-top: 16px;
 }
 
 .driver-route-completion {
