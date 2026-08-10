@@ -1052,6 +1052,9 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                                     <small>{product.productCode}</small>
                                     <strong>{product.productName}</strong>
                                   </span>
+                                  <b className="driver-return-product__dispatched">
+                                    Вывезено {product.dispatchedQuantity} шт.
+                                  </b>
                                   <i>+</i>
                                 </button>
                               </article>

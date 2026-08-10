@@ -2931,7 +2931,9 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByRole("heading", { name: "Возвраты и порча" })).toBeVisible();
     await page.getByLabel("Найти товар для возврата").fill("рыжик");
     await expect(page.getByText(/Вернуть до/u)).toHaveCount(0);
-    await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
+    const returnProduct = page.getByRole("button", { name: /ТБ Рыжик/u });
+    await expect(returnProduct.getByText("Вывезено 14 шт.")).toBeVisible();
+    await returnProduct.click();
     const returnDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
     await expect(returnDialog).toBeVisible();
     await expect(returnDialog.getByText("TB-015 · Территория 2")).toBeVisible();
