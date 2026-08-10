@@ -234,7 +234,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
   const [section, setSection] = useState<"RETURN" | "SPOILAGE">("RETURN");
   const [productSearch, setProductSearch] = useState("");
   const [expandedGroup, setExpandedGroup] = useState("");
-  const [expandedProduct, setExpandedProduct] = useState("");
   const [selectedReturnProduct, setSelectedReturnProduct] = useState<{
     availableQuantity: number;
     productCode: string;
@@ -242,6 +241,16 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     productName: string;
     territoryId: string;
     territoryNumber: number;
+  } | null>(null);
+  const [selectedSpoilageProduct, setSelectedSpoilageProduct] = useState<{
+    alreadyClassifiedQuantity: number;
+    availableSpoilageQuantity: number;
+    dispatchedQuantity: number;
+    productCode: string;
+    productGroupName: string;
+    productId: string;
+    productName: string;
+    territoryId: string;
   } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { comment: string; quantity: string }>>({});
   const [spoilageDrafts, setSpoilageDrafts] = useState<
@@ -266,8 +275,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
 
   useEffect(() => {
     setExpandedGroup("");
-    setExpandedProduct("");
     setSelectedReturnProduct(null);
+    setSelectedSpoilageProduct(null);
     void Promise.all([
       getDriverGoodReturnsWorkspace(date),
       getDriverSpoilageWorkspace(date),
@@ -318,7 +327,6 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
       );
       setDrafts((current) => ({ ...current, [productId]: { comment: "", quantity: "" } }));
       setSelectedReturnProduct(null);
-      setExpandedProduct("");
       await reload(`Возврат «${productName}» отправлен на приёмку.`);
     } catch (caught) {
       setError(messageOf(caught));
@@ -371,7 +379,7 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
         ...current,
         [productId]: { comment: "", photo: null, quantity: "", reasonId: "" },
       }));
-      setExpandedProduct("");
+      setSelectedSpoilageProduct(null);
       await reload(`Порча «${productName}» зафиксирована и отправлена администратору.`);
     } catch (caught) {
       setError(messageOf(caught));
@@ -434,6 +442,17 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
             ).length,
           0,
         ) ?? 0);
+  const selectedSpoilageDraft = selectedSpoilageProduct
+    ? (spoilageDrafts[selectedSpoilageProduct.productId] ?? {
+        comment: "",
+        photo: null,
+        quantity: "",
+        reasonId: "",
+      })
+    : { comment: "", photo: null, quantity: "", reasonId: "" };
+  const selectedSpoilageReason = spoilage?.reasons.find(
+    (item) => item.id === selectedSpoilageDraft.reasonId,
+  );
 
   function renderSpoilageProduct(
     territory: DriverSpoilageTerritory,
@@ -441,22 +460,27 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
     showGroupName = false,
   ) {
     const productKey = `spoilage:${territory.id}:${product.productId}`;
-    const productOpen = expandedProduct === productKey;
-    const draft = spoilageDrafts[product.productId] ?? {
-      comment: "",
-      photo: null,
-      quantity: "",
-      reasonId: "",
-    };
-    const reason = spoilage?.reasons.find((item) => item.id === draft.reasonId);
     const fromTodayRoute = product.dispatchedQuantity > 0;
 
     return (
       <article key={productKey}>
         <button
-          aria-expanded={productOpen}
+          aria-haspopup="dialog"
           className="driver-return-product__button"
-          onClick={() => setExpandedProduct(productOpen ? "" : productKey)}
+          onClick={() => {
+            setError("");
+            setSelectedReturnProduct(null);
+            setSelectedSpoilageProduct({
+              alreadyClassifiedQuantity: product.alreadyClassifiedQuantity,
+              availableSpoilageQuantity: product.availableSpoilageQuantity,
+              dispatchedQuantity: product.dispatchedQuantity,
+              productCode: product.productCode,
+              productGroupName: product.productGroupName,
+              productId: product.productId,
+              productName: product.productName,
+              territoryId: territory.id,
+            });
+          }}
           type="button"
         >
           <span>
@@ -478,118 +502,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 : "Указать количество"}
             </b>
           </span>
-          <i>{productOpen ? "−" : "+"}</i>
+          <i>+</i>
         </button>
-        {productOpen ? (
-          <form
-            className="driver-return-form driver-spoilage-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitSpoilage(
-                territory.id,
-                product.productId,
-                product.productName,
-                fromTodayRoute ? product.availableSpoilageQuantity : null,
-              );
-            }}
-          >
-            {fromTodayRoute ? (
-              <div className="driver-return-product-stats">
-                <span>
-                  Получено <b>{product.dispatchedQuantity}</b>
-                </span>
-                <span>
-                  Уже оформлено <b>{product.alreadyClassifiedQuantity}</b>
-                </span>
-                <span>
-                  Доступно <b>{product.availableSpoilageQuantity}</b>
-                </span>
-              </div>
-            ) : null}
-            {!fromTodayRoute || product.availableSpoilageQuantity ? (
-              <>
-                <label>
-                  Количество порчи
-                  <input
-                    inputMode="numeric"
-                    max={fromTodayRoute ? product.availableSpoilageQuantity : undefined}
-                    min="1"
-                    required
-                    type="number"
-                    value={draft.quantity}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [product.productId]: { ...draft, quantity: event.target.value },
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Причина
-                  <select
-                    required
-                    value={draft.reasonId}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [product.productId]: { ...draft, reasonId: event.target.value },
-                      }))
-                    }
-                  >
-                    <option value="">Выберите причину</option>
-                    {spoilage?.reasons.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.displayName}
-                        {item.photoRequired ? " · нужно фото" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Фото {reason?.photoRequired ? "· обязательно" : "· при необходимости"}
-                  <input
-                    accept="image/jpeg,image/png,image/webp"
-                    required={reason?.photoRequired}
-                    type="file"
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [product.productId]: {
-                          ...draft,
-                          photo: event.target.files?.[0] ?? null,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Что произошло
-                  <input
-                    minLength={3}
-                    placeholder="Коротко опишите порчу"
-                    required
-                    value={draft.comment}
-                    onChange={(event) =>
-                      setSpoilageDrafts((current) => ({
-                        ...current,
-                        [product.productId]: { ...draft, comment: event.target.value },
-                      }))
-                    }
-                  />
-                </label>
-                <button
-                  className="primary-button"
-                  disabled={busy === `spoilage:${product.productId}`}
-                >
-                  {busy === `spoilage:${product.productId}` ? "Отправляем…" : "Зафиксировать порчу"}
-                </button>
-              </>
-            ) : (
-              <p className="logistics-empty">Всё доступное количество уже оформлено.</p>
-            )}
-          </form>
-        ) : null}
       </article>
     );
   }
@@ -639,8 +553,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               onClick={() => {
                 setSection("RETURN");
                 setExpandedGroup("");
-                setExpandedProduct("");
                 setSelectedReturnProduct(null);
+                setSelectedSpoilageProduct(null);
               }}
             >
               Годный возврат
@@ -652,8 +566,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               onClick={() => {
                 setSection("SPOILAGE");
                 setExpandedGroup("");
-                setExpandedProduct("");
                 setSelectedReturnProduct(null);
+                setSelectedSpoilageProduct(null);
               }}
             >
               Порча
@@ -668,8 +582,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                 id="driver-return-product-search"
                 onChange={(event) => {
                   setExpandedGroup("");
-                  setExpandedProduct("");
                   setSelectedReturnProduct(null);
+                  setSelectedSpoilageProduct(null);
                   setProductSearch(event.target.value);
                 }}
                 placeholder="Название, код или группа"
@@ -681,8 +595,8 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
                   aria-label="Очистить поиск"
                   onClick={() => {
                     setExpandedGroup("");
-                    setExpandedProduct("");
                     setSelectedReturnProduct(null);
+                    setSelectedSpoilageProduct(null);
                     setProductSearch("");
                   }}
                   type="button"
@@ -902,6 +816,175 @@ function DriverGoodReturnsPage({ session }: { session: AuthenticatedUser }) {
               </>
             ) : (
               <p className="logistics-empty">Возврат по этой позиции уже оформлен.</p>
+            )}
+          </form>
+        </div>
+      ) : null}
+
+      {selectedSpoilageProduct ? (
+        <div className="driver-return-dialog-layer">
+          <button
+            aria-label="Закрыть окно порчи"
+            className="driver-acceptance-dialog-backdrop"
+            onClick={() => {
+              setError("");
+              setSelectedSpoilageProduct(null);
+            }}
+            type="button"
+          />
+          <form
+            aria-labelledby="driver-spoilage-dialog-title"
+            aria-modal="true"
+            className="driver-acceptance-dialog driver-return-dialog driver-spoilage-dialog driver-spoilage-form"
+            role="dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitSpoilage(
+                selectedSpoilageProduct.territoryId,
+                selectedSpoilageProduct.productId,
+                selectedSpoilageProduct.productName,
+                selectedSpoilageProduct.dispatchedQuantity > 0
+                  ? selectedSpoilageProduct.availableSpoilageQuantity
+                  : null,
+              );
+            }}
+          >
+            <header>
+              <div>
+                <small>
+                  {selectedSpoilageProduct.productCode} · {selectedSpoilageProduct.productGroupName}
+                </small>
+                <h2 id="driver-spoilage-dialog-title">{selectedSpoilageProduct.productName}</h2>
+              </div>
+              <button
+                aria-label="Закрыть окно порчи"
+                onClick={() => {
+                  setError("");
+                  setSelectedSpoilageProduct(null);
+                }}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            {selectedSpoilageProduct.dispatchedQuantity > 0 ? (
+              <div className="driver-return-product-stats">
+                <span>
+                  Вывезено <b>{selectedSpoilageProduct.dispatchedQuantity}</b>
+                </span>
+                <span>
+                  Уже оформлено <b>{selectedSpoilageProduct.alreadyClassifiedQuantity}</b>
+                </span>
+                <span>
+                  Доступно <b>{selectedSpoilageProduct.availableSpoilageQuantity}</b>
+                </span>
+              </div>
+            ) : (
+              <p className="driver-acceptance-dialog__quantity">
+                <span>Источник</span>
+                <strong>Порча из магазина</strong>
+              </p>
+            )}
+            {selectedSpoilageProduct.dispatchedQuantity === 0 ||
+            selectedSpoilageProduct.availableSpoilageQuantity > 0 ? (
+              <>
+                <label>
+                  Количество порчи
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    max={
+                      selectedSpoilageProduct.dispatchedQuantity > 0
+                        ? selectedSpoilageProduct.availableSpoilageQuantity
+                        : undefined
+                    }
+                    min="1"
+                    required
+                    type="number"
+                    value={selectedSpoilageDraft.quantity}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [selectedSpoilageProduct.productId]: {
+                          ...selectedSpoilageDraft,
+                          quantity: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Причина
+                  <select
+                    required
+                    value={selectedSpoilageDraft.reasonId}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [selectedSpoilageProduct.productId]: {
+                          ...selectedSpoilageDraft,
+                          reasonId: event.target.value,
+                        },
+                      }))
+                    }
+                  >
+                    <option value="">Выберите причину</option>
+                    {spoilage?.reasons.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.displayName}
+                        {item.photoRequired ? " · нужно фото" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Фото{" "}
+                  {selectedSpoilageReason?.photoRequired ? "· обязательно" : "· при необходимости"}
+                  <input
+                    accept="image/jpeg,image/png,image/webp"
+                    required={selectedSpoilageReason?.photoRequired}
+                    type="file"
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [selectedSpoilageProduct.productId]: {
+                          ...selectedSpoilageDraft,
+                          photo: event.target.files?.[0] ?? null,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Что произошло
+                  <input
+                    minLength={3}
+                    placeholder="Коротко опишите порчу"
+                    required
+                    value={selectedSpoilageDraft.comment}
+                    onChange={(event) =>
+                      setSpoilageDrafts((current) => ({
+                        ...current,
+                        [selectedSpoilageProduct.productId]: {
+                          ...selectedSpoilageDraft,
+                          comment: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                {error ? <p className="form-error">{error}</p> : null}
+                <button
+                  className="primary-button"
+                  disabled={busy === `spoilage:${selectedSpoilageProduct.productId}`}
+                >
+                  {busy === `spoilage:${selectedSpoilageProduct.productId}`
+                    ? "Отправляем…"
+                    : "Отправить порчу"}
+                </button>
+              </>
+            ) : (
+              <p className="logistics-empty">Всё доступное количество уже оформлено.</p>
             )}
           </form>
         </div>

@@ -9003,6 +9003,25 @@ select:focus {
   min-height: 52px;
 }
 
+.driver-spoilage-dialog {
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.driver-spoilage-dialog > label select,
+.driver-spoilage-dialog > label input[type="file"] {
+  padding: 10px 12px;
+  border: 1px solid #b9c6c0;
+  border-radius: 13px;
+  background: #fff;
+  font: inherit;
+}
+
+.driver-spoilage-dialog > .form-error {
+  margin: 0;
+}
+
 .driver-spoilage-requests > article.is-submitted {
   border-color: #ddb85d;
   background: #fffaf0;

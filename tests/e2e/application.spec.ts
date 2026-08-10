@@ -2877,6 +2877,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const productId = "20000000-0000-4000-8000-000000000122";
     const storeReturnProductId = "20000000-0000-4000-8000-000000000126";
     let submitted: Record<string, unknown> | null = null;
+    let submittedSpoilage: Record<string, unknown> | null = null;
     let requestCreated = false;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
@@ -3008,6 +3009,10 @@ test.describe("B20 browser and HTTP regression", () => {
           ],
         });
       }
+      if (path.endsWith("/spoilage/me/requests") && request.method() === "POST") {
+        submittedSpoilage = request.postDataJSON() as Record<string, unknown>;
+        return json(route, { requestId: "20000000-0000-4000-8000-000000000128" });
+      }
       if (path.endsWith("/logistics/me/days/2026-08-10")) {
         return json(route, {
           activeRoutes: [
@@ -3087,13 +3092,42 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(searchResultsBox).not.toBeNull();
     expect(searchResultsBox!.y - (searchInputBox!.y + searchInputBox!.height)).toBeLessThan(80);
     await spoilageResults.getByRole("button", { name: /СВ Бакусы/u }).click();
-    await expect(page.getByText("Порча из магазина")).toBeVisible();
+    const spoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await expect(spoilageDialog).toBeVisible();
+    await expect(spoilageDialog.getByText("SV-001 · Сухая выпечка")).toBeVisible();
+    await expect(spoilageDialog.getByText("Порча из магазина")).toBeVisible();
+    await expect(spoilageDialog.getByLabel("Количество порчи")).toBeVisible();
+    await expect(spoilageDialog.getByLabel("Причина")).toBeVisible();
+    await expect(spoilageResults.locator("form")).toHaveCount(0);
     await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
+    const spoilageDialogBox = await spoilageDialog.boundingBox();
+    expect(spoilageDialogBox).not.toBeNull();
+    expect(spoilageDialogBox!.x).toBeGreaterThanOrEqual(0);
+    expect(spoilageDialogBox!.x + spoilageDialogBox!.width).toBeLessThanOrEqual(390);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
+    await spoilageDialog.getByRole("button", { name: "Закрыть окно порчи" }).click();
+    await page.getByRole("button", { name: "Очистить поиск" }).click();
+    await page.getByRole("button", { name: /Сухая выпечка/u }).click();
+    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    const groupedSpoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await expect(groupedSpoilageDialog).toBeVisible();
+    await groupedSpoilageDialog.getByLabel("Количество порчи").fill("2");
+    await groupedSpoilageDialog
+      .getByLabel("Причина")
+      .selectOption({ label: "Повреждение упаковки" });
+    await groupedSpoilageDialog.getByLabel("Что произошло").fill("Повреждена упаковка");
+    await groupedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    await expect(page.getByText(/Порча «СВ Бакусы» зафиксирована/u)).toBeVisible();
+    expect(submittedSpoilage).toMatchObject({
+      productId: storeReturnProductId,
+      quantity: 2,
+      reasonId: "16000000-0000-4000-8000-000000000001",
+      territoryId,
+    });
   });
 });
 
