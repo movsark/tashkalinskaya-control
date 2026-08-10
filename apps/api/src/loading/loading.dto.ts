@@ -2,6 +2,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  MaxLength,
   IsOptional,
   IsString,
   IsUUID,
@@ -62,7 +63,7 @@ export class RespondLoadingLineDto {
   @IsIn(["CONFIRM", "COUNTER", "REJECT"])
   responseType!: "CONFIRM" | "COUNTER" | "REJECT";
   @IsOptional() @IsInt() @Min(1) @Max(100_000) counterQuantity?: number;
-  @IsOptional() @IsString() @Length(3, 500) reason?: string;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
   @IsInt() @Min(1) version!: number;
   @IsString() @Length(8, 100) idempotencyKey!: string;
 }

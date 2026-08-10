@@ -1355,8 +1355,8 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(acceptanceDialog).toContainText("Количество 10 шт.");
     await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
     await acceptanceDialog.getByRole("button", { name: "Отклонить" }).click();
-    await expect(acceptanceDialog.getByLabel("Причина отклонения")).toBeVisible();
-    await expect(acceptanceDialog.getByRole("button", { name: "Отклонить" })).toBeDisabled();
+    await expect(acceptanceDialog.getByLabel("Комментарий (необязательно)")).toBeVisible();
+    await expect(acceptanceDialog.getByRole("button", { name: "Отклонить" })).toBeEnabled();
     await acceptanceDialog.getByRole("button", { name: "Назад" }).click();
     await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
     await acceptanceDialog.getByRole("button", { name: "Закрыть подтверждение товара" }).click();

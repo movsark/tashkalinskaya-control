@@ -764,7 +764,7 @@ export default function DriverLogisticsPage() {
                   respondLoadingLine(
                     selectedAcceptance.line.id,
                     {
-                      reason: rejectionReason,
+                      ...(rejectionReason.trim() ? { reason: rejectionReason.trim() } : {}),
                       responseType: "REJECT",
                       revisionId: selectedAcceptance.line.currentRevisionId,
                       version: selectedAcceptance.line.version,
@@ -795,11 +795,11 @@ export default function DriverLogisticsPage() {
             {rejectionOpen ? (
               <>
                 <label>
-                  Причина отклонения
+                  Комментарий (необязательно)
                   <input
                     autoFocus
                     onChange={(event) => setRejectionReason(event.target.value)}
-                    placeholder="Коротко опишите причину"
+                    placeholder="Можно оставить пустым"
                     value={rejectionReason}
                   />
                 </label>
@@ -816,9 +816,7 @@ export default function DriverLogisticsPage() {
                   </button>
                   <button
                     className="primary-button is-danger"
-                    disabled={
-                      rejectionReason.trim().length < 3 || busyId === selectedAcceptance.line.id
-                    }
+                    disabled={busyId === selectedAcceptance.line.id}
                     type="submit"
                   >
                     Отклонить

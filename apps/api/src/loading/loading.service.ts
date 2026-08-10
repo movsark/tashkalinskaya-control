@@ -110,15 +110,16 @@ export class LoadingService {
       throw new BadRequestException("Укажите предлагаемое количество");
     if (dto.responseType !== "COUNTER" && dto.counterQuantity !== undefined)
       throw new BadRequestException("Другое количество допустимо только для предложения");
-    if (dto.responseType !== "CONFIRM" && (dto.reason?.trim().length ?? 0) < 3)
-      throw new BadRequestException("Для спора нужна причина");
+    if (dto.responseType === "COUNTER" && (dto.reason?.trim().length ?? 0) < 3)
+      throw new BadRequestException("Для другого количества нужна причина");
+    const reason = dto.reason?.trim() || null;
     return this.repository.respondLine({
       actor: toActor(actor),
       correlationId: cid,
       counterQuantity: dto.counterQuantity ?? null,
       idempotencyKey: dto.idempotencyKey,
       lineId: id,
-      reason: dto.reason?.trim() ?? null,
+      reason,
       responseType: dto.responseType,
       revisionId: dto.revisionId,
       version: dto.version,
