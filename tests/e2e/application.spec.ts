@@ -1500,17 +1500,30 @@ test.describe("B20 browser and HTTP regression", () => {
         .evaluate((element) => element.getBoundingClientRect().height),
     ).toBeLessThan(80);
     await productRow.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
-    await expect(productRow.locator(".loading-territory-panel")).toHaveCount(1);
+    await expect(productRow.locator(".loading-territory-panel")).toHaveCount(0);
+    await expect(productRow.getByText("Норма", { exact: true })).toHaveCount(0);
     await productRow.getByRole("button", { name: /Территория 1/u }).click();
-    await expect(productRow.getByText("Водитель не выбран")).toBeVisible();
-    await expect(productRow.getByRole("spinbutton")).toBeDisabled();
+    const unavailableDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 1/u,
+    });
+    await expect(unavailableDialog).toBeVisible();
+    await expect(unavailableDialog.getByText("Водитель не выбран")).toBeVisible();
+    await expect(unavailableDialog.getByRole("spinbutton")).toBeDisabled();
+    await unavailableDialog.getByRole("button", { name: "Закрыть окно передачи" }).click();
     await productRow.getByRole("button", { name: /Территория 2/u }).click();
-    const territoryPanel = productRow.locator(".loading-territory-panel");
-    await territoryPanel.getByRole("spinbutton").fill("28");
-    await expect(territoryPanel.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
-    await expect(territoryPanel.getByText("Можно передать не более 10 шт.")).toBeVisible();
-    await territoryPanel.getByRole("spinbutton").fill("3");
-    await territoryPanel.getByRole("button", { name: "Отправить водителю" }).click();
+    const sendDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 2/u,
+    });
+    await expect(sendDialog).toBeVisible();
+    await expect(sendDialog).toContainText("ТБ Рыжик (0,8кг)");
+    await expect(sendDialog).toContainText("Можно передать сейчас: 10 шт.");
+    await expect(sendDialog.getByText("Норма", { exact: true })).toHaveCount(0);
+    await sendDialog.getByRole("spinbutton").fill("28");
+    await expect(sendDialog.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
+    await expect(sendDialog.getByText("Можно передать не более 10 шт.")).toBeVisible();
+    await sendDialog.getByRole("spinbutton").fill("3");
+    await sendDialog.getByRole("button", { name: "Отправить водителю" }).click();
+    await expect(sendDialog).toHaveCount(0);
     await expect.poll(() => sentPayload?.quantity).toBe(3);
     await expect(productRow).toContainText("На складе24 шт.");
     await expect(productRow.getByRole("button", { name: /Передано.*3 шт\./u })).toBeVisible();

@@ -46,6 +46,7 @@ export function ProductLoadingRow({
   const [selectedTerritoryId, setSelectedTerritoryId] = useState(
     initialTerritory?.territoryId ?? "",
   );
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [targetTerritories, setTargetTerritories] = useState<Record<string, string>>({});
   const [cancelLineId, setCancelLineId] = useState<string | null>(null);
@@ -73,7 +74,10 @@ export function ProductLoadingRow({
         <button
           aria-expanded={open && openMode === "send"}
           className="loading-product__identity-button"
-          onClick={onToggle}
+          onClick={() => {
+            setSendDialogOpen(false);
+            onToggle();
+          }}
           type="button"
         >
           <span className="loading-product__identity">
@@ -89,7 +93,10 @@ export function ProductLoadingRow({
           aria-expanded={open && openMode === "sent"}
           className="loading-product__metric loading-product__sent"
           disabled={product.sentQuantity === 0}
-          onClick={onShowSent}
+          onClick={() => {
+            setSendDialogOpen(false);
+            onShowSent();
+          }}
           type="button"
         >
           <small>Передано</small>
@@ -112,7 +119,10 @@ export function ProductLoadingRow({
         <button
           aria-label={open ? "Свернуть товар" : "Развернуть товар"}
           className="loading-product__toggle"
-          onClick={onToggle}
+          onClick={() => {
+            setSendDialogOpen(false);
+            onToggle();
+          }}
           type="button"
         >
           {open ? "−" : "+"}
@@ -128,7 +138,10 @@ export function ProductLoadingRow({
                   territory.territoryId === selectedTerritory.territoryId ? "is-selected" : ""
                 }
                 key={territory.territoryId}
-                onClick={() => setSelectedTerritoryId(territory.territoryId)}
+                onClick={() => {
+                  setSelectedTerritoryId(territory.territoryId);
+                  setSendDialogOpen(true);
+                }}
                 type="button"
               >
                 Территория {territory.territoryNumber}
@@ -136,14 +149,17 @@ export function ProductLoadingRow({
               </button>
             ))}
           </div>
-          <TerritorySendPanel
-            busyId={busyId}
-            draft={draftFor(selectedTerritory.territoryId)}
-            onDraft={(value) => onDraft(selectedTerritory.territoryId, value)}
-            onSend={(quantity) => onSend(selectedTerritory.territoryId, quantity)}
-            product={product}
-            territory={selectedTerritory}
-          />
+          {sendDialogOpen ? (
+            <TerritorySendDialog
+              busyId={busyId}
+              draft={draftFor(selectedTerritory.territoryId)}
+              onClose={() => setSendDialogOpen(false)}
+              onDraft={(value) => onDraft(selectedTerritory.territoryId, value)}
+              onSend={(quantity) => onSend(selectedTerritory.territoryId, quantity)}
+              product={product}
+              territory={selectedTerritory}
+            />
+          ) : null}
         </div>
       ) : null}
       {open && openMode === "sent" ? (
@@ -306,9 +322,10 @@ function TransferItem({
   );
 }
 
-function TerritorySendPanel({
+function TerritorySendDialog({
   busyId,
   draft,
+  onClose,
   onDraft,
   onSend,
   product,
@@ -316,6 +333,7 @@ function TerritorySendPanel({
 }: {
   busyId: string;
   draft: string;
+  onClose: () => void;
   onDraft: (value: string) => void;
   onSend: (quantity: number) => Promise<void>;
   product: LoadingProductView;
@@ -325,62 +343,79 @@ function TerritorySendPanel({
   const maximum = Math.min(product.freeQuantity, territory.remainingQuantity);
   const valid = Number.isInteger(quantity) && quantity > 0 && quantity <= maximum;
   const key = `${product.id}:${territory.territoryId}`;
+  const titleId = `send-product-${product.id}`;
   return (
-    <form
-      className="loading-territory-panel"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (valid) void onSend(quantity);
-      }}
-    >
-      <div className="loading-territory-row__title">
-        <strong>Территория {territory.territoryNumber}</strong>
-        <small>{territory.driverName ?? "Водитель не выбран"}</small>
-      </div>
-      <dl>
-        <div>
-          <dt>Норма</dt>
-          <dd>{territory.plannedQuantity}</dd>
-        </div>
-        <div>
-          <dt>Передано</dt>
-          <dd>{territory.sentQuantity}</dd>
-        </div>
-        <div>
-          <dt>Осталось</dt>
-          <dd>{territory.remainingQuantity}</dd>
-        </div>
-      </dl>
-      <label>
-        <span>Передать сейчас</span>
-        <input
-          disabled={!territory.canSend || maximum < 1}
-          inputMode="numeric"
-          max={maximum}
-          min="1"
-          onChange={(event) => onDraft(event.target.value)}
-          placeholder="0"
-          type="number"
-          value={draft}
-        />
-      </label>
+    <div className="loading-territory-dialog-layer">
       <button
-        className="primary-button"
-        disabled={!territory.canSend || !valid || busyId === key}
-        type="submit"
+        aria-label="Закрыть окно передачи"
+        className="loading-territory-dialog-backdrop"
+        onClick={onClose}
+        type="button"
+      />
+      <form
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="loading-territory-dialog"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!valid) return;
+          onClose();
+          void onSend(quantity);
+        }}
+        role="dialog"
       >
-        {busyId === key ? "Отправляем…" : "Отправить водителю"}
-      </button>
-      {!territory.canSend ? (
-        <p>Для этой территории водитель ещё не нажал «Приступил к рейсу».</p>
-      ) : territory.remainingQuantity === 0 ? (
-        <p>Норма этой территории уже передана.</p>
-      ) : product.freeQuantity === 0 ? (
-        <p>На складе нет доступного количества — передача заблокирована.</p>
-      ) : draft && !valid ? (
-        <p>Можно передать не более {maximum} шт.</p>
-      ) : null}
-    </form>
+        <header>
+          <div>
+            <small>{product.code}</small>
+            <h2 id={titleId}>Передать товар · Территория {territory.territoryNumber}</h2>
+            <p>{product.name}</p>
+          </div>
+          <button aria-label="Закрыть окно передачи" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <p className="loading-territory-dialog__driver">
+          {territory.driverName ?? "Водитель не выбран"}
+        </p>
+        <p className="loading-territory-dialog__limit">
+          Можно передать сейчас: <strong>{maximum} шт.</strong>
+        </p>
+        <label>
+          <span>Количество</span>
+          <input
+            autoFocus
+            disabled={!territory.canSend || maximum < 1}
+            inputMode="numeric"
+            max={maximum}
+            min="1"
+            onChange={(event) => onDraft(event.target.value)}
+            placeholder="0"
+            type="number"
+            value={draft}
+          />
+        </label>
+        <button
+          className="primary-button"
+          disabled={!territory.canSend || !valid || busyId === key}
+          type="submit"
+        >
+          {busyId === key ? "Отправляем…" : "Отправить водителю"}
+        </button>
+        {!territory.canSend ? (
+          <p className="loading-territory-dialog__message">
+            Для этой территории водитель ещё не нажал «Приступил к рейсу».
+          </p>
+        ) : territory.remainingQuantity === 0 ? (
+          <p className="loading-territory-dialog__message">Норма этой территории уже передана.</p>
+        ) : product.freeQuantity === 0 ? (
+          <p className="loading-territory-dialog__message">
+            На складе нет доступного количества — передача заблокирована.
+          </p>
+        ) : draft && !valid ? (
+          <p className="loading-territory-dialog__message">Можно передать не более {maximum} шт.</p>
+        ) : null}
+      </form>
+    </div>
   );
 }
 

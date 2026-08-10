@@ -3819,54 +3819,110 @@ select:focus {
   color: rgba(255, 255, 255, 0.78);
 }
 
-.loading-territory-panel {
+.loading-territory-dialog-layer {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
   display: grid;
-  align-items: end;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 15px;
+  place-items: center;
+  padding: 18px;
+}
+
+.loading-territory-dialog-backdrop {
+  position: absolute;
+  border: 0;
+  background: rgba(19, 37, 31, 0.48);
+  cursor: pointer;
+  inset: 0;
+}
+
+.loading-territory-dialog {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(410px, 100%);
+  max-height: calc(100dvh - 36px);
+  gap: 14px;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid rgba(20, 75, 63, 0.22);
+  border-radius: 22px;
   background: #fff;
-  grid-template-columns: minmax(170px, 1fr) minmax(220px, 1.1fr) 130px minmax(170px, auto);
+  box-shadow: 0 24px 70px rgba(19, 37, 31, 0.3);
 }
 
-.loading-territory-panel label {
+.loading-territory-dialog header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.loading-territory-dialog header > div {
   display: grid;
-  gap: 4px;
+  min-width: 0;
+  gap: 3px;
 }
 
-.loading-territory-panel label span,
-.loading-territory-panel > p {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.loading-territory-panel dl {
-  display: grid;
+.loading-territory-dialog header small,
+.loading-territory-dialog header p,
+.loading-territory-dialog__driver,
+.loading-territory-dialog__message {
   margin: 0;
-  grid-template-columns: repeat(3, minmax(60px, 1fr));
-}
-
-.loading-territory-panel dl div {
-  display: grid;
-  gap: 2px;
-  padding: 0 10px;
-  border-left: 1px solid var(--line);
-}
-
-.loading-territory-panel dt {
   color: var(--muted);
-  font-size: 0.68rem;
 }
 
-.loading-territory-panel dd {
+.loading-territory-dialog header h2 {
   margin: 0;
+  color: var(--ink);
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.loading-territory-dialog header > button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
   color: var(--forest);
-  font-size: 1.1rem;
-  font-weight: 900;
+  background: var(--forest-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.35rem;
 }
 
-.loading-territory-panel input,
+.loading-territory-dialog__driver {
+  font-weight: 800;
+}
+
+.loading-territory-dialog__limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 13px;
+  color: var(--muted);
+  background: #f3f6f2;
+}
+
+.loading-territory-dialog__limit strong {
+  color: var(--forest);
+  font-size: 1.15rem;
+}
+
+.loading-territory-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.loading-territory-dialog input,
 .loading-transfer-actions input,
 .loading-transfer-actions select {
   width: 100%;
@@ -3880,9 +3936,14 @@ select:focus {
   font-weight: 800;
 }
 
-.loading-territory-panel > p {
-  grid-column: 1 / -1;
-  margin: 0;
+.loading-territory-dialog > .primary-button {
+  width: 100%;
+  min-height: 58px;
+}
+
+.loading-territory-dialog__message {
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .loading-transfer-item {
@@ -4059,8 +4120,7 @@ select:focus {
     grid-template-columns: minmax(170px, 1fr) 82px 82px minmax(118px, auto) 28px;
   }
 
-  .loading-territory-row,
-  .loading-territory-panel {
+  .loading-territory-row {
     grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr);
   }
 
@@ -4225,13 +4285,11 @@ select:focus {
     font-size: 0.66rem;
   }
 
-  .loading-territory-row,
-  .loading-territory-panel {
+  .loading-territory-row {
     grid-template-columns: 1fr;
   }
 
-  .loading-territory-row dl,
-  .loading-territory-panel dl {
+  .loading-territory-row dl {
     padding: 8px 0;
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
