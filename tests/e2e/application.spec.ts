@@ -1292,12 +1292,13 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     await expect(basicProduct).toContainText("Принято 0");
     await expect(basicProduct).toContainText("Осталось 10");
-    await expect(basicProduct).toContainText("Ждёт вашего подтверждения 10 шт.");
+    await expect(basicProduct).not.toContainText("Ждёт вашего подтверждения");
+    await expect(basicProduct).not.toContainText("Склад ещё не передал");
     const productMetrics = basicProduct.locator(".driver-assortment-product__metrics");
     await expect(productMetrics).toHaveCount(0);
     const collapsedProductBox = await basicProduct.boundingBox();
     expect(collapsedProductBox).not.toBeNull();
-    expect(collapsedProductBox?.height ?? 0).toBeLessThanOrEqual(100);
+    expect(collapsedProductBox?.height ?? 0).toBeLessThanOrEqual(80);
     await basicProduct.getByRole("button", { name: /Торт тестовый/u }).click();
     await expect(productMetrics).toBeVisible();
     await expect(productMetrics).toContainText("Норма 10");
@@ -1311,7 +1312,8 @@ test.describe("B20 browser and HTTP regression", () => {
       hasText: "Торт Премиум тестовый",
     });
     await expect(premiumProduct).toBeVisible();
-    await expect(premiumProduct).toContainText("Принято полностью");
+    await expect(premiumProduct).toContainText("Принято 5");
+    await expect(premiumProduct).toContainText("Осталось 0");
     await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
     await assortment.getByRole("button", { name: /^Осталось забрать 32 шт\.$/u }).click();
     await expect(assortment.getByText("Торт Премиум тестовый", { exact: true })).toHaveCount(0);
@@ -1319,7 +1321,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const pieProduct = assortment.locator(".driver-assortment-product").filter({
       hasText: "Пирог тестовый",
     });
-    await expect(pieProduct).toContainText("Склад ещё не передал 7 шт.");
+    await expect(pieProduct).not.toContainText("Склад ещё не передал");
     await assortment.getByRole("searchbox", { name: "Поиск товара" }).fill("SV-001");
     await expect(assortment.getByText("СВ Тестовая выпечка", { exact: true })).toBeVisible();
     await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);

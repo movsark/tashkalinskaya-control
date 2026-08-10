@@ -3261,16 +3261,6 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
-.driver-assortment-product__name small {
-  color: #8d6613;
-  font-size: 0.7rem;
-  line-height: 1.35;
-}
-
-.driver-assortment-product__name small.is-completed {
-  color: #1c714d;
-}
-
 .driver-assortment-product__compact-progress {
   display: flex;
   align-items: center;

@@ -615,7 +615,6 @@ export default function DriverLogisticsPage() {
                                 <span className="driver-assortment-product__name">
                                   <span>{product.code}</span>
                                   <strong>{product.name}</strong>
-                                  <ProductTransferStatus product={product} />
                                 </span>
                                 <span className="driver-assortment-product__compact-progress">
                                   <small>
@@ -976,21 +975,6 @@ function messageOf(caught: unknown, fallback: string): string {
 
 function todayMoscow(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
-}
-
-function ProductTransferStatus({ product }: { product: LoadingDriverDayView["products"][number] }) {
-  const notSentQuantity = Math.max(0, product.plannedQuantity - product.sentQuantity);
-  if (product.remainingQuantity === 0)
-    return <small className="is-completed">Принято полностью</small>;
-  return (
-    <small className="driver-assortment-product__status">
-      {notSentQuantity > 0 ? `Склад ещё не передал ${notSentQuantity} шт.` : null}
-      {notSentQuantity > 0 && product.awaitingAcceptanceQuantity > 0 ? " · " : null}
-      {product.awaitingAcceptanceQuantity > 0
-        ? `Ждёт вашего подтверждения ${product.awaitingAcceptanceQuantity} шт.`
-        : null}
-    </small>
-  );
 }
 
 const PRODUCT_GROUPS = [
