@@ -698,6 +698,33 @@ export class IdentityRepository {
     return mapDevice(result.rows[0]);
   }
 
+  async ensurePasswordLoginDevice(input: {
+    deviceId: string;
+    employeeId: string;
+  }): Promise<DeviceRecord> {
+    const result = await this.database.query<DeviceRow>(
+      `
+        insert into identity.personal_device (
+          id, employee_id, public_key, device_label, platform_family, status, paired_at,
+          last_seen_at
+        ) values ($1, $2, $3, 'Вход по логину', 'OTHER', 'ACTIVE', now(), now())
+        on conflict (id) do update
+        set status = 'ACTIVE', paired_at = coalesce(identity.personal_device.paired_at, now()),
+          last_seen_at = now(), revoked_at = null, replaced_by_id = null, updated_at = now(),
+          version = identity.personal_device.version + 1
+        where identity.personal_device.employee_id = excluded.employee_id
+        returning
+          id, employee_id, platform_family, status, webauthn_credential_id,
+          webauthn_public_key, webauthn_counter::text, webauthn_transports,
+          webauthn_device_type, webauthn_backed_up
+      `,
+      [input.deviceId, input.employeeId, `device-id:${input.deviceId}`],
+    );
+    const device = mapDevice(result.rows[0]);
+    if (device === null) throw new UnauthorizedException("Не удалось открыть сессию");
+    return device;
+  }
+
   async findActiveDeviceByEmployee(employeeId: string): Promise<DeviceRecord | null> {
     const result = await this.database.query<DeviceRow>(
       `
@@ -706,7 +733,9 @@ export class IdentityRepository {
           webauthn_public_key, webauthn_counter::text, webauthn_transports,
           webauthn_device_type, webauthn_backed_up
         from identity.personal_device
-        where employee_id = $1 and status = 'ACTIVE'
+        where employee_id = $1 and status = 'ACTIVE' and webauthn_credential_id is not null
+        order by paired_at desc
+        limit 1
       `,
       [employeeId],
     );

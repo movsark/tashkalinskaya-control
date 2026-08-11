@@ -52,7 +52,7 @@ export default function ActivatePage() {
       setError(
         caught instanceof ApiRequestError || caught instanceof Error
           ? caught.message
-          : "Не удалось активировать устройство",
+          : "Не удалось активировать аккаунт",
       );
     } finally {
       setSubmitting(false);
@@ -68,15 +68,15 @@ export default function ActivatePage() {
       <section className="auth-grid">
         <div className="auth-intro">
           <p className="eyebrow">Первый вход</p>
-          <h1>Привязка личного устройства</h1>
+          <h1>Активация аккаунта</h1>
           <p>
             Код действует 24 часа и используется один раз. Постоянный пароль знает только сотрудник.
           </p>
           <ol className="activation-steps">
             <li>Введите логин и код от администратора.</li>
-            <li>Назовите устройство понятным именем.</li>
+            <li>Укажите понятное название текущего устройства для истории входов.</li>
             <li>Создайте пароль не короче 8 символов.</li>
-            <li>Подтвердите системным PIN, Face ID или Touch ID.</li>
+            <li>После активации входите с любого устройства по логину и паролю.</li>
           </ol>
         </div>
         <div className="auth-card auth-card--wide">

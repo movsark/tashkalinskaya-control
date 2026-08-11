@@ -453,7 +453,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("a bound personal device signs in with login and password only", async ({ page }) => {
+  test("an unbound device signs in with login and password only", async ({ page }) => {
     const deviceId = "20000000-0000-4000-8000-000000000010";
     let loginRequest: unknown = null;
     await page.route("**/api/v1/auth/login", async (route) => {
@@ -483,15 +483,80 @@ test.describe("B20 browser and HTTP regression", () => {
       });
     });
     await page.goto("/login");
-    await page.evaluate((id) => localStorage.setItem("tashkalinskaya_device_id", id), deviceId);
     await page.getByLabel("Логин").fill("test-user");
     await page.getByLabel("Пароль").fill("correct horse battery staple");
     await page.getByRole("button", { name: "Войти" }).click();
     await expect(page).toHaveURL(/\/$/);
-    expect(loginRequest).toEqual({
-      deviceId,
+    expect(loginRequest).toMatchObject({
       login: "test-user",
       password: "correct horse battery staple",
+    });
+    expect((loginRequest as { deviceId: string }).deviceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    );
+  });
+
+  test("a confectioner invitation uses the MVP workshop without asking the administrator", async ({
+    page,
+  }) => {
+    const workshopId = "20000000-0000-4000-8000-000000000040";
+    let invitationRequest: unknown = null;
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-admin-invitation",
+        deviceId: "20000000-0000-4000-8000-000000000041",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Администратор приглашений",
+          id: "20000000-0000-4000-8000-000000000042",
+          login: "invitation-admin",
+          personnelNumber: "ADMIN-INVITATION",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000043",
+              roleCode: "ADMIN",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-03T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/employees/invitations/options", (route) =>
+      json(route, {
+        roles: [
+          {
+            displayName: "Кондитер",
+            roleCode: "CONFECTIONER",
+            scopes: [{ id: workshopId, name: "Технический цех" }],
+            scopeType: "WORKSHOP",
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/employees/invitations", async (route) => {
+      invitationRequest = route.request().postDataJSON();
+      await json(route, {
+        expiresAt: "2026-08-12T10:00:00.000Z",
+        invitationCode: "test-invitation-code",
+        roleCode: "CONFECTIONER",
+        roleDisplayName: "Кондитер",
+        scopeDisplayName: "Технический цех",
+      });
+    });
+    await page.route("**/api/v1/employees", (route) => json(route, { items: [], total: 0 }));
+
+    await page.goto("/employees");
+    await page.getByRole("button", { name: "Пригласить сотрудника" }).click();
+    await expect(page.getByLabel("Цех")).toHaveCount(0);
+    await page.getByRole("button", { name: "Создать одноразовый код" }).click();
+    await expect.poll(() => invitationRequest).not.toBeNull();
+    expect(invitationRequest).toEqual({
+      role: { roleCode: "CONFECTIONER", scopeId: workshopId, scopeType: "WORKSHOP" },
     });
   });
 
@@ -808,7 +873,7 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(deleteRequest).toEqual({ reason: "Ошибочно созданная запись", version: 2 });
   });
 
-  test("an employee scans an invitation and completes the short registration form", async ({
+  test("an employee enters a one-time code and completes the short registration form", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 844, width: 390 });
@@ -848,7 +913,9 @@ test.describe("B20 browser and HTTP regression", () => {
       });
     });
 
-    await page.goto("/register#code=one-time-invitation-code");
+    await page.goto("/register");
+    await page.getByLabel("Одноразовый код").fill("one-time-invitation-code");
+    await page.getByRole("button", { name: "Продолжить регистрацию" }).click();
     await expect(page.getByText("Только табель", { exact: true })).toBeVisible();
     const registrationDimensions = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,

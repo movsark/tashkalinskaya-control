@@ -780,7 +780,7 @@ select:focus {
   display: grid;
   align-items: center;
   gap: 28px;
-  grid-template-columns: minmax(260px, 1fr) auto auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, auto) auto;
   margin-bottom: 28px;
   padding: 28px;
   border: 1px solid var(--line);
@@ -807,20 +807,24 @@ select:focus {
   line-height: 1.45;
 }
 
-.invitation-result__qr {
+.invitation-result__code {
   display: grid;
-  width: 220px;
-  min-height: 220px;
+  min-height: 120px;
+  gap: 8px;
   place-items: center;
   overflow: hidden;
+  padding: 24px;
   border-radius: 18px;
   background: #fffdf8;
 }
 
-.invitation-result__qr img {
-  display: block;
-  width: 100%;
-  height: auto;
+.invitation-result__code strong {
+  max-width: 320px;
+  color: var(--green);
+  font-size: clamp(20px, 3vw, 32px);
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .registration-role {
@@ -2368,7 +2372,7 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
-  .invitation-result__qr {
+  .invitation-result__code {
     width: min(100%, 320px);
     justify-self: center;
   }

@@ -12,7 +12,7 @@ const employeeId = "10000000-0000-4000-8000-000000000002";
 const deviceId = "10000000-0000-4000-8000-000000000003";
 
 describe("AuthService simple personal login", () => {
-  it("creates a one-year session from login, password and the bound device", async () => {
+  it("creates a one-year session from login and password on any device", async () => {
     let createdSession: NewSession | null = null;
     const webauthn = { verifyAuthentication: vi.fn() };
     const repository = {
@@ -29,7 +29,7 @@ describe("AuthService simple personal login", () => {
         lockedUntil: null,
         passwordHash: "stored-hash",
       }),
-      findActiveDevice: vi.fn().mockResolvedValue({
+      ensurePasswordLoginDevice: vi.fn().mockResolvedValue({
         employeeId,
         id: deviceId,
         platformFamily: "IOS",
@@ -85,7 +85,7 @@ describe("AuthService simple personal login", () => {
     );
 
     expect(result.body).toMatchObject({ deviceId, sessionExpiresAt: expect.any(String) });
-    expect(repository.findActiveDevice).toHaveBeenCalledWith(deviceId);
+    expect(repository.ensurePasswordLoginDevice).toHaveBeenCalledWith({ deviceId, employeeId });
     expect(webauthn.verifyAuthentication).not.toHaveBeenCalled();
     expect(createdSession).not.toBeNull();
     const expiresAt = (createdSession as NewSession | null)?.accessExpiresAt.getTime() ?? 0;
