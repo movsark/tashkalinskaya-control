@@ -30,6 +30,23 @@ export class ReceiveGoodReturnDto {
   @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 
+export class SubmitGoodReturnRequestDto {
+  @IsUUID() territoryId!: string;
+  @IsDateString({ strict: true }) dispatchDate!: string;
+  @ValidateNested({ each: true })
+  @Type(() => GoodReturnLineDto)
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  lines!: GoodReturnLineDto[];
+  @IsOptional() @IsString() @Length(3, 500) comment?: string;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+}
+
+export class AcceptGoodReturnRequestDto {
+  @IsInt() @Min(1) version!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+}
+
 export class AllocateGoodReturnDto {
   @IsUUID() productId!: string;
   @IsUUID() territoryId!: string;

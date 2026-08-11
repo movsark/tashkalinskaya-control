@@ -9,6 +9,7 @@ import type {
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
@@ -42,7 +43,7 @@ export default function PlanningPage() {
   const [driverProfileVersion, setDriverProfileVersion] = useState(1);
   const [homeTerritoryId, setHomeTerritoryId] = useState("");
   const [homeTerritoryChoice, setHomeTerritoryChoice] = useState("");
-  const [selectedProductGroup, setSelectedProductGroup] = useState("ALL");
+  const [expandedDriverDate, setExpandedDriverDate] = useState("");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -74,7 +75,11 @@ export default function PlanningPage() {
   }, [driverTerritoryIds, session, setup]);
   const selectedTerritory = availableTerritories.find((item) => item.id === territoryId);
   const submittedRequests = requests.filter((request) => request.status === "SUBMITTED");
-  const decidedRequests = requests.filter((request) => request.status !== "SUBMITTED");
+  const decidedRequests = requests.filter(
+    (request) =>
+      request.status !== "SUBMITTED" &&
+      !(request.status === "STALE" && request.decisionComment === "Заменён водителем"),
+  );
   const weekTotal = week?.norms.reduce((sum, norm) => sum + norm.quantity, 0) ?? 0;
   const days = weekDays(weekStart);
   const selectedDay = days.find((day) => day.date === selectedDate) ?? days[0]!;
@@ -97,16 +102,6 @@ export default function PlanningPage() {
         total: norms.reduce((sum, norm) => sum + norm.quantity, 0),
       };
     }) ?? [];
-  const visibleSelectedNorms =
-    selectedProductGroup === "ALL"
-      ? selectedNorms
-      : selectedNorms.filter((norm) =>
-          setup?.products.some(
-            (product) =>
-              product.id === norm.productId && product.categoryCode === selectedProductGroup,
-          ),
-        );
-
   useEffect(() => {
     async function load() {
       try {
@@ -118,9 +113,10 @@ export default function PlanningPage() {
         const privileged = currentSession.employee.roles.some((role) =>
           ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role.roleCode),
         );
-        const driverDay = currentSession.employee.roles.some((role) => role.roleCode === "DRIVER")
-          ? await getDriverLogisticsDay(selectedDate)
-          : null;
+        const hasDriverRole = currentSession.employee.roles.some(
+          (role) => role.roleCode === "DRIVER",
+        );
+        const driverDay = hasDriverRole ? await getDriverLogisticsDay(selectedDate) : null;
         const effectiveAllowed = [...allowed, ...(driverDay?.availableTerritoryIds ?? [])];
         const firstTerritory = currentSetup.territories.find(
           (territory) => privileged || effectiveAllowed.includes(territory.id),
@@ -259,8 +255,8 @@ export default function PlanningPage() {
             <p className="eyebrow">Настройка водителя</p>
             <h2>Постоянная территория</h2>
             <p>
-              Выберите свою основную территорию для просмотра нормы. Машину и рейс назначает
-              администратор отдельно.
+              Выберите свою основную территорию для просмотра нормы. Это не означает, что вы уже
+              вышли на рейс.
             </p>
           </div>
           <label>
@@ -336,12 +332,18 @@ export default function PlanningPage() {
                 request={request}
                 onDecision={(decision, comment) =>
                   action(async () => {
-                    await decideNormChangeRequest(
+                    const decided = await decideNormChangeRequest(
                       request.id,
                       { comment, decision, version: request.version },
                       session.csrfToken,
                     );
-                    await reload(decision === "APPROVE" ? "Запрос утвержден." : "Запрос отклонен.");
+                    await reload(
+                      decided.status === "STALE"
+                        ? "Запрос устарел: норма или назначение уже изменились. Водителю нужно отправить новый запрос."
+                        : decision === "APPROVE"
+                          ? "Запрос утвержден, норма обновлена."
+                          : "Запрос отклонен.",
+                    );
                   })
                 }
               />
@@ -358,7 +360,11 @@ export default function PlanningPage() {
             <p className="eyebrow">Текущая неделя</p>
             <h2>Норма по дням</h2>
           </div>
-          <span>Нажмите день, чтобы увидеть товары</span>
+          <span>
+            {isDriver
+              ? "Нажмите день, затем раскройте нужную группу продукции"
+              : "Нажмите день, чтобы увидеть товары"}
+          </span>
         </div>
         {isDriver ? (
           <>
@@ -367,10 +373,11 @@ export default function PlanningPage() {
                 type="button"
                 onClick={() => {
                   const nextStart = addDays(weekStart, -7);
+                  const nextDate = addDays(nextStart, selectedDay.weekday - 1);
                   setWeekStart(nextStart);
-                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setSelectedDate(nextDate);
+                  setExpandedDriverDate("");
                   setEditingNorm(null);
-                  setSelectedProductGroup("ALL");
                 }}
               >
                 ← Неделя
@@ -380,122 +387,127 @@ export default function PlanningPage() {
                 type="button"
                 onClick={() => {
                   const nextStart = addDays(weekStart, 7);
+                  const nextDate = addDays(nextStart, selectedDay.weekday - 1);
                   setWeekStart(nextStart);
-                  setSelectedDate(addDays(nextStart, selectedDay.weekday - 1));
+                  setSelectedDate(nextDate);
+                  setExpandedDriverDate("");
                   setEditingNorm(null);
-                  setSelectedProductGroup("ALL");
                 }}
               >
                 Неделя →
               </button>
             </div>
-            <nav className="driver-weekday-switcher" aria-label="Быстрый выбор дня">
+            <div className="driver-weekday-accordion" aria-label="Дни недели">
               {days.map((day) => {
                 const dayNorms = week?.norms.filter((norm) => norm.weekday === day.weekday) ?? [];
                 const total = dayNorms.reduce((sum, norm) => sum + norm.quantity, 0);
                 const closed = day.weekday === 5;
+                const expanded = !closed && expandedDriverDate === day.date;
                 return (
-                  <button
-                    aria-pressed={day.date === selectedDay.date}
-                    className={day.date === selectedDay.date ? "is-active" : ""}
-                    disabled={closed}
+                  <section
+                    className={`driver-weekday-accordion__day ${closed ? "is-closed" : ""}`}
                     key={day.date}
-                    onClick={() => {
-                      setSelectedDate(day.date);
-                      setEditingNorm(null);
-                      setSelectedProductGroup("ALL");
-                    }}
-                    type="button"
                   >
-                    <strong>{shortWeekday(day.weekday)}</strong>
-                    <small>{shortDate(day.date)}</small>
-                    <span>{closed ? "выходной" : `${total} шт.`}</span>
-                  </button>
+                    <button
+                      aria-expanded={expanded}
+                      className="driver-weekday-accordion__trigger"
+                      disabled={closed}
+                      onClick={() => {
+                        if (expanded) {
+                          setExpandedDriverDate("");
+                        } else {
+                          setSelectedDate(day.date);
+                          setExpandedDriverDate(day.date);
+                        }
+                        setEditingNorm(null);
+                      }}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{day.label}</strong>
+                        <small>{shortDate(day.date)}</small>
+                      </span>
+                      <span>{closed ? "выходной" : `${total} шт.`}</span>
+                      <b aria-hidden="true">{expanded ? "−" : "+"}</b>
+                    </button>
+                    {expanded ? (
+                      <div className="driver-weekday-accordion__content">
+                        <article className="driver-selected-norm">
+                          <header>
+                            <div>
+                              <p className="eyebrow">{selectedDay.label}</p>
+                              <h3>{longDate(selectedDay.date)}</h3>
+                            </div>
+                            <strong>
+                              {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
+                            </strong>
+                          </header>
+                          <div className="driver-norm-accordion" aria-label="Группы продукции">
+                            {driverProductGroups.map((group) => {
+                              const groupNorms = selectedNorms.filter((norm) =>
+                                setup?.products.some(
+                                  (product) =>
+                                    product.id === norm.productId &&
+                                    product.categoryCode === group.code,
+                                ),
+                              );
+                              return (
+                                <details className="driver-norm-group" key={group.code}>
+                                  <summary>
+                                    <strong>{group.name}</strong>
+                                    <span>
+                                      {group.count} тов. · {group.total} шт.
+                                    </span>
+                                  </summary>
+                                  <NormProductLines
+                                    date={selectedDay.date}
+                                    editingNormId={editingNorm?.id ?? ""}
+                                    emptyMessage="В этой группе на выбранный день товаров нет."
+                                    norms={groupNorms}
+                                    onEdit={(norm) =>
+                                      setEditingNorm((current) =>
+                                        current?.id === norm.id ? null : norm,
+                                      )
+                                    }
+                                    requests={week?.requests ?? []}
+                                    renderEditor={(norm, pendingRequest) =>
+                                      session ? (
+                                        <DriverRequestForm
+                                          busy={busy}
+                                          date={selectedDay.date}
+                                          norm={norm}
+                                          onCancel={() => setEditingNorm(null)}
+                                          onSubmit={(input) =>
+                                            action(async () => {
+                                              const created = await createNormChangeRequest(
+                                                input,
+                                                session.csrfToken,
+                                              );
+                                              await reload(
+                                                created.status === "MISSED_CUTOFF"
+                                                  ? "Изменять уже поздно: запрос сохранён как просроченный."
+                                                  : "Запрос отправлен администратору.",
+                                              );
+                                              setEditingNorm(null);
+                                            })
+                                          }
+                                          pendingRequest={pendingRequest}
+                                          territoryId={territoryId}
+                                        />
+                                      ) : null
+                                    }
+                                  />
+                                </details>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      </div>
+                    ) : null}
+                  </section>
                 );
               })}
-            </nav>
-            <article className="driver-selected-norm">
-              <header>
-                <div>
-                  <p className="eyebrow">{selectedDay.label}</p>
-                  <h3>{longDate(selectedDay.date)}</h3>
-                </div>
-                <strong>{selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.</strong>
-              </header>
-              <nav className="driver-norm-group-switcher" aria-label="Группы продукции">
-                <button
-                  aria-pressed={selectedProductGroup === "ALL"}
-                  className={selectedProductGroup === "ALL" ? "is-active" : ""}
-                  onClick={() => {
-                    setSelectedProductGroup("ALL");
-                    setEditingNorm(null);
-                  }}
-                  type="button"
-                >
-                  <strong>Все товары</strong>
-                  <span>
-                    {selectedNorms.length} тов. ·{" "}
-                    {selectedNorms.reduce((sum, norm) => sum + norm.quantity, 0)} шт.
-                  </span>
-                </button>
-                {driverProductGroups.map((group) => (
-                  <button
-                    aria-pressed={selectedProductGroup === group.code}
-                    className={selectedProductGroup === group.code ? "is-active" : ""}
-                    key={group.code}
-                    onClick={() => {
-                      setSelectedProductGroup(group.code);
-                      setEditingNorm(null);
-                    }}
-                    type="button"
-                  >
-                    <strong>{group.name}</strong>
-                    <span>
-                      {group.count} тов. · {group.total} шт.
-                    </span>
-                  </button>
-                ))}
-              </nav>
-              <div className="driver-selected-norm__lines">
-                {visibleSelectedNorms.length ? (
-                  visibleSelectedNorms.map((norm) => (
-                    <div key={norm.id}>
-                      <span>{norm.productName}</span>
-                      <strong>{norm.quantity} шт.</strong>
-                      <button type="button" onClick={() => setEditingNorm(norm)}>
-                        Изменить
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p>
-                    {selectedNorms.length
-                      ? "В этой группе на выбранный день товаров нет."
-                      : "На этот день норма не задана."}
-                  </p>
-                )}
-              </div>
-            </article>
-            {session && editingNorm ? (
-              <DriverRequestForm
-                busy={busy}
-                date={selectedDay.date}
-                norm={editingNorm}
-                onCancel={() => setEditingNorm(null)}
-                onSubmit={(input) =>
-                  action(async () => {
-                    const created = await createNormChangeRequest(input, session.csrfToken);
-                    await reload(
-                      created.status === "MISSED_CUTOFF"
-                        ? "Изменять уже поздно: запрос сохранён как просроченный."
-                        : "Запрос отправлен администратору.",
-                    );
-                    setEditingNorm(null);
-                  })
-                }
-                territoryId={territoryId}
-              />
-            ) : null}
+            </div>
           </>
         ) : (
           days.map((day) => {
@@ -591,12 +603,71 @@ export default function PlanningPage() {
   );
 }
 
+function NormProductLines({
+  date,
+  editingNormId,
+  emptyMessage,
+  norms,
+  onEdit,
+  requests,
+  renderEditor,
+}: {
+  date: string;
+  editingNormId: string;
+  emptyMessage: string;
+  norms: readonly WeeklyNormView[];
+  onEdit: (norm: WeeklyNormView) => void;
+  requests: readonly NormChangeRequestView[];
+  renderEditor: (norm: WeeklyNormView, pendingRequest: NormChangeRequestView | null) => ReactNode;
+}) {
+  return (
+    <div className="driver-selected-norm__lines">
+      {norms.length ? (
+        norms.map((norm) => {
+          const expanded = editingNormId === norm.id;
+          const pendingRequest = findPendingRequest(requests, norm.productId, date);
+          return (
+            <div className="driver-norm-product-entry" key={norm.id}>
+              <button
+                aria-expanded={expanded}
+                aria-label={`Изменить ${norm.productName}, ${norm.quantity} шт.`}
+                className="driver-norm-product"
+                onClick={() => onEdit(norm)}
+                type="button"
+              >
+                <span>{norm.productName}</span>
+                <strong>{norm.quantity} шт.</strong>
+                <b aria-hidden="true">{expanded ? "⌃" : "›"}</b>
+              </button>
+              {expanded ? renderEditor(norm, pendingRequest) : null}
+              {!expanded && pendingRequest ? (
+                <div className="driver-request-status" role="status">
+                  <div>
+                    <strong>Запрос отправлен</strong>
+                    <span>Ожидает решения администратора</span>
+                  </div>
+                  <button className="secondary-button" onClick={() => onEdit(norm)} type="button">
+                    Изменить запрос
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })
+      ) : (
+        <p>{emptyMessage}</p>
+      )}
+    </div>
+  );
+}
+
 function DriverRequestForm({
   busy,
   date,
   norm,
   onCancel,
   onSubmit,
+  pendingRequest,
   territoryId,
 }: {
   busy: boolean;
@@ -604,14 +675,19 @@ function DriverRequestForm({
   norm: WeeklyNormView;
   onCancel: () => void;
   onSubmit: (input: Parameters<typeof createNormChangeRequest>[0]) => Promise<void>;
+  pendingRequest: NormChangeRequestView | null;
   territoryId: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">("ONE_OFF");
-  const [quantity, setQuantity] = useState(String(norm.quantity));
-  const [comment, setComment] = useState("");
+  const pendingLine = pendingRequest?.lines.find((line) => line.productId === norm.productId);
+  const [kind, setKind] = useState<"MONTH_WEEKDAY" | "ONE_OFF">(
+    pendingRequest?.kind === "MONTH_WEEKDAY" ? "MONTH_WEEKDAY" : "ONE_OFF",
+  );
+  const [quantity, setQuantity] = useState(String(pendingLine?.proposedQuantity ?? norm.quantity));
+  const [comment, setComment] = useState(pendingRequest?.requesterComment ?? "");
   const weekday = isoWeekday(date);
   const effectiveUntil = monthEnd(date);
+  const quantityInputId = `driver-quantity-${norm.id}`;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -640,7 +716,9 @@ function DriverRequestForm({
       }}
       ref={formRef}
     >
-      <p className="eyebrow">Запрос администратору</p>
+      <p className="eyebrow">
+        {pendingRequest ? "Изменение отправленного запроса" : "Запрос администратору"}
+      </p>
       <h2>{norm.productName}</h2>
       <p>
         Сейчас {norm.quantity} шт. · выбранная дата {longDate(date)}
@@ -653,24 +731,44 @@ function DriverRequestForm({
             Каждый {weekdayGenitive(weekday)} до {shortDate(effectiveUntil)}
           </option>
         </select>
+        <small>Нажмите, чтобы выбрать период изменения</small>
       </label>
-      <label>
-        Новое количество
-        <input
-          min="0"
-          required
-          type="number"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-        />
-      </label>
+      <div className="driver-request-field">
+        <label htmlFor={quantityInputId}>Новое количество</label>
+        <div className="driver-quantity-stepper">
+          <button
+            aria-label="Уменьшить количество"
+            onClick={() => setQuantity(String(Math.max(0, Number(quantity || 0) - 1)))}
+            type="button"
+          >
+            −
+          </button>
+          <input
+            aria-label="Новое количество"
+            id={quantityInputId}
+            min="0"
+            required
+            type="number"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+          />
+          <button
+            aria-label="Увеличить количество"
+            onClick={() => setQuantity(String(Number(quantity || 0) + 1))}
+            type="button"
+          >
+            +
+          </button>
+        </div>
+        <small>Нажмите «−» или «+», либо введите число</small>
+      </div>
       <label>
         Комментарий администратору
         <textarea value={comment} onChange={(event) => setComment(event.target.value)} />
       </label>
       <div className="driver-inline-request__actions">
         <button className="primary-button" disabled={busy || territoryId === ""}>
-          Отправить запрос
+          {pendingRequest ? "Сохранить изменения" : "Отправить запрос"}
         </button>
         <button className="secondary-button" disabled={busy} onClick={onCancel} type="button">
           Отмена
@@ -779,7 +877,6 @@ function RequestCard({
   onDecision: (decision: "APPROVE" | "REJECT", comment: string) => Promise<void>;
   request: NormChangeRequestView;
 }) {
-  const [comment, setComment] = useState("");
   return (
     <article className="planning-request-card">
       <div>
@@ -803,24 +900,24 @@ function RequestCard({
           </span>
         ))}
       </div>
+      {request.requesterComment ? (
+        <p className="planning-requester-comment">
+          <strong>Комментарий водителя:</strong> {request.requesterComment}
+        </p>
+      ) : null}
       {request.status === "SUBMITTED" ? (
         <div className="planning-decision">
-          <input
-            placeholder="Причина решения"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-          />
           <button
             className="primary-button"
-            disabled={busy || comment.trim().length < 3}
-            onClick={() => void onDecision("APPROVE", comment)}
+            disabled={busy}
+            onClick={() => void onDecision("APPROVE", "Утверждено администратором")}
           >
             Утвердить
           </button>
           <button
             className="secondary-button"
-            disabled={busy || comment.trim().length < 3}
-            onClick={() => void onDecision("REJECT", comment)}
+            disabled={busy}
+            onClick={() => void onDecision("REJECT", "Отклонено администратором")}
           >
             Отклонить
           </button>
@@ -878,9 +975,6 @@ function longDate(value: string) {
     year: "numeric",
   }).format(new Date(`${value}T00:00:00Z`));
 }
-function shortWeekday(weekday: number) {
-  return ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][weekday - 1];
-}
 function weekdayGenitive(weekday: number) {
   return ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"][
     weekday - 1
@@ -911,4 +1005,24 @@ function statusLabel(status: NormChangeRequestView["status"]) {
       MISSED_CUTOFF: "После отсечки",
     } as const
   )[status];
+}
+
+function findPendingRequest(
+  requests: readonly NormChangeRequestView[],
+  productId: string,
+  date: string,
+): NormChangeRequestView | null {
+  return (
+    requests.find(
+      (request) =>
+        request.status === "SUBMITTED" &&
+        request.lines.some((line) => line.productId === productId) &&
+        (request.kind === "ONE_OFF"
+          ? request.dispatchDate === date
+          : request.dispatchWeekday === isoWeekday(date) &&
+            request.effectiveFrom !== null &&
+            request.effectiveFrom <= date &&
+            (request.effectiveUntil === null || request.effectiveUntil >= date)),
+    ) ?? null
+  );
 }

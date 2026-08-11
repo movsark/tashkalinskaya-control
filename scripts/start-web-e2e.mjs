@@ -4,9 +4,11 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
-const standaloneWeb = path.join(root, "apps/web/.next/standalone/apps/web");
-await mkdir(path.join(standaloneWeb, ".next"), { recursive: true });
-await cp(path.join(root, "apps/web/.next/static"), path.join(standaloneWeb, ".next/static"), {
+const distDir = process.env.NEXT_DIST_DIR?.trim() || ".next";
+const webBuild = path.join(root, "apps/web", distDir);
+const standaloneWeb = path.join(webBuild, "standalone/apps/web");
+await mkdir(path.join(standaloneWeb, distDir), { recursive: true });
+await cp(path.join(webBuild, "static"), path.join(standaloneWeb, distDir, "static"), {
   force: true,
   recursive: true,
 });

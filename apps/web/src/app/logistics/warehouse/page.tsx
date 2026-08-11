@@ -5,63 +5,54 @@ import type {
   LoadingLineView,
   LoadingSessionView,
   LoadingWarehouseDayView,
-  WarehouseLogisticsDayView,
 } from "@tashkalinskaya/contracts";
-import type { IScannerControls } from "@zxing/browser";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
+  cancelLoadingLine,
   confirmLoadingByWarehouse,
-  createLoadingLine,
   getLoadingWarehouseDay,
   getSession,
-  getWarehouseLogisticsDay,
-  markTerritoryRunReady,
-  openLoadingGroup,
-  reassignLoadingLine,
+  reassignLoadingLineToTerritory,
   reviseLoadingLine,
+  sendLoadingToTerritory,
 } from "../../../lib/api";
-
-interface LineDraft {
-  comment: string;
-  product: string;
-  quantity: string;
-}
+import { ProductLoadingRow } from "./product-loading-row";
 
 interface RevisionDraft {
   comment: string;
   quantity: string;
-  reason: string;
-  targetSessionId: string;
 }
+
+const productGroups = [
+  { code: "BASIC_CAKES", name: "Торты Базовые" },
+  { code: "PREMIUM_CAKES", name: "Торты Премиум" },
+  { code: "PIES_AND_PASTRIES", name: "Пироги" },
+  { code: "DESSERTS", name: "Десерты" },
+  { code: "DRY_BAKERY", name: "Сухая выпечка" },
+] as const;
 
 export default function WarehouseLogisticsPage() {
   const router = useRouter();
-  const scannerVideo = useRef<HTMLVideoElement>(null);
-  const scannerControls = useRef<IScannerControls | null>(null);
-  const scannerLocked = useRef(false);
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
-  const [queue, setQueue] = useState<WarehouseLogisticsDayView | null>(null);
   const [loading, setLoading] = useState<LoadingWarehouseDayView | null>(null);
   const [dispatchDate, setDispatchDate] = useState(todayMoscow());
-  const [drafts, setDrafts] = useState<Record<string, LineDraft>>({});
-  const [revisions, setRevisions] = useState<Record<string, RevisionDraft>>({});
-  const [scannerSessionId, setScannerSessionId] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  const [openProductId, setOpenProductId] = useState<string | null>(null);
+  const [openProductMode, setOpenProductMode] = useState<"send" | "sent">("send");
+  const [selectedRejectedLineId, setSelectedRejectedLineId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   async function reload(date = dispatchDate) {
-    const [nextQueue, nextLoading] = await Promise.all([
-      getWarehouseLogisticsDay(date),
-      getLoadingWarehouseDay(date),
-    ]);
-    setQueue(nextQueue);
-    setLoading(nextLoading);
+    setLoading(await getLoadingWarehouseDay(date));
   }
 
   useEffect(() => {
@@ -85,21 +76,14 @@ export default function WarehouseLogisticsPage() {
     return () => window.clearInterval(timer);
   }, [dispatchDate, router]);
 
-  useEffect(
-    () => () => {
-      scannerControls.current?.stop();
-    },
-    [],
-  );
-
-  async function command(id: string, operation: () => Promise<unknown>, successMessage: string) {
+  async function command(id: string, operation: () => Promise<unknown>, message: string) {
     setBusyId(id);
     setError("");
     setSuccess("");
     try {
       await operation();
       await reload();
-      setSuccess(successMessage);
+      setSuccess(message);
     } catch (caught) {
       setError(messageOf(caught, "Операция не выполнена"));
     } finally {
@@ -112,81 +96,29 @@ export default function WarehouseLogisticsPage() {
     return session.csrfToken;
   }
 
-  function draftFor(id: string): LineDraft {
-    return drafts[id] ?? { comment: "", product: "", quantity: "" };
-  }
-
-  function revisionFor(line: LoadingLineView): RevisionDraft {
-    return (
-      revisions[line.id] ?? {
-        comment: "",
-        quantity: String(line.counterQuantity ?? line.quantity),
-        reason: "",
-        targetSessionId: "",
-      }
-    );
-  }
-
-  function productIdFrom(value: string): string | null {
-    const normalized = value.trim().toLocaleLowerCase("ru-RU");
-    return (
-      loading?.products.find(
+  const sessions = (loading?.groups.flatMap((group) => group.sessions) ?? []).filter(
+    (item) => item.lines.length > 0,
+  );
+  const rejectedTransfers = sessions.flatMap((warehouseSession) =>
+    warehouseSession.lines
+      .filter((line) => line.status === "DISPUTED" && line.responseType === "REJECT")
+      .map((line) => ({ line, session: warehouseSession })),
+  );
+  const selectedRejectedTransfer = rejectedTransfers.find(
+    ({ line }) => line.id === selectedRejectedLineId,
+  );
+  const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
+  const filteredProducts = useMemo(
+    () =>
+      (loading?.products ?? []).filter(
         (product) =>
-          product.id === value ||
-          product.code.toLocaleLowerCase("ru-RU") === normalized ||
-          product.barcodes.includes(value) ||
-          `${product.code} · ${product.name}`.toLocaleLowerCase("ru-RU") === normalized,
-      )?.id ?? null
-    );
-  }
-
-  async function startScanner(sessionId: string) {
-    setScannerSessionId(sessionId);
-    setError("");
-    scannerLocked.current = false;
-    window.setTimeout(async () => {
-      if (!scannerVideo.current) return;
-      try {
-        const { BrowserMultiFormatReader } = await import("@zxing/browser");
-        const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanAttempts: 120 });
-        scannerControls.current = await reader.decodeFromVideoDevice(
-          undefined,
-          scannerVideo.current,
-          (decoded) => {
-            if (!decoded || scannerLocked.current) return;
-            scannerLocked.current = true;
-            const barcode = decoded.getText();
-            const product = loading?.products.find((item) => item.barcodes.includes(barcode));
-            if (!product) {
-              scannerLocked.current = false;
-              setError(`Штрихкод ${barcode} не найден в справочнике`);
-              return;
-            }
-            setDrafts((current) => ({
-              ...current,
-              [sessionId]: {
-                ...draftFor(sessionId),
-                product: `${product.code} · ${product.name}`,
-              },
-            }));
-            closeScanner();
-            setSuccess(`Найден товар: ${product.name}`);
-          },
-        );
-      } catch (caught) {
-        closeScanner();
-        setError(messageOf(caught, "Камера недоступна. Выберите товар из списка"));
-      }
-    }, 0);
-  }
-
-  function closeScanner() {
-    scannerControls.current?.stop();
-    scannerControls.current = null;
-    setScannerSessionId(null);
-  }
-
-  const sessions = loading?.groups.flatMap((group) => group.sessions) ?? [];
+          !normalizedQuery ||
+          product.name.toLocaleLowerCase("ru-RU").includes(normalizedQuery) ||
+          product.code.toLocaleLowerCase("ru-RU").includes(normalizedQuery) ||
+          product.productGroupName.toLocaleLowerCase("ru-RU").includes(normalizedQuery),
+      ),
+    [loading, normalizedQuery],
+  );
 
   return (
     <main className="workspace-layout logistics-role-layout loading-workspace">
@@ -195,119 +127,304 @@ export default function WarehouseLogisticsPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            Склад · <Link href="/returns">годный возврат</Link> ·{" "}
-            <Link href="/warehouse">остатки и приёмка</Link>
+            Склад · <Link href="/warehouse">остатки и приёмка</Link>
           </small>
         </div>
       </header>
 
       <section className="workspace-title logistics-title loading-title">
         <div>
-          <p className="eyebrow">B13 · рабочее место склада</p>
+          <p className="eyebrow">Передача со склада водителям</p>
           <h1>Управление погрузкой</h1>
-          <p>Допуск водителей, строки по территориям и итоговое подтверждение склада.</p>
+          <p>Выберите товар, территорию и количество. Водитель сразу увидит запрос на приёмку.</p>
         </div>
         <label>
           Дата вывоза
           <input
             type="date"
             value={dispatchDate}
-            onChange={(event) => setDispatchDate(event.target.value)}
+            onChange={(event) => {
+              setDispatchDate(event.target.value);
+              setOpenProductId(null);
+            }}
           />
         </label>
       </section>
 
       <section className="logistics-summary loading-summary">
-        <Metric label="Ждут допуска" value={queue?.summary.scheduled ?? 0} />
-        <Metric label="Готовы" value={queue?.summary.ready ?? 0} />
         <Metric
-          label="На погрузке"
-          value={sessions.filter((item) => item.status !== "COMPLETED").length}
+          label="Товаров в норме"
+          value={loading?.products.filter((item) => item.plannedQuantity > 0).length ?? 0}
         />
         <Metric
-          label="Спорные строки"
-          value={sessions.reduce((sum, item) => sum + item.unresolvedLines, 0)}
+          label="Норма на день"
+          value={loading?.products.reduce((sum, item) => sum + item.plannedQuantity, 0) ?? 0}
+          suffix="шт."
+        />
+        <Metric
+          label="Передано"
+          value={loading?.products.reduce((sum, item) => sum + item.sentQuantity, 0) ?? 0}
+          suffix="шт."
+        />
+        <Metric
+          label="Осталось передать"
+          value={loading?.products.reduce((sum, item) => sum + item.remainingQuantity, 0) ?? 0}
+          suffix="шт."
         />
       </section>
       {error ? <p className="form-error loading-message">{error}</p> : null}
       {success ? <p className="logistics-success loading-message">{success}</p> : null}
 
-      <section className="loading-stage">
+      {rejectedTransfers.length ? (
+        <section aria-labelledby="rejected-loading-title" className="loading-rejection-stage">
+          <div className="loading-rejection-stage__heading">
+            <div>
+              <p className="eyebrow">Нужно решение склада</p>
+              <h2 id="rejected-loading-title">Водитель отклонил товар</h2>
+              <p>
+                Проверьте возвращённый товар. На свободный остаток он попадёт только после вашего
+                подтверждения.
+              </p>
+            </div>
+            <strong aria-label={`Отклонено передач: ${rejectedTransfers.length}`}>
+              {rejectedTransfers.length}
+            </strong>
+          </div>
+          <div className="loading-rejection-list">
+            {rejectedTransfers.map(({ line, session: rejectedSession }) => (
+              <button
+                aria-label={`${line.productName}, отклонено ${line.quantity} шт., Территория ${rejectedSession.territoryNumber}`}
+                key={line.id}
+                onClick={() => setSelectedRejectedLineId(line.id)}
+                type="button"
+              >
+                <span>
+                  <small>{line.productCode}</small>
+                  <b>{line.productName}</b>
+                </span>
+                <span>
+                  <small>Территория {rejectedSession.territoryNumber}</small>
+                  <b>{line.quantity} шт.</b>
+                </span>
+                <i aria-hidden="true">›</i>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="loading-stage loading-product-stage">
         <div className="loading-stage__heading">
           <div>
-            <p className="eyebrow">Шаг 1</p>
-            <h2>Допуск и запуск группы</h2>
+            <p className="eyebrow">Товары для погрузки</p>
+            <h2>Передать на территории</h2>
           </div>
-          <p>Группа откроется, когда все её водители отмечены на фабрике.</p>
+          <p>Количество резервируется на складе до окончательного подтверждения водителем.</p>
         </div>
-        <div className="loading-group-grid">
-          {loading?.groups.map((group) => {
-            const groupRuns =
-              queue?.runs.filter((run) => run.loadingGroupId === group.groupId) ?? [];
-            const allReady =
-              groupRuns.length > 0 && groupRuns.every((run) => run.status === "READY_FOR_LOADING");
+
+        <div className="loading-product-toolbar">
+          <label>
+            <span>Поиск товара</span>
+            <input
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Название или код"
+              type="search"
+              value={query}
+            />
+          </label>
+          <div>
+            <button
+              className="secondary-button"
+              onClick={() => setOpenGroups(productGroups.map((group) => group.code))}
+              type="button"
+            >
+              Развернуть все
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setOpenGroups([]);
+                setOpenProductId(null);
+              }}
+              type="button"
+            >
+              Свернуть все
+            </button>
+          </div>
+        </div>
+
+        <div className="loading-product-groups">
+          {productGroups.map((group) => {
+            const products = filteredProducts.filter(
+              (product) => product.productGroupCode === group.code,
+            );
+            if (normalizedQuery && products.length === 0) return null;
+            const open = normalizedQuery.length > 0 || openGroups.includes(group.code);
+            const stockQuantity = products.reduce((sum, item) => sum + item.freeQuantity, 0);
+            const remainingQuantity = products.reduce(
+              (sum, item) => sum + item.remainingQuantity,
+              0,
+            );
+            const shortageQuantity = products.reduce(
+              (sum, item) => sum + Math.max(0, item.remainingQuantity - item.freeQuantity),
+              0,
+            );
             return (
-              <article className="loading-group-card" key={group.groupId}>
-                <div className="loading-group-card__top">
-                  <div>
-                    <span>Группа {group.groupNo}</span>
-                    <strong>{timeLabel(group.plannedStartAt)}</strong>
-                  </div>
-                  <Status value={group.status} />
-                </div>
-                <div className="loading-run-chips">
-                  {groupRuns.map((run) => (
-                    <div key={run.id}>
-                      <strong>Т{run.territoryNumber}</strong>
-                      <span>{run.driverName}</span>
-                      {run.status === "SCHEDULED" ? (
-                        <button
-                          className="text-button"
-                          disabled={busyId === run.id}
-                          onClick={() =>
-                            void command(
-                              run.id,
-                              () => markTerritoryRunReady(run.id, run.version, csrf()),
-                              `Территория ${run.territoryNumber} допущена`,
+              <section
+                className={`loading-product-group${open ? " is-open" : ""}`}
+                key={group.code}
+              >
+                <button
+                  aria-expanded={open}
+                  className="loading-product-group__summary"
+                  onClick={() =>
+                    setOpenGroups((current) =>
+                      current.includes(group.code)
+                        ? current.filter((code) => code !== group.code)
+                        : [...current, group.code],
+                    )
+                  }
+                  type="button"
+                >
+                  <span className="loading-product-group__identity">
+                    <strong>{group.name}</strong>
+                    <small>{products.length} поз.</small>
+                  </span>
+                  <span className="loading-product-group__metrics">
+                    <span>
+                      <small>На складе</small>
+                      <b>{stockQuantity} шт.</b>
+                    </span>
+                    <span>
+                      <small>Осталось</small>
+                      <b>{remainingQuantity} шт.</b>
+                    </span>
+                    <span className={shortageQuantity > 0 ? "is-shortage" : undefined}>
+                      <small>Не хватает</small>
+                      <b>{shortageQuantity > 0 ? `−${shortageQuantity}` : 0} шт.</b>
+                    </span>
+                  </span>
+                  <i aria-hidden="true">{open ? "−" : "+"}</i>
+                </button>
+                {open ? (
+                  <div className="loading-product-list">
+                    {products.length ? (
+                      products.map((product) => (
+                        <ProductLoadingRow
+                          busyId={busyId}
+                          draftFor={(territoryId) => drafts[`${product.id}:${territoryId}`] ?? ""}
+                          key={product.id}
+                          onDraft={(territoryId, value) =>
+                            setDrafts((current) => ({
+                              ...current,
+                              [`${product.id}:${territoryId}`]: value,
+                            }))
+                          }
+                          onSend={(territoryId, quantity) => {
+                            const key = `${product.id}:${territoryId}`;
+                            return command(
+                              key,
+                              () =>
+                                sendLoadingToTerritory(
+                                  territoryId,
+                                  { dispatchDate, productId: product.id, quantity },
+                                  csrf(),
+                                ),
+                              `${product.name}: ${quantity} шт. отправлено водителю`,
+                            ).then(() => setDrafts((current) => ({ ...current, [key]: "" })));
+                          }}
+                          onCancel={(line) =>
+                            command(
+                              `cancel-${line.id}`,
+                              () =>
+                                cancelLoadingLine(
+                                  line.id,
+                                  {
+                                    reason:
+                                      line.responseType === "REJECT"
+                                        ? "Возвращено на склад после отклонения водителем"
+                                        : "Отменено складом до приёмки водителем",
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Передача отменена, товар возвращён на склад",
                             )
                           }
-                        >
-                          Допустить
-                        </button>
-                      ) : (
-                        <small>Готов</small>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {group.status === "PUBLISHED" ? (
-                  <button
-                    className="primary-button"
-                    disabled={!allReady || busyId === group.groupId}
-                    onClick={() =>
-                      void command(
-                        group.groupId,
-                        () => openLoadingGroup(group.groupId, group.version, csrf()),
-                        `Группа ${group.groupNo} открыта`,
-                      )
-                    }
-                  >
-                    {busyId === group.groupId ? "Открываю…" : "Начать погрузку"}
-                  </button>
+                          onReassign={(line, territoryId) =>
+                            command(
+                              `territory-${line.id}`,
+                              () =>
+                                reassignLoadingLineToTerritory(
+                                  line.id,
+                                  {
+                                    reason: "Исправлена территория до приёмки водителем",
+                                    targetTerritoryId: territoryId,
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Территория передачи изменена",
+                            )
+                          }
+                          onRevise={(line, quantity) =>
+                            command(
+                              `quantity-${line.id}`,
+                              () =>
+                                reviseLoadingLine(
+                                  line.id,
+                                  {
+                                    comment: "Исправлено до приёмки водителем",
+                                    quantity,
+                                    version: line.version,
+                                  },
+                                  csrf(),
+                                ),
+                              "Количество передачи изменено",
+                            )
+                          }
+                          onShowSent={() => {
+                            setOpenProductMode("sent");
+                            setOpenProductId((current) =>
+                              current === product.id && openProductMode === "sent"
+                                ? null
+                                : product.id,
+                            );
+                          }}
+                          onToggle={() => {
+                            setOpenProductMode("send");
+                            setOpenProductId((current) =>
+                              current === product.id && openProductMode === "send"
+                                ? null
+                                : product.id,
+                            );
+                          }}
+                          open={openProductId === product.id}
+                          openMode={openProductMode}
+                          product={product}
+                          sessions={sessions}
+                        />
+                      ))
+                    ) : (
+                      <p className="loading-product-empty">
+                        {normalizedQuery ? "В этой категории совпадений нет." : "Товаров пока нет."}
+                      </p>
+                    )}
+                  </div>
                 ) : null}
-              </article>
+              </section>
             );
           })}
         </div>
       </section>
 
-      <section className="loading-stage">
+      <section className="loading-stage loading-transfers-stage">
         <div className="loading-stage__heading">
           <div>
-            <p className="eyebrow">Шаг 2</p>
-            <h2>Строки погрузки</h2>
+            <p className="eyebrow">Согласование</p>
+            <h2>Передачи водителям</h2>
           </div>
-          <p>Выберите товар или считайте штрихкод с коробки, затем укажите количество.</p>
+          <p>Здесь видны ответы водителей, расхождения и окончательное подтверждение склада.</p>
         </div>
         <div className="loading-session-grid">
           {sessions.length ? (
@@ -315,140 +432,204 @@ export default function WarehouseLogisticsPage() {
               <WarehouseSession
                 busyId={busyId}
                 csrf={csrf}
-                draft={draftFor(item.id)}
                 key={item.id}
                 onCommand={command}
-                onDraft={(draft) => setDrafts((current) => ({ ...current, [item.id]: draft }))}
-                onRevision={(lineId, draft) =>
-                  setRevisions((current) => ({ ...current, [lineId]: draft }))
-                }
-                onScan={() => void startScanner(item.id)}
-                productIdFrom={productIdFrom}
-                products={loading?.products ?? []}
-                revisionFor={revisionFor}
                 session={item}
-                sessions={sessions}
               />
             ))
           ) : (
             <div className="empty-state">
-              <h2>Открытых групп пока нет</h2>
-              <p>Сначала допустите водителей и начните группу.</p>
+              <h2>Передач пока нет</h2>
+              <p>Откройте товар выше и отправьте количество на нужную территорию.</p>
             </div>
           )}
         </div>
       </section>
-
-      {scannerSessionId ? (
-        <div className="dialog-backdrop" role="dialog" aria-modal="true">
-          <section className="dialog-card loading-scanner">
-            <div>
-              <p className="eyebrow">Камера склада</p>
-              <h2>Сканирование штрихкода</h2>
-            </div>
-            <video autoPlay muted playsInline ref={scannerVideo} />
-            <p>Наведите камеру на штрихкод вида товара. Дата на коробке вводиться не должна.</p>
-            <button className="secondary-button" onClick={closeScanner}>
-              Закрыть
-            </button>
-          </section>
-        </div>
+      {selectedRejectedTransfer ? (
+        <RejectedLoadingDialog
+          busy={busyId === `return-${selectedRejectedTransfer.line.id}`}
+          line={selectedRejectedTransfer.line}
+          onClose={() => setSelectedRejectedLineId(null)}
+          onReturn={() =>
+            command(
+              `return-${selectedRejectedTransfer.line.id}`,
+              () =>
+                cancelLoadingLine(
+                  selectedRejectedTransfer.line.id,
+                  {
+                    reason: "Возвращено на склад после отклонения водителем",
+                    version: selectedRejectedTransfer.line.version,
+                  },
+                  csrf(),
+                ),
+              `${selectedRejectedTransfer.line.productName}: ${selectedRejectedTransfer.line.quantity} шт. возвращено на склад`,
+            )
+          }
+          session={selectedRejectedTransfer.session}
+        />
       ) : null}
     </main>
+  );
+}
+
+function RejectedLoadingDialog({
+  busy,
+  line,
+  onClose,
+  onReturn,
+  session,
+}: {
+  busy: boolean;
+  line: LoadingLineView;
+  onClose: () => void;
+  onReturn: () => Promise<void>;
+  session: LoadingSessionView;
+}) {
+  const titleId = `rejected-loading-${line.id}`;
+  return (
+    <div className="loading-territory-dialog-layer">
+      <button
+        aria-label="Закрыть отклонённую передачу"
+        className="loading-territory-dialog-backdrop"
+        onClick={onClose}
+        type="button"
+      />
+      <section
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="loading-territory-dialog loading-rejection-dialog"
+        role="dialog"
+      >
+        <header>
+          <div>
+            <small>Водитель отклонил товар</small>
+            <h2 id={titleId}>{line.productName}</h2>
+            <p>{line.productCode}</p>
+          </div>
+          <button aria-label="Закрыть отклонённую передачу" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <dl className="loading-rejection-dialog__facts">
+          <div>
+            <dt>Количество</dt>
+            <dd>{line.quantity} шт.</dd>
+          </div>
+          <div>
+            <dt>Территория</dt>
+            <dd>{session.territoryNumber}</dd>
+          </div>
+          <div>
+            <dt>Водитель</dt>
+            <dd>{line.responseDriverName ?? session.driverName}</dd>
+          </div>
+        </dl>
+        {line.responseReason ? (
+          <p className="loading-rejection-dialog__comment">
+            <small>Комментарий водителя</small>
+            {line.responseReason}
+          </p>
+        ) : null}
+        <p className="loading-rejection-dialog__explanation">
+          Убедитесь, что товар физически вернулся. После подтверждения резерв будет снят, а
+          количество снова появится на складе.
+        </p>
+        <button
+          className="primary-button"
+          disabled={busy}
+          onClick={() => void onReturn()}
+          type="button"
+        >
+          {busy ? "Возвращаем…" : "Подтвердить возврат на склад"}
+        </button>
+        <p className="loading-rejection-dialog__hint">
+          Если перепутано наименование: верните эту позицию на склад, затем выберите правильный
+          товар и создайте новую передачу. История отклонения сохранится.
+        </p>
+      </section>
+    </div>
   );
 }
 
 function WarehouseSession({
   busyId,
   csrf,
-  draft,
   onCommand,
-  onDraft,
-  onRevision,
-  onScan,
-  productIdFrom,
-  products,
-  revisionFor,
   session,
-  sessions,
 }: {
   busyId: string;
   csrf: () => string;
-  draft: LineDraft;
   onCommand: (id: string, operation: () => Promise<unknown>, success: string) => Promise<void>;
-  onDraft: (draft: LineDraft) => void;
-  onRevision: (lineId: string, draft: RevisionDraft) => void;
-  onScan: () => void;
-  productIdFrom: (value: string) => string | null;
-  products: LoadingWarehouseDayView["products"];
-  revisionFor: (line: LoadingLineView) => RevisionDraft;
   session: LoadingSessionView;
-  sessions: readonly LoadingSessionView[];
 }) {
+  const [revisions, setRevisions] = useState<Record<string, RevisionDraft>>({});
   const editable = session.status === "IN_PROGRESS";
+  const rejectedCount = session.lines.filter(
+    (line) => line.status === "DISPUTED" && line.responseType === "REJECT",
+  ).length;
   const canFinish = editable && session.lines.length > 0 && session.unresolvedLines === 0;
   return (
     <article className={`loading-session-card is-${session.status.toLocaleLowerCase()}`}>
       <header>
         <div>
-          <p className="eyebrow">
-            Группа {session.groupNo} · место {session.sequenceNo}
-          </p>
-          <h2>Территория {session.territoryNumber}</h2>
+          <p className="eyebrow">Территория {session.territoryNumber}</p>
+          <h2>{session.driverName}</h2>
           <p>
-            {session.driverName} · {session.vehicleName}
+            {session.lines.length} поз. · {session.totalQuantity} шт.
           </p>
         </div>
         <div className="loading-session-total">
-          <span>{loadingSessionStatus(session.status)}</span>
+          <span>{statusLabel(session.status)}</span>
           <strong>{session.totalQuantity} шт.</strong>
-          <small className={isOverdue(session.startedAt, session.status) ? "is-overdue" : ""}>
-            {elapsedLabel(session.startedAt, session.status)}
-          </small>
         </div>
       </header>
-
       <div className="loading-lines">
         {session.lines.map((line) => {
-          const revision = revisionFor(line);
+          const revision = revisions[line.id] ?? {
+            comment: "",
+            quantity: String(line.counterQuantity ?? line.quantity),
+          };
           return (
             <div className={`loading-line is-${line.status.toLocaleLowerCase()}`} key={line.id}>
               <div className="loading-line__product">
                 <strong>{line.productName}</strong>
-                <span>
-                  {line.productCode} · версия {line.currentRevisionNo}
-                </span>
+                <span>{line.productCode}</span>
               </div>
               <div className="loading-line__numbers">
-                <span>План {line.plannedQuantity}</span>
+                <span>Норма {line.plannedQuantity}</span>
                 <strong>{line.quantity} шт.</strong>
-                {line.isOverPlan ? <em>Сверх плана</em> : null}
               </div>
               <div className="loading-line__state">
-                <Status value={line.status} />
+                <Status responseType={line.responseType} value={line.status} />
                 {line.responseReason ? <small>{line.responseReason}</small> : null}
               </div>
-              {line.status === "DISPUTED" && editable ? (
+              {line.status === "DISPUTED" && line.responseType !== "REJECT" && editable ? (
                 <div className="loading-line__resolution">
                   <label>
                     Новое количество
                     <input
                       min="1"
+                      onChange={(event) =>
+                        setRevisions((current) => ({
+                          ...current,
+                          [line.id]: { ...revision, quantity: event.target.value },
+                        }))
+                      }
                       type="number"
                       value={revision.quantity}
-                      onChange={(event) =>
-                        onRevision(line.id, { ...revision, quantity: event.target.value })
-                      }
                     />
                   </label>
                   <label>
-                    Решение
+                    Что исправлено
                     <input
-                      placeholder="Причина изменения"
-                      value={revision.comment}
                       onChange={(event) =>
-                        onRevision(line.id, { ...revision, comment: event.target.value })
+                        setRevisions((current) => ({
+                          ...current,
+                          [line.id]: { ...revision, comment: event.target.value },
+                        }))
                       }
+                      placeholder="Короткий комментарий"
+                      value={revision.comment}
                     />
                   </label>
                   <button
@@ -467,151 +648,26 @@ function WarehouseSession({
                             },
                             csrf(),
                           ),
-                        "Исправленная строка отправлена водителю",
+                        "Исправленное количество снова отправлено водителю",
                       )
                     }
+                    type="button"
                   >
-                    Исправить
+                    Отправить исправление
                   </button>
-                  {sessions.length > 1 ? (
-                    <>
-                      <label>
-                        Перенести на
-                        <select
-                          value={revision.targetSessionId}
-                          onChange={(event) =>
-                            onRevision(line.id, {
-                              ...revision,
-                              targetSessionId: event.target.value,
-                            })
-                          }
-                        >
-                          <option value="">Выберите территорию</option>
-                          {sessions
-                            .filter(
-                              (target) =>
-                                target.groupId === session.groupId &&
-                                target.id !== session.id &&
-                                target.status === "IN_PROGRESS",
-                            )
-                            .map((target) => (
-                              <option key={target.id} value={target.id}>
-                                Территория {target.territoryNumber}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <label>
-                        Причина переноса
-                        <input
-                          value={revision.reason}
-                          onChange={(event) =>
-                            onRevision(line.id, { ...revision, reason: event.target.value })
-                          }
-                        />
-                      </label>
-                      <button
-                        className="text-button"
-                        disabled={!revision.targetSessionId || revision.reason.trim().length < 3}
-                        onClick={() =>
-                          void onCommand(
-                            line.id,
-                            () =>
-                              reassignLoadingLine(
-                                line.id,
-                                {
-                                  reason: revision.reason,
-                                  targetSessionId: revision.targetSessionId,
-                                  version: line.version,
-                                },
-                                csrf(),
-                              ),
-                            "Строка перенесена и отправлена новому водителю",
-                          )
-                        }
-                      >
-                        Перенести строку
-                      </button>
-                    </>
-                  ) : null}
                 </div>
               ) : null}
             </div>
           );
         })}
-        {!session.lines.length ? <p className="loading-lines__empty">Строк пока нет.</p> : null}
       </div>
-
-      {editable ? (
-        <form
-          className="loading-add-line"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const productId = productIdFrom(draft.product);
-            if (!productId) return;
-            void onCommand(
-              session.id,
-              () =>
-                createLoadingLine(
-                  session.id,
-                  {
-                    ...(draft.comment.trim() ? { comment: draft.comment.trim() } : {}),
-                    productId,
-                    quantity: Number(draft.quantity),
-                    sessionVersion: session.version,
-                  },
-                  csrf(),
-                ),
-              "Строка отправлена водителю",
-            ).then(() => onDraft({ comment: "", product: "", quantity: "" }));
-          }}
-        >
-          <label>
-            Товар или штрихкод
-            <input
-              list={`products-${session.id}`}
-              placeholder="Начните вводить код или название"
-              value={draft.product}
-              onChange={(event) => onDraft({ ...draft, product: event.target.value })}
-            />
-            <datalist id={`products-${session.id}`}>
-              {products.map((product) => (
-                <option key={product.id} value={`${product.code} · ${product.name}`}>
-                  Остаток {product.freeQuantity}
-                </option>
-              ))}
-            </datalist>
-          </label>
-          <label>
-            Количество
-            <input
-              min="1"
-              inputMode="numeric"
-              type="number"
-              value={draft.quantity}
-              onChange={(event) => onDraft({ ...draft, quantity: event.target.value })}
-            />
-          </label>
-          <button className="secondary-button" type="button" onClick={onScan}>
-            Сканировать
-          </button>
-          <button
-            className="primary-button"
-            disabled={
-              busyId === session.id || !productIdFrom(draft.product) || Number(draft.quantity) < 1
-            }
-            type="submit"
-          >
-            Отправить водителю
-          </button>
-        </form>
-      ) : null}
-
       <footer className="loading-session-footer">
         <span>
-          {session.unresolvedLines
-            ? `Нерешённых строк: ${session.unresolvedLines}`
-            : "Все строки согласованы"}
+          {rejectedCount
+            ? `Нужно подтвердить возврат на склад: ${rejectedCount}`
+            : session.unresolvedLines
+              ? `Ожидают ответа водителя: ${session.unresolvedLines}`
+              : "Все позиции приняты водителем"}
         </span>
         {canFinish ? (
           <button
@@ -633,18 +689,31 @@ function WarehouseSession({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, suffix = "", value }: { label: string; suffix?: string; value: number }) {
   return (
     <article>
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong>
+        {value}
+        {suffix ? ` ${suffix}` : ""}
+      </strong>
     </article>
   );
 }
 
-function Status({ value }: { value: string }) {
+function Status({
+  responseType,
+  value,
+}: {
+  responseType?: LoadingLineView["responseType"];
+  value: string;
+}) {
   return (
-    <span className={`loading-status is-${value.toLocaleLowerCase()}`}>{statusLabel(value)}</span>
+    <span className={`loading-status is-${value.toLocaleLowerCase()}`}>
+      {value === "DISPUTED" && responseType === "REJECT"
+        ? "Отклонено водителем"
+        : statusLabel(value)}
+    </span>
   );
 }
 
@@ -653,37 +722,14 @@ function statusLabel(value: string): string {
     (
       {
         COMPLETED: "Завершено",
-        CONFIRMED: "Подтверждено",
+        CONFIRMED: "Принято водителем",
         DISPUTED: "Есть расхождение",
         IN_PROGRESS: "Идёт погрузка",
-        PUBLISHED: "Готовится",
-        SENT_TO_DRIVER: "Ждём водителя",
+        SENT_TO_DRIVER: "Ждём приёмку",
         WAREHOUSE_CONFIRMED: "Склад подтвердил",
       } as Record<string, string>
     )[value] ?? value
   );
-}
-
-function loadingSessionStatus(value: LoadingSessionView["status"]): string {
-  return statusLabel(value);
-}
-
-function timeLabel(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Moscow",
-  }).format(new Date(value));
-}
-
-function elapsedLabel(startedAt: string, status: LoadingSessionView["status"]): string {
-  if (status === "COMPLETED") return "Подтверждено обеими сторонами";
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 60_000));
-  return minutes < 1 ? "Начато сейчас" : `В работе ${minutes} мин.`;
-}
-
-function isOverdue(startedAt: string, status: LoadingSessionView["status"]): boolean {
-  return status !== "COMPLETED" && Date.now() - new Date(startedAt).getTime() >= 15 * 60_000;
 }
 
 function messageOf(caught: unknown, fallback: string): string {

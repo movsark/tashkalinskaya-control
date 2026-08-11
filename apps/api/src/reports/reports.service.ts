@@ -13,6 +13,12 @@ export class ReportsService {
   workspace(actor: AuthenticatedActor) {
     return this.repository.workspace(toActor(actor));
   }
+  productionOutbound(dateFrom: string, dateTo: string, actor: AuthenticatedActor) {
+    return this.repository.productionOutbound(dateFrom, dateTo, toActor(actor));
+  }
+  driverTerritory(dateFrom: string, dateTo: string, actor: AuthenticatedActor) {
+    return this.repository.driverTerritory(dateFrom, dateTo, toActor(actor));
+  }
   createJob(dto: CreateReportJobDto, actor: AuthenticatedActor, correlationId: string) {
     return this.repository.createJob({ actor: toActor(actor), correlationId, ...dto });
   }

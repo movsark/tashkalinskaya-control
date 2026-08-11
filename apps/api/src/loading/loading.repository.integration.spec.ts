@@ -16,11 +16,14 @@ const keeperId = randomUUID();
 const driverOneId = randomUUID();
 const driverTwoId = randomUUID();
 const driverThreeId = randomUUID();
+const driverFourId = randomUUID();
+const driverFiveId = randomUUID();
 const departmentId = randomUUID();
 const productId = randomUUID();
+const directProductId = randomUUID();
 const groupOneId = randomUUID();
 const groupTwoId = randomUUID();
-const territoryIds = [1, 2, 3].map(
+const territoryIds = [1, 2, 3, 4].map(
   (number) => `12000000-0000-4000-8000-${number.toString().padStart(12, "0")}`,
 );
 const dispatchDate = new Date(
@@ -30,9 +33,10 @@ const dispatchDate = new Date(
   .slice(0, 10);
 const admin = actor(adminId, "ADMIN", "FACTORY", null);
 const keeper = actor(keeperId, "WAREHOUSE_KEEPER", "WAREHOUSE", null);
-const drivers = [driverOneId, driverTwoId, driverThreeId].map((id, index) =>
+const drivers = [driverOneId, driverTwoId, driverThreeId, driverFourId].map((id, index) =>
   actor(id, "DRIVER", "TERRITORY", territoryIds[index]!),
 );
+const replacementDriver = actor(driverFiveId, "DRIVER", "FACTORY", null);
 let sessionOneId = "";
 let sessionTwoId = "";
 let sessionThreeId = "";
@@ -46,7 +50,9 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
     await database.query(
       `insert into identity.employee(id,personnel_number,personnel_number_normalized,full_name) values
        ($1,$2,$2,'Админ B13'),($3,$4,$4,'Кладовщик B13'),
-       ($5,$6,$6,'Водитель 1 B13'),($7,$8,$8,'Водитель 2 B13'),($9,$10,$10,'Водитель 3 B13')`,
+       ($5,$6,$6,'Водитель 1 B13'),($7,$8,$8,'Водитель 2 B13'),
+       ($9,$10,$10,'Водитель 3 B13'),($11,$12,$12,'Водитель 4 B13'),
+       ($13,$14,$14,'Сменщик B13')`,
       [
         adminId,
         `B13-A-${seed.slice(0, 20)}`,
@@ -58,13 +64,30 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
         `B13-D2-${seed.slice(0, 20)}`,
         driverThreeId,
         `B13-D3-${seed.slice(0, 20)}`,
+        driverFourId,
+        `B13-D4-${seed.slice(0, 20)}`,
+        driverFiveId,
+        `B13-D5-${seed.slice(0, 20)}`,
       ],
     );
-    await database.query(`insert into logistics.driver_profile(employee_id) values($1),($2),($3)`, [
+    await database.query(
+      `insert into logistics.driver_profile(employee_id,home_territory_id)
+       values($1,null),($2,null),($3,null),($4,null),($5,null)`,
+      [driverOneId, driverTwoId, driverThreeId, driverFourId, driverFiveId],
+    );
+    for (const [index, driverId] of [
       driverOneId,
       driverTwoId,
       driverThreeId,
-    ]);
+      driverFourId,
+    ].entries()) {
+      await database.query(
+        `insert into logistics.driver_route_shift(
+           id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+         ) values($1,$2,$3,$4,$5,$6)`,
+        [randomUUID(), dispatchDate, territoryIds[index], driverId, adminId, randomUUID()],
+      );
+    }
     const vehicleIds = [randomUUID(), randomUUID(), randomUUID()];
     for (const [index, vehicleId] of vehicleIds.entries())
       await database.query(
@@ -79,8 +102,15 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
       );
     await database.query(
       `insert into catalog.product(id,product_code,name,category_id,unit_code,primary_workshop_id)
-       values($1,$2,'Торт для погрузки B13','11000000-0000-4000-8000-000000000001','PCS',$3)`,
-      [productId, `B13-${seed.slice(0, 8).toUpperCase()}`, departmentId],
+       values($1,$2,'Торт для погрузки B13','11000000-0000-4000-8000-000000000001','PCS',$3),
+             ($4,$5,'Рыжик прямой передачи B13','11000000-0000-4000-8000-000000000001','PCS',$3)`,
+      [
+        productId,
+        `B13-${seed.slice(0, 8).toUpperCase()}`,
+        departmentId,
+        directProductId,
+        `B13-DIRECT-${seed.slice(0, 6).toUpperCase()}`,
+      ],
     );
     await database.query(
       `insert into catalog.product_barcode(id,product_id,barcode) values($1,$2,$3)`,
@@ -130,6 +160,14 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
         ],
       );
     }
+    await database.query(
+      `insert into logistics.territory_run(
+         id,dispatch_date,territory_id,driver_employee_id,status,source,
+         territory_code_snapshot,territory_name_snapshot,driver_name_snapshot,
+         created_by,updated_by,correlation_id
+       ) values($1,$2,$3,$4,'DRAFT','MANUAL','Т4','Территория 4','Водитель 4 B13',$5,$5,$6)`,
+      [randomUUID(), dispatchDate, territoryIds[3], driverFourId, adminId, randomUUID()],
+    );
     const stockDocumentId = randomUUID();
     await database.query(
       `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,source_id,actor_id,actor_role,correlation_id,idempotency_key)
@@ -146,6 +184,36 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
        ('15000000-0000-4000-8000-000000000001',$1,'ADJUSTMENT_CLEARING',-40,-40),
        ('15000000-0000-4000-8000-000000000001',$1,'FREE_STOCK',40,40)`,
       [productId],
+    );
+    const directStockDocumentId = randomUUID();
+    await database.query(
+      `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,source_id,actor_id,actor_role,correlation_id,idempotency_key)
+       values($1,'15000000-0000-4000-8000-000000000001','CORRECTION',$2,'B13_DIRECT_FIXTURE',$3,$4,'ADMIN',$5,$6)`,
+      [
+        directStockDocumentId,
+        dispatchDate,
+        directProductId,
+        adminId,
+        randomUUID(),
+        `direct-stock-${seed}`,
+      ],
+    );
+    await database.query(
+      `insert into warehouse.movement(id,document_id,product_id,source_bucket,target_bucket,quantity,business_date)
+       values($1,$2,$3,'ADJUSTMENT_CLEARING','FREE_STOCK',12,$4)`,
+      [randomUUID(), directStockDocumentId, directProductId, dispatchDate],
+    );
+    await database.query(
+      `insert into warehouse.stock_balance(warehouse_id,product_id,bucket,quantity,ledger_quantity) values
+       ('15000000-0000-4000-8000-000000000001',$1,'ADJUSTMENT_CLEARING',-12,-12),
+       ('15000000-0000-4000-8000-000000000001',$1,'FREE_STOCK',12,12)`,
+      [directProductId],
+    );
+    await database.query(
+      `insert into planning.territory_daily_norm(
+         id,territory_id,dispatch_date,product_id,quantity,version,reason,created_by,correlation_id
+       ) values($1,$2,$3,$4,8,1,'Проверка прямой передачи',$5,$6)`,
+      [randomUUID(), territoryIds[3], dispatchDate, directProductId, adminId, randomUUID()],
     );
   });
 
@@ -179,6 +247,240 @@ describe.runIf(hasDatabase)("LoadingRepository with PostgreSQL", () => {
     await expect(
       Promise.resolve().then(() => repository.driverDay(dispatchDate, keeper)),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("shows territory norms and incrementally sends one product to its driver", async () => {
+    const before = await repository.warehouseDay(dispatchDate, keeper);
+    const productBefore = before.products.find((product) => product.id === directProductId)!;
+    expect(productBefore).toMatchObject({
+      freeQuantity: 12,
+      plannedQuantity: 8,
+      productGroupCode: "BASIC_CAKES",
+      remainingQuantity: 8,
+      sentQuantity: 0,
+    });
+    expect(productBefore.territories.find((item) => item.territoryNumber === 4)).toMatchObject({
+      canSend: true,
+      driverName: "Водитель 4 B13",
+      plannedQuantity: 8,
+      remainingQuantity: 8,
+    });
+
+    const firstKey = `direct-first-${seed}`;
+    const first = await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: firstKey,
+      productId: directProductId,
+      quantity: 3,
+      territoryId: territoryIds[3]!,
+    });
+    const repeated = await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: firstKey,
+      productId: directProductId,
+      quantity: 3,
+      territoryId: territoryIds[3]!,
+    });
+    expect(repeated.lineId).toBe(first.lineId);
+    await repository.sendToTerritory({
+      actor: admin,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `direct-second-${seed}`,
+      productId: directProductId,
+      quantity: 2,
+      territoryId: territoryIds[3]!,
+    });
+
+    const after = await repository.warehouseDay(dispatchDate, keeper);
+    const productAfter = after.products.find((product) => product.id === directProductId)!;
+    expect(productAfter).toMatchObject({
+      freeQuantity: 7,
+      plannedQuantity: 8,
+      remainingQuantity: 3,
+      sentQuantity: 5,
+    });
+    expect(productAfter.territories.find((item) => item.territoryNumber === 4)).toMatchObject({
+      plannedQuantity: 8,
+      remainingQuantity: 3,
+      sentQuantity: 5,
+    });
+    const driverDay = await repository.driverDay(dispatchDate, drivers[3]!);
+    expect(driverDay.sessions).toHaveLength(1);
+    expect(driverDay.sessions[0]?.lines).toMatchObject([
+      { productId: directProductId, quantity: 5, status: "SENT_TO_DRIVER" },
+    ]);
+
+    let directLine = driverDay.sessions[0]!.lines[0]!;
+    await repository.reviseLine({
+      actor: keeper,
+      comment: "Исправлено до приёмки водителем",
+      correlationId: randomUUID(),
+      idempotencyKey: `direct-revise-${seed}`,
+      lineId: directLine.id,
+      quantity: 4,
+      version: directLine.version,
+    });
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 8, RESERVED_FOR_LOADING: 4 });
+
+    directLine = (await repository.driverDay(dispatchDate, drivers[3]!)).sessions[0]!.lines[0]!;
+    const transferKey = `direct-territory-${seed}`;
+    const reassigned = await repository.reassignLineToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: transferKey,
+      lineId: directLine.id,
+      reason: "Исправлена территория до приёмки водителем",
+      targetTerritoryId: territoryIds[0]!,
+      version: directLine.version,
+    });
+    const reassignedAgain = await repository.reassignLineToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: transferKey,
+      lineId: directLine.id,
+      reason: "Исправлена территория до приёмки водителем",
+      targetTerritoryId: territoryIds[0]!,
+      version: directLine.version,
+    });
+    expect(reassignedAgain).toEqual(reassigned);
+    expect(
+      (await repository.driverDay(dispatchDate, drivers[3]!)).sessions.flatMap(
+        (session) => session.lines,
+      ),
+    ).toHaveLength(0);
+    directLine = (await repository.driverDay(dispatchDate, drivers[0]!)).sessions
+      .flatMap((session) => session.lines)
+      .find((line) => line.productId === directProductId)!;
+    expect(directLine).toMatchObject({ quantity: 4, status: "SENT_TO_DRIVER" });
+
+    const cancelKey = `direct-cancel-${seed}`;
+    const cancelled = await repository.cancelLine({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: cancelKey,
+      lineId: directLine.id,
+      reason: "Отменено складом до приёмки водителем",
+      version: directLine.version,
+    });
+    const cancelledAgain = await repository.cancelLine({
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: cancelKey,
+      lineId: directLine.id,
+      reason: "Отменено складом до приёмки водителем",
+      version: directLine.version,
+    });
+    expect(cancelledAgain).toEqual(cancelled);
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 12, RESERVED_FOR_LOADING: 0 });
+    expect(
+      (await repository.warehouseDay(dispatchDate, keeper)).products.find(
+        (product) => product.id === directProductId,
+      ),
+    ).toMatchObject({ freeQuantity: 12, remainingQuantity: 8, sentQuantity: 0 });
+    const cancellationCount = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_line_cancellation where loading_line_id=$1`,
+      [directLine.id],
+    );
+    expect(cancellationCount.rows[0]?.count).toBe(1);
+    const history = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_line_revision where loading_line_id=$1`,
+      [directLine.id],
+    );
+    expect(history.rows[0]?.count).toBe(4);
+
+    await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `direct-after-cancel-${seed}`,
+      productId: directProductId,
+      quantity: 2,
+      territoryId: territoryIds[3]!,
+    });
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 10, RESERVED_FOR_LOADING: 2 });
+  });
+
+  it("keeps one territory load and gives the whole assortment to the next route driver", async () => {
+    const firstDriverLine = (await repository.driverDay(dispatchDate, drivers[3]!)).sessions
+      .flatMap((session) => session.lines)
+      .find((line) => line.productId === directProductId)!;
+    expect(firstDriverLine).toMatchObject({ quantity: 2, status: "SENT_TO_DRIVER" });
+    await repository.respondLine({
+      actor: drivers[3]!,
+      correlationId: randomUUID(),
+      counterQuantity: null,
+      idempotencyKey: `direct-first-driver-confirm-${seed}`,
+      lineId: firstDriverLine.id,
+      reason: null,
+      responseType: "CONFIRM",
+      revisionId: firstDriverLine.currentRevisionId,
+      version: firstDriverLine.version,
+    });
+
+    await database.transaction(async (client) => {
+      await client.query(
+        `update logistics.driver_route_shift
+         set status='ENDED',ended_at=now(),end_reason='Водитель закончил рейс',version=version+1
+         where dispatch_date=$1 and territory_id=$2 and status='ACTIVE'`,
+        [dispatchDate, territoryIds[3]],
+      );
+      await client.query(
+        `insert into logistics.driver_route_shift(
+           id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+         ) values($1,$2,$3,$4,$5,$6)`,
+        [randomUUID(), dispatchDate, territoryIds[3], driverFiveId, adminId, randomUUID()],
+      );
+    });
+
+    const warehouse = await repository.warehouseDay(dispatchDate, keeper);
+    expect(
+      warehouse.products
+        .find((product) => product.id === directProductId)
+        ?.territories.find((territory) => territory.territoryId === territoryIds[3]),
+    ).toMatchObject({ canSend: true, driverName: "Сменщик B13" });
+
+    await repository.sendToTerritory({
+      actor: keeper,
+      correlationId: randomUUID(),
+      dispatchDate,
+      idempotencyKey: `direct-after-takeover-${seed}`,
+      productId: directProductId,
+      quantity: 1,
+      territoryId: territoryIds[3]!,
+    });
+
+    expect((await repository.driverDay(dispatchDate, drivers[3]!)).sessions).toHaveLength(0);
+    const replacementDay = await repository.driverDay(dispatchDate, replacementDriver);
+    expect(
+      replacementDay.sessions
+        .flatMap((session) => session.lines)
+        .find((line) => line.productId === directProductId),
+    ).toMatchObject({
+      acceptances: [{ driverName: "Водитель 4 B13", quantity: 2 }],
+      quantity: 3,
+      status: "SENT_TO_DRIVER",
+    });
+    expect(replacementDay.products.find((product) => product.id === directProductId)).toMatchObject(
+      {
+        acceptedQuantity: 2,
+        awaitingAcceptanceQuantity: 1,
+        plannedQuantity: 8,
+        remainingQuantity: 6,
+        sentQuantity: 3,
+      },
+    );
+    const territorySessions = await database.query<{ count: number }>(
+      `select count(*)::int count from loading.loading_session
+       where dispatch_date=$1 and territory_id=$2 and status='IN_PROGRESS'`,
+      [dispatchDate, territoryIds[3]],
+    );
+    expect(territorySessions.rows[0]?.count).toBe(1);
+    expect(await directBalances()).toMatchObject({ FREE_STOCK: 9, RESERVED_FOR_LOADING: 3 });
   });
 
   it("preserves revisions and writes off stock only after both confirmations", async () => {
@@ -346,6 +648,15 @@ async function balances() {
     `select bucket,quantity from warehouse.stock_balance
      where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
     [productId],
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
+}
+
+async function directBalances() {
+  const result = await database.query<{ bucket: string; quantity: number }>(
+    `select bucket,quantity from warehouse.stock_balance
+     where warehouse_id='15000000-0000-4000-8000-000000000001' and product_id=$1`,
+    [directProductId],
   );
   return Object.fromEntries(result.rows.map((row) => [row.bucket, row.quantity]));
 }

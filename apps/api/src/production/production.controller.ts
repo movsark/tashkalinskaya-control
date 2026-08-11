@@ -61,6 +61,21 @@ export class ProductionController {
     );
   }
 
+  @Post("days/:productionDate/products/:productId/claim")
+  @RequireRoles("CONFECTIONER")
+  claim(
+    @Param("productionDate") productionDate: string,
+    @Param("productId", ParseUUIDPipe) productId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.production.claim(
+      productionDate,
+      productId,
+      requireActor(request),
+      requireCorrelationId(request),
+    );
+  }
+
   @Post("tasks/:taskId/assign")
   @RequireRoles("ADMIN", "WORKSHOP_MANAGER")
   assign(

@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import type {
   ControlCenterView,
+  DriverTerritoryReportView,
+  ProductionOutboundReportView,
   ReportCode,
   ReportExportFormat,
   ReportJobView,
@@ -204,6 +206,74 @@ export class ReportsRepository {
     };
   }
 
+  async productionOutbound(
+    dateFrom: string,
+    dateTo: string,
+    actor: ReportsActor,
+  ): Promise<ProductionOutboundReportView> {
+    assertReportAccess(actor, "PRODUCTION_OUTBOUND");
+    requireRange(dateFrom, dateTo);
+    const rows = await this.database.transaction((client) =>
+      queryRows(client, "PRODUCTION_OUTBOUND", dateFrom, dateTo),
+    );
+    const mappedRows = rows.map((row) => ({
+      onHandQuantity: Number(row.onHandQuantity ?? 0),
+      outboundQuantity: Number(row.outboundQuantity ?? 0),
+      producedQuantity: Number(row.producedQuantity ?? 0),
+      productCode: String(row.productCode ?? ""),
+      productId: String(row.productId ?? ""),
+      productName: String(row.productName ?? ""),
+    }));
+    return {
+      dateFrom,
+      dateTo,
+      generatedAt: new Date().toISOString(),
+      rows: mappedRows,
+      totals: {
+        onHandQuantity: mappedRows.reduce((sum, row) => sum + row.onHandQuantity, 0),
+        outboundQuantity: mappedRows.reduce((sum, row) => sum + row.outboundQuantity, 0),
+        producedQuantity: mappedRows.reduce((sum, row) => sum + row.producedQuantity, 0),
+      },
+      warehouseAsOf: dateTo,
+    };
+  }
+
+  async driverTerritory(
+    dateFrom: string,
+    dateTo: string,
+    actor: ReportsActor,
+  ): Promise<DriverTerritoryReportView> {
+    assertReportAccess(actor, "DRIVER_TERRITORY");
+    requireRange(dateFrom, dateTo);
+    const rows = await this.database.transaction((client) =>
+      queryRows(client, "DRIVER_TERRITORY", dateFrom, dateTo),
+    );
+    const mappedRows = rows.map((row) => ({
+      driverId: String(row.driverId ?? ""),
+      driverName: String(row.driverName ?? ""),
+      goodReturnQuantity: Number(row.goodReturnQuantity ?? 0),
+      outboundQuantity: Number(row.outboundQuantity ?? 0),
+      productCode: String(row.productCode ?? ""),
+      productId: String(row.productId ?? ""),
+      productName: String(row.productName ?? ""),
+      spoilageQuantity: Number(row.spoilageQuantity ?? 0),
+      territoryId: String(row.territoryId ?? ""),
+      territoryName: String(row.territoryName ?? ""),
+      territoryNumber: Number(row.territoryNumber ?? 0),
+    }));
+    return {
+      dateFrom,
+      dateTo,
+      generatedAt: new Date().toISOString(),
+      rows: mappedRows,
+      totals: {
+        goodReturnQuantity: mappedRows.reduce((sum, row) => sum + row.goodReturnQuantity, 0),
+        outboundQuantity: mappedRows.reduce((sum, row) => sum + row.outboundQuantity, 0),
+        spoilageQuantity: mappedRows.reduce((sum, row) => sum + row.spoilageQuantity, 0),
+      },
+    };
+  }
+
   async createJob(input: {
     actor: ReportsActor;
     correlationId: string;
@@ -249,7 +319,7 @@ export class ReportsRepository {
         requesterName: input.actor.employeeName,
         rows,
         templateVersion: REPORT_TEMPLATE_VERSION,
-        title: definition.title,
+        title: input.scopeLabel ? `${definition.title} · ${input.scopeLabel}` : definition.title,
         totals,
       };
       const id = randomUUID();
@@ -330,6 +400,16 @@ async function queryRows(
 function reportQuery(code: ReportCode, from: string, to: string, scopeId?: string) {
   const scopedValues = [from, to, scopeId ?? null];
   switch (code) {
+    case "PRODUCTION_OUTBOUND":
+      return {
+        sql: productionOutboundQuery,
+        values: [from, to, null],
+      };
+    case "DRIVER_TERRITORY":
+      return {
+        sql: driverTerritoryQuery,
+        values: scopedValues,
+      };
     case "MOVEMENTS":
       return {
         sql: `select md.business_date::text date,md.document_type "documentType",
@@ -459,6 +539,125 @@ function reportQuery(code: ReportCode, from: string, to: string, scopeId?: strin
       };
   }
 }
+
+const driverTerritoryQuery = `with activity as (
+  select s.territory_id,t.territory_number,s.territory_name_snapshot,
+    s.driver_employee_id,s.driver_name_snapshot,l.product_id,p.product_code,p.name product_name,
+    r.quantity::int quantity,'OUTBOUND' kind
+  from loading.loading_session s
+  join loading.loading_line l on l.loading_session_id=s.id and l.status='CONFIRMED'
+  join loading.loading_line_revision r
+    on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+  join logistics.territory t on t.id=s.territory_id
+  join catalog.product p on p.id=l.product_id
+  where s.dispatch_date between $1 and $2 and s.status<>'CANCELLED'
+    and ($3::uuid is null or s.territory_id=$3)
+  union all
+  select q.territory_id,t.territory_number,t.name,q.source_driver_id,q.source_driver_name_snapshot,
+    l.product_id,l.product_code_snapshot,l.product_name_snapshot,l.quantity::int,'GOOD_RETURN'
+  from returns.good_return_request q
+  join returns.good_return_request_line l on l.request_id=q.id
+  join logistics.territory t on t.id=q.territory_id
+  where q.dispatch_date between $1 and $2 and q.status='ACCEPTED'
+    and ($3::uuid is null or q.territory_id=$3)
+  union all
+  select w.source_territory_id,t.territory_number,t.name,w.source_driver_id,w.source_driver_name_snapshot,
+    w.product_id,w.product_code_snapshot,w.product_name_snapshot,w.quantity::int,'SPOILAGE'
+  from spoilage.writeoff_request w
+  join spoilage.driver_spoilage_receipt r on r.request_id=w.id
+  join logistics.territory t on t.id=w.source_territory_id
+  where w.source_dispatch_date between $1 and $2
+    and w.physical_source_kind='DRIVER'
+    and ($3::uuid is null or w.source_territory_id=$3)
+)
+select a.territory_id "territoryId",
+  a.territory_number::int "territoryNumber",
+  a.territory_name_snapshot "territoryName",a.driver_employee_id "driverId",
+  a.driver_name_snapshot "driverName",a.product_id "productId",a.product_code "productCode",
+  a.product_name "productName",
+  coalesce(sum(a.quantity) filter(where a.kind='OUTBOUND'),0)::int "outboundQuantity",
+  coalesce(sum(a.quantity) filter(where a.kind='GOOD_RETURN'),0)::int "goodReturnQuantity",
+  coalesce(sum(a.quantity) filter(where a.kind='SPOILAGE'),0)::int "spoilageQuantity"
+from activity a
+group by a.territory_id,a.territory_number,a.territory_name_snapshot,
+  a.driver_employee_id,a.driver_name_snapshot,a.product_id,a.product_code,a.product_name
+order by "territoryNumber",a.driver_name_snapshot,a.product_name`;
+
+const productionOutboundQuery = `with produced as (
+  select t.product_id,sum(b.quantity)::int produced_quantity
+  from production.batch b
+  join production.task t on t.id=b.task_id
+  where b.production_date between $1 and $2
+    and b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE')
+  group by t.product_id
+), dispatched as (
+  select l.product_id,sum(r.quantity)::int dispatched_quantity
+  from loading.loading_session s
+  join loading.loading_line l on l.loading_session_id=s.id and l.status='CONFIRMED'
+  join loading.loading_line_revision r
+    on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+  where s.dispatch_date between $1 and $2
+    and s.status<>'CANCELLED'
+    and ($3::uuid is null or s.territory_id=$3)
+  group by l.product_id
+), returned as (
+  select l.product_id,sum(l.quantity)::int returned_quantity
+  from returns.good_return_receipt r
+  join returns.good_return_line l on l.receipt_id=r.id
+  where r.source_dispatch_date between $1 and $2
+    and ($3::uuid is null or r.source_territory_id=$3)
+  group by l.product_id
+), warehouse as (
+  select m.product_id,
+    sum(case when m.target_bucket in (
+      'FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL',
+      'RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING'
+    ) then m.quantity else 0 end
+    - case when m.source_bucket in (
+      'FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL',
+      'RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING'
+    ) then m.quantity else 0 end)::int on_hand_quantity
+  from warehouse.movement m
+  where m.business_date <= $2
+  group by m.product_id
+), unposted_dispatch as (
+  select l.product_id,sum(r.quantity)::int quantity
+  from loading.loading_session s
+  join loading.loading_line l on l.loading_session_id=s.id and l.status='CONFIRMED'
+  join loading.loading_line_revision r
+    on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+  where s.dispatch_date <= $2
+    and s.status<>'CANCELLED'
+    and not exists (
+      select 1 from warehouse.movement_document d
+      where d.document_type='LOADING_COMPLETION' and d.source_id=s.id
+    )
+  group by l.product_id
+)
+select p.id "productId",p.product_code "productCode",p.name "productName",
+  coalesce(pr.produced_quantity,0)::int "producedQuantity",
+  greatest(coalesce(di.dispatched_quantity,0)-coalesce(rt.returned_quantity,0),0)::int "outboundQuantity",
+  (coalesce(wh.on_hand_quantity,0)-coalesce(ud.quantity,0))::int "onHandQuantity"
+from catalog.product p
+left join produced pr on pr.product_id=p.id
+left join dispatched di on di.product_id=p.id
+left join returned rt on rt.product_id=p.id
+left join warehouse wh on wh.product_id=p.id
+left join unposted_dispatch ud on ud.product_id=p.id
+join catalog.category c on c.id=p.category_id
+where (
+  coalesce(pr.produced_quantity,0)<>0
+  or coalesce(di.dispatched_quantity,0)<>0
+  or coalesce(rt.returned_quantity,0)<>0
+  or coalesce(wh.on_hand_quantity,0)<>0
+)
+order by case c.code
+  when 'BASIC_CAKES' then 1
+  when 'PREMIUM_CAKES' then 2
+  when 'PIES_AND_PASTRIES' then 3
+  when 'DESSERTS' then 4
+  when 'DRY_BAKERY' then 5
+  else 6 end,p.name`;
 
 function assertFactoryReader(actor: ReportsActor): void {
   if (factoryReportRoles(actor).length === 0) {

@@ -7,6 +7,8 @@ import type {
   AuthenticatedUser,
   EmployeeSummary,
   PhoneRecoveryResult,
+  RoleCode,
+  ScopeType,
 } from "@tashkalinskaya/contracts";
 
 import type {
@@ -35,6 +37,83 @@ import { SmsRuService } from "./sms-ru.service";
 import { WebAuthnService } from "./webauthn.service";
 
 const persistentSessionMilliseconds = 365 * 24 * 60 * 60 * 1000;
+const localUatWorkshopId = "21000000-0000-4000-8000-000000000001";
+const localUatWarehouseId = "23000000-0000-4000-8000-000000000001";
+const localUatStoreId = "24000000-0000-4000-8000-000000000001";
+
+export interface LocalUatProfile {
+  readonly displayName: string;
+  readonly label: string;
+  readonly roleCode: RoleCode;
+  readonly scopeId: string | null;
+  readonly scopeType: ScopeType;
+}
+
+const localUatProfiles: readonly LocalUatProfile[] = [
+  {
+    displayName: "Тестовый Администратор",
+    label: "Администратор",
+    roleCode: "ADMIN",
+    scopeId: null,
+    scopeType: "FACTORY",
+  },
+  {
+    displayName: "Тестовый Руководитель",
+    label: "Руководитель",
+    roleCode: "MANAGER",
+    scopeId: null,
+    scopeType: "FACTORY",
+  },
+  {
+    displayName: "Тестовый Бухгалтер",
+    label: "Бухгалтер",
+    roleCode: "ACCOUNTANT",
+    scopeId: null,
+    scopeType: "FACTORY",
+  },
+  {
+    displayName: "Тестовый Ответственный",
+    label: "Ответственный цеха",
+    roleCode: "WORKSHOP_MANAGER",
+    scopeId: localUatWorkshopId,
+    scopeType: "WORKSHOP",
+  },
+  {
+    displayName: "Тестовый Кондитер",
+    label: "Кондитер",
+    roleCode: "CONFECTIONER",
+    scopeId: localUatWorkshopId,
+    scopeType: "WORKSHOP",
+  },
+  {
+    displayName: "Тестовый Кладовщик",
+    label: "Кладовщик",
+    roleCode: "WAREHOUSE_KEEPER",
+    scopeId: localUatWarehouseId,
+    scopeType: "WAREHOUSE",
+  },
+  {
+    displayName: "Тестовый Водитель",
+    label: "Водитель",
+    roleCode: "DRIVER",
+    scopeId: null,
+    scopeType: "FACTORY",
+  },
+  {
+    displayName: "Тестовый Продавец",
+    label: "Продавец магазина",
+    roleCode: "STORE_SELLER",
+    scopeId: localUatStoreId,
+    scopeType: "STORE",
+  },
+  {
+    displayName: "Тестовый Сотрудник",
+    label: "Только табель",
+    roleCode: "ATTENDANCE_ONLY",
+    scopeId: null,
+    scopeType: "FACTORY",
+  },
+];
 
 interface SessionResult {
   readonly body: AuthenticatedUser;
@@ -65,6 +144,44 @@ export class AuthService {
 
   recoveryConfig(): { smsRecoveryAvailable: boolean } {
     return { smsRecoveryAvailable: this.sms.available };
+  }
+
+  localUatProfiles(): readonly Pick<LocalUatProfile, "label" | "roleCode">[] {
+    return localUatProfiles.map(({ label, roleCode }) => ({ label, roleCode }));
+  }
+
+  async localUatLogin(roleCode: RoleCode, correlationId: string): Promise<SessionResult> {
+    const profile = localUatProfiles.find((candidate) => candidate.roleCode === roleCode);
+    if (profile === undefined) throw genericAuthenticationError();
+    const login = `local-uat-${roleCode.toLocaleLowerCase("en-US")}`;
+    const account = await this.repository.ensureLocalUatProfile({
+      departmentId: profile.scopeType === "WORKSHOP" ? localUatWorkshopId : null,
+      displayName: profile.displayName,
+      login,
+      passwordHash: await this.crypto.hashPassword(`Local UAT ${randomUUID()}`),
+      roleCode: profile.roleCode,
+      scopeId: profile.scopeId,
+      scopeType: profile.scopeType,
+    });
+    const sessionToken = this.crypto.generateSessionToken();
+    const session = this.createSession(
+      account.accountId,
+      account.deviceId,
+      account.authorizationVersion,
+      sessionToken,
+    );
+    await this.repository.createLoginSession({
+      accountId: account.accountId,
+      correlationId,
+      deviceId: account.deviceId,
+      employeeId: account.employeeId,
+      session,
+    });
+    return {
+      body: await this.toAuthenticatedUser(account.employeeId, session, sessionToken),
+      cookieExpiresAt: session.accessExpiresAt.toISOString(),
+      sessionToken,
+    };
   }
 
   async changePassword(

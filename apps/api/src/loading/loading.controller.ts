@@ -13,12 +13,15 @@ import { ApiTags } from "@nestjs/swagger";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  CancelLoadingLineDto,
   ConfirmLoadingSessionDto,
   CreateLoadingLineDto,
   OpenLoadingGroupDto,
   ReassignLoadingLineDto,
+  ReassignTerritoryLoadingLineDto,
   RespondLoadingLineDto,
   ReviseLoadingLineDto,
+  SendTerritoryLoadingLineDto,
 } from "./loading.dto";
 import { LoadingService } from "./loading.service";
 
@@ -56,6 +59,15 @@ export class LoadingController {
   ) {
     return this.service.createLine(id, dto, actor(request), correlationId(request));
   }
+  @Post("territories/:id/lines")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  sendToTerritory(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SendTerritoryLoadingLineDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.sendToTerritory(id, dto, actor(request), correlationId(request));
+  }
   @Put("lines/:id")
   @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
   reviseLine(
@@ -73,6 +85,24 @@ export class LoadingController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.reassignLine(id, dto, actor(request), correlationId(request));
+  }
+  @Post("lines/:id/reassign-territory")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  reassignLineToTerritory(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ReassignTerritoryLoadingLineDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.reassignLineToTerritory(id, dto, actor(request), correlationId(request));
+  }
+  @Post("lines/:id/cancel")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  cancelLine(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CancelLoadingLineDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.cancelLine(id, dto, actor(request), correlationId(request));
   }
   @Post("lines/:id/respond")
   @RequireRoles("DRIVER")

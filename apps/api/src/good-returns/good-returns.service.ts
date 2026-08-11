@@ -1,10 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  AcceptGoodReturnRequestDto,
   AllocateGoodReturnDto,
   CancelGoodReturnAllocationDto,
   ReceiveGoodReturnDto,
   ReviseGoodReturnAllocationDto,
+  SubmitGoodReturnRequestDto,
 } from "./good-returns.dto";
 import { GoodReturnsRepository } from "./good-returns.repository";
 
@@ -13,6 +15,30 @@ export class GoodReturnsService {
   constructor(private readonly repository: GoodReturnsRepository) {}
   workspace(dispatchDate: string, actor: AuthenticatedActor) {
     return this.repository.workspace(dispatchDate, toActor(actor));
+  }
+  driverWorkspace(dispatchDate: string, actor: AuthenticatedActor) {
+    return this.repository.driverWorkspace(dispatchDate, toActor(actor));
+  }
+  submitRequest(dto: SubmitGoodReturnRequestDto, actor: AuthenticatedActor, correlationId: string) {
+    return this.repository.submitRequest({
+      ...dto,
+      comment: dto.comment?.trim() ?? null,
+      actor: toActor(actor),
+      correlationId,
+    });
+  }
+  acceptRequest(
+    id: string,
+    dto: AcceptGoodReturnRequestDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ) {
+    return this.repository.acceptRequest({
+      ...dto,
+      actor: toActor(actor),
+      correlationId,
+      requestId: id,
+    });
   }
   receive(dto: ReceiveGoodReturnDto, actor: AuthenticatedActor, correlationId: string) {
     return this.repository.receive({

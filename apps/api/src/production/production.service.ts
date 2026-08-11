@@ -33,6 +33,16 @@ export class ProductionService {
     return this.repository.generateTasks({ actor, correlationId, productionDate: date });
   }
 
+  claim(date: string, productId: string, actor: ProductionActor, correlationId: string) {
+    assertDate(date);
+    return this.repository.claimNormDemand({
+      actor,
+      correlationId,
+      productId,
+      productionDate: date,
+    });
+  }
+
   assign(
     taskId: string,
     dto: AssignProductionTaskDto,

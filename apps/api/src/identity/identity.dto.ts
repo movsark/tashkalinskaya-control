@@ -17,6 +17,11 @@ import {
 
 import { ROLE_CODES, SCOPE_TYPES, type EmploymentStatus } from "@tashkalinskaya/contracts";
 
+export class LocalUatLoginDto {
+  @IsIn(ROLE_CODES)
+  roleCode!: (typeof ROLE_CODES)[number];
+}
+
 export class RoleInputDto {
   @IsIn(ROLE_CODES)
   roleCode!: (typeof ROLE_CODES)[number];

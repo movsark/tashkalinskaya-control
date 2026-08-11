@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  NotFoundException,
   Post,
   Req,
   Res,
@@ -23,6 +24,7 @@ import {
   ConfirmPhoneVerificationDto,
   LoginDto,
   LoginOptionsDto,
+  LocalUatLoginDto,
   PreviewEmployeeRegistrationDto,
   RecoverAccountDto,
   RegisterEmployeeDto,
@@ -48,6 +50,28 @@ export class AuthController {
   @Get("recovery/config")
   recoveryConfig() {
     return this.authService.recoveryConfig();
+  }
+
+  @Get("local-uat/profiles")
+  localUatProfiles() {
+    this.requireLocalUatQuickLogin();
+    return this.authService.localUatProfiles();
+  }
+
+  @HttpCode(200)
+  @Post("local-uat/login")
+  async localUatLogin(
+    @Body() dto: LocalUatLoginDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    this.requireLocalUatQuickLogin();
+    const result = await this.authService.localUatLogin(
+      dto.roleCode,
+      requireCorrelationId(request),
+    );
+    this.setSessionCookie(response, result.sessionToken, result.cookieExpiresAt);
+    return result.body;
   }
 
   @HttpCode(202)
@@ -289,6 +313,10 @@ export class AuthController {
       secure:
         this.config.nodeEnvironment !== "development" && this.config.nodeEnvironment !== "test",
     });
+  }
+
+  private requireLocalUatQuickLogin(): void {
+    if (!this.config.localUatQuickLogin) throw new NotFoundException();
   }
 }
 

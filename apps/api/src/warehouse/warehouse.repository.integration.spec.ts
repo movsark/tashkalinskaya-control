@@ -12,13 +12,18 @@ const repository = new WarehouseRepository(database);
 const seed = randomUUID();
 const workshopId = randomUUID();
 const productId = randomUUID();
+const pickupProductId = randomUUID();
 const adminId = randomUUID();
 const keeperId = randomUUID();
 const managerId = randomUUID();
 const batchId = randomUUID();
 const secondBatchId = randomUUID();
+const pickupBatchId = randomUUID();
+const pickupSecondBatchId = randomUUID();
 const taskId = randomUUID();
 const secondTaskId = randomUUID();
+const pickupTaskId = randomUUID();
+const pickupSecondTaskId = randomUUID();
 const planId = randomUUID();
 const productionDate = new Date(
   Date.UTC(2300, 0, 1 + (Number.parseInt(seed.slice(0, 8), 16) % 40_000)),
@@ -43,9 +48,15 @@ describe.runIf(Boolean(process.env.DATABASE_URL))("WarehouseRepository with Post
       `insert into catalog.product(id,product_code,name,category_id,unit_code,primary_workshop_id) values($1,$2,'Торт B12','11000000-0000-4000-8000-000000000001','PCS',$3)`,
       [productId, `B12-${seed.slice(0, 8).toUpperCase()}`, workshopId],
     );
+    await database.query(
+      `insert into catalog.product(id,product_code,name,category_id,unit_code,primary_workshop_id)
+       values($1,$2,'Рыжик B12','11000000-0000-4000-8000-000000000001','PCS',$3)`,
+      [pickupProductId, `P12-${seed.slice(0, 8).toUpperCase()}`, workshopId],
+    );
     const runId = randomUUID(),
       snapshotId = randomUUID(),
-      line1 = randomUUID();
+      line1 = randomUUID(),
+      pickupLine = randomUUID();
     await database.query(
       `insert into planning.plan_run(id,production_date,trigger_source,status,correlation_id,created_by) values($1,$2,'ADMIN_RETRY','PUBLISHED',$3,$4)`,
       [runId, productionDate, randomUUID(), adminId],
@@ -61,6 +72,11 @@ describe.runIf(Boolean(process.env.DATABASE_URL))("WarehouseRepository with Post
     await database.query(
       `insert into planning.production_plan_line(id,plan_id,product_id,workshop_id,quantity) values($1,$2,$3,$4,20)`,
       [line1, planId, productId, workshopId],
+    );
+    await database.query(
+      `insert into planning.production_plan_line(id,plan_id,product_id,workshop_id,quantity)
+       values($1,$2,$3,$4,14)`,
+      [pickupLine, planId, pickupProductId, workshopId],
     );
     await database.query(
       `insert into production.task(id,plan_id,plan_line_id,correction_no,production_date,product_id,product_code_snapshot,product_name_snapshot,workshop_id,workshop_name_snapshot,production_window,target_quantity,status,created_by,correlation_id) values($1,$2,$3,0,$4,$5,'B12','Торт B12',$6,'Цех B12','DAY',10,'IN_PROGRESS',$7,$8),($9,$2,$10,1,$4,$5,'B12','Торт B12',$6,'Цех B12','DAY',10,'IN_PROGRESS',$7,$11)`,
@@ -93,6 +109,45 @@ describe.runIf(Boolean(process.env.DATABASE_URL))("WarehouseRepository with Post
         randomUUID(),
       ],
     );
+    await database.query(
+      `insert into production.task
+       (id,plan_id,plan_line_id,correction_no,production_date,product_id,product_code_snapshot,
+        product_name_snapshot,workshop_id,workshop_name_snapshot,production_window,target_quantity,
+        status,created_by,correlation_id)
+       values($1,$2,$3,0,$4,$5,'P12','Рыжик B12',$6,'Цех B12','DAY',14,'IN_PROGRESS',$7,$8),
+             ($9,$2,$3,1,$4,$5,'P12','Рыжик B12',$6,'Цех B12','DAY',14,'IN_PROGRESS',$7,$10)`,
+      [
+        pickupTaskId,
+        planId,
+        pickupLine,
+        productionDate,
+        pickupProductId,
+        workshopId,
+        adminId,
+        randomUUID(),
+        pickupSecondTaskId,
+        randomUUID(),
+      ],
+    );
+    await database.query(
+      `insert into production.batch
+       (id,task_id,quantity,status,production_date,production_window,produced_at,submitted_by,
+        idempotency_key,correlation_id)
+       values($1,$2,10,'AWAITING_WAREHOUSE',$3,'DAY',now(),$4,$5,$6),
+             ($7,$8,4,'AWAITING_WAREHOUSE',$3,'DAY',now(),$4,$9,$10)`,
+      [
+        pickupBatchId,
+        pickupTaskId,
+        productionDate,
+        adminId,
+        `pickup-a-${seed}`,
+        randomUUID(),
+        pickupSecondBatchId,
+        pickupSecondTaskId,
+        `pickup-b-${seed}`,
+        randomUUID(),
+      ],
+    );
   });
 
   afterAll(async () => database.onApplicationShutdown());
@@ -106,6 +161,51 @@ describe.runIf(Boolean(process.env.DATABASE_URL))("WarehouseRepository with Post
     await expect(
       Promise.resolve().then(() => repository.claim(batchId, 1, manager, randomUUID())),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("moves one product incrementally without treating the remainder as a discrepancy", async () => {
+    const key = `pickup-${seed}`;
+    const command = {
+      actor: keeper,
+      correlationId: randomUUID(),
+      idempotencyKey: key,
+      productId: pickupProductId,
+      productionDate,
+      productionWindow: "DAY" as const,
+      quantity: 4,
+      workshopId,
+    };
+    const first = await repository.transferPickup(command);
+    const repeated = await repository.transferPickup({ ...command, correlationId: randomUUID() });
+    expect(repeated.id).toBe(first.id);
+    expect(first).toMatchObject({ movedQuantity: 4, quantity: 4, remainingQuantity: 10 });
+
+    const partial = await repository.workspace(keeper);
+    const pickupRows = partial.queue.filter((item) => item.productId === pickupProductId);
+    expect(pickupRows.reduce((sum, item) => sum + item.quantity, 0)).toBe(14);
+    expect(pickupRows.reduce((sum, item) => sum + item.movedQuantity, 0)).toBe(4);
+    expect(pickupRows.reduce((sum, item) => sum + item.remainingQuantity, 0)).toBe(10);
+    expect(partial.discrepancies.some((item) => item.batchId === pickupBatchId)).toBe(false);
+    expect(partial.balances.find((item) => item.productId === pickupProductId)).toMatchObject({
+      freeQuantity: 4,
+      onHandQuantity: 4,
+      productGroupCode: "BASIC_CAKES",
+      productGroupName: "Торты Базовые",
+    });
+
+    const completed = await repository.transferPickup({
+      ...command,
+      correlationId: randomUUID(),
+      idempotencyKey: `${key}-complete`,
+      quantity: 10,
+    });
+    expect(completed).toMatchObject({ movedQuantity: 14, remainingQuantity: 0 });
+    const final = await repository.workspace(keeper);
+    expect(final.queue.some((item) => item.productId === pickupProductId)).toBe(false);
+    expect(final.balances.find((item) => item.productId === pickupProductId)).toMatchObject({
+      freeQuantity: 14,
+      onHandQuantity: 14,
+    });
   });
 
   it("claims and atomically receives a partial batch exactly once", async () => {

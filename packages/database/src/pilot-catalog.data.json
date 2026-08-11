@@ -1,0 +1,407 @@
+[
+  {
+    "productCode": "DE-001",
+    "name": "Десерт Лимонный (0,5кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-002",
+    "name": "Десерт Шоколадный (0,5кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-003",
+    "name": "Пирожное Заварные (0,7кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-004",
+    "name": "Пирожное Картошка (0,9кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-005",
+    "name": "Пирожное Медовик (0,8кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-006",
+    "name": "Профитроли (0,34кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-007",
+    "name": "Рулет Вишня (0,75 кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-008",
+    "name": "Рулет Манго (0,75)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-009",
+    "name": "Штрудель Вишневый (0,39кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "DE-010",
+    "name": "Штрудель Яблочный (0,39кг)",
+    "categoryCode": "DESSERTS"
+  },
+  {
+    "productCode": "PI-001",
+    "name": "Пирог Ассорти (0,75кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-002",
+    "name": "Пирог Вишневый (0,9кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-003",
+    "name": "Пирог Карамельный (0,85кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-004",
+    "name": "Пирог Лимонный (0,85кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-005",
+    "name": "Пирог Песочный с Абрикосовым Джемом (0,7кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-006",
+    "name": "Пирог Песочный с Вишневым Джемом (0,7кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-007",
+    "name": "Пирог Песочный с Клубничным Джемом (0,7кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-008",
+    "name": "Пирог Песочный с Черничным Джемом (0,7кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "PI-009",
+    "name": "Пирог Фисташковый (0,9кг)",
+    "categoryCode": "PIES_AND_PASTRIES"
+  },
+  {
+    "productCode": "SV-001",
+    "name": "СВ Апельсинка",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-002",
+    "name": "СВ Атлант",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-003",
+    "name": "СВ Бакусы",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-004",
+    "name": "СВ Винтажное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-005",
+    "name": "СВ Воронежское",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-006",
+    "name": "СВ Генриетта",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-007",
+    "name": "СВ Зерновое",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-008",
+    "name": "СВ Имбирное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-009",
+    "name": "СВ Йогуртовое",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-010",
+    "name": "СВ Красный бархат",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-011",
+    "name": "СВ Кукурузное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-012",
+    "name": "СВ Курабье",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-013",
+    "name": "СВ Ласточка",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-014",
+    "name": "СВ Лимонники",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-015",
+    "name": "СВ Маффины",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-016",
+    "name": "СВ Милка",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-017",
+    "name": "СВ Милкивей",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-018",
+    "name": "СВ Нежное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-019",
+    "name": "СВ Овсяное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-020",
+    "name": "СВ Пикант",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-021",
+    "name": "СВ Рогалики с ореховой начинкой (0,25кг)",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-022",
+    "name": "СВ Сгущемилк",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-023",
+    "name": "СВ Тульское",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-024",
+    "name": "СВ Фисташковое",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-025",
+    "name": "СВ Фитнес",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-026",
+    "name": "СВ Шокомилк",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "SV-027",
+    "name": "СВ Янтарное",
+    "categoryCode": "DRY_BAKERY"
+  },
+  {
+    "productCode": "TB-001",
+    "name": "ТБ Баунти (0,65кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-002",
+    "name": "ТБ Каприз (0,75кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-003",
+    "name": "ТБ Карамельный крем брюле (1кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-004",
+    "name": "ТБ Медовик Ванильный (1кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-005",
+    "name": "ТБ Медовик Испанский (1кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-006",
+    "name": "ТБ Медовик Шоколадный (0,9кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-007",
+    "name": "ТБ Милка (0,9 кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-008",
+    "name": "ТБ Муравейник (0,5кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-009",
+    "name": "ТБ Наполеон (0,8кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-010",
+    "name": "ТБ Наполеон с Черносливом (0,9кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-011",
+    "name": "ТБ Ореховый с вареной сгущенкой (1кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-012",
+    "name": "ТБ Панчо (1,2кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-013",
+    "name": "ТБ Пинчер (0,6 кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-014",
+    "name": "ТБ Пинчер Шоколадный (0,65 кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-015",
+    "name": "ТБ Рыжик (0,8кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-016",
+    "name": "ТБ Сметанник (0,7кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-017",
+    "name": "ТБ Сникерс карамельная фантазия (0,7 кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-018",
+    "name": "ТБ Шок (0,9кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TB-019",
+    "name": "ТБ Шок Новый (0,9кг)",
+    "categoryCode": "BASIC_CAKES"
+  },
+  {
+    "productCode": "TP-001",
+    "name": "ТП Банан в шоколаде (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-002",
+    "name": "ТП Бенто Банан (0,6 кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-003",
+    "name": "ТП Бенто Вишня (0,6 кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-004",
+    "name": "ТП Брауни с Вишней (0,8кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-005",
+    "name": "ТП Вишня (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-006",
+    "name": "ТП Графские развалины (0,8кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-007",
+    "name": "ТП Золотой ключик (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-008",
+    "name": "ТП Золотой ключик (2кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-009",
+    "name": "ТП Киевский",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-010",
+    "name": "ТП Киевский Безе (1,1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-011",
+    "name": "ТП Ласточка (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-012",
+    "name": "ТП Марс (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-013",
+    "name": "ТП Милкивей (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-014",
+    "name": "ТП Ореховый (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-015",
+    "name": "ТП Фундук и шоколад (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  },
+  {
+    "productCode": "TP-016",
+    "name": "ТП Эстерхази (1кг)",
+    "categoryCode": "PREMIUM_CAKES"
+  }
+]

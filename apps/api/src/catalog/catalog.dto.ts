@@ -1,4 +1,15 @@
-import { ArrayMaxSize, IsArray, IsIn, IsISO8601, IsString, Length } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  Min,
+} from "class-validator";
 
 export class PreviewCatalogImportDto {
   @IsISO8601({ strict: true })
@@ -19,4 +30,10 @@ export class CreateCatalogProductDto {
   @IsString()
   @Length(2, 200)
   name!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  dailyNormQuantity?: number;
 }

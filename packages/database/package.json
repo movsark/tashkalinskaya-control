@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "migrate": "tsx src/migrate.ts",
+    "seed:pilot-catalog": "tsx src/seed-pilot-catalog.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -4,7 +4,7 @@ import type {
   ReportSnapshotColumn,
 } from "@tashkalinskaya/contracts";
 
-export const REPORT_TEMPLATE_VERSION = "b18-v1";
+export const REPORT_TEMPLATE_VERSION = "b18-v2";
 
 export interface ReportDefinition extends ReportCatalogItemView {
   readonly columns: readonly ReportSnapshotColumn[];
@@ -19,6 +19,36 @@ const column = (
 ): ReportSnapshotColumn => ({ key, label, numeric, total, width });
 
 export const REPORT_DEFINITIONS: Readonly<Record<ReportCode, ReportDefinition>> = {
+  PRODUCTION_OUTBOUND: {
+    code: "PRODUCTION_OUTBOUND",
+    title: "Производство и вывоз",
+    description: "Выпуск, чистый вывоз после принятого годного возврата и остаток обычного склада.",
+    formats: ["XLSX"],
+    personalData: false,
+    columns: [
+      column("productCode", "Код", 14),
+      column("productName", "Наименование", 34),
+      column("producedQuantity", "Произведено", 15, true, true),
+      column("outboundQuantity", "Вывезено", 15, true, true),
+      column("onHandQuantity", "На складе", 15, true, true),
+    ],
+  },
+  DRIVER_TERRITORY: {
+    code: "DRIVER_TERRITORY",
+    title: "Вывоз и возвраты по территориям",
+    description: "Что вывез каждый водитель, вернул годным и передал как порчу.",
+    formats: ["XLSX"],
+    personalData: false,
+    columns: [
+      column("territoryNumber", "Территория", 14),
+      column("driverName", "Водитель", 26),
+      column("productCode", "Код", 14),
+      column("productName", "Наименование", 34),
+      column("outboundQuantity", "Вывезено", 15, true, true),
+      column("goodReturnQuantity", "Годный возврат", 18, true, true),
+      column("spoilageQuantity", "Порча", 15, true, true),
+    ],
+  },
   MOVEMENTS: {
     code: "MOVEMENTS",
     title: "Движение готовой продукции",

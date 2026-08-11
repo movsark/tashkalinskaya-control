@@ -9,6 +9,7 @@ import {
   ReceiveWarehouseBatchDto,
   ReleaseWarehouseBatchDto,
   ResolveWarehouseDiscrepancyDto,
+  TransferWarehousePickupDto,
 } from "./warehouse.dto";
 import { WarehouseService } from "./warehouse.service";
 
@@ -42,6 +43,12 @@ export class WarehouseController {
     @Req() r: AuthenticatedRequest,
   ) {
     return this.service.receive(id, d, actor(r), cid(r));
+  }
+  @Post("pickups/transfer") @RequireRoles("ADMIN", "WAREHOUSE_KEEPER") transferPickup(
+    @Body() d: TransferWarehousePickupDto,
+    @Req() r: AuthenticatedRequest,
+  ) {
+    return this.service.transferPickup(d, actor(r), cid(r));
   }
   @Post("discrepancies/:id/explain") @RequireRoles("ADMIN", "WORKSHOP_MANAGER") explain(
     @Param("id", ParseUUIDPipe) id: string,

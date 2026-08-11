@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
+import { LocalUatLogin } from "../../components/local-uat-login";
 import { ApiRequestError, login } from "../../lib/api";
 import { readDeviceId, saveDeviceId } from "../../lib/device-identity";
 import { homeRouteFor } from "../../lib/home-route";
@@ -109,6 +110,7 @@ export default function LoginPage() {
             <span>Телефон заменен или потерян?</span>
             <Link href="/recover">Восстановить доступ</Link>
           </div>
+          <LocalUatLogin />
         </div>
       </section>
     </main>

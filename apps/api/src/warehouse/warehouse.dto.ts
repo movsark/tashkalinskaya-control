@@ -1,4 +1,14 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } from "class-validator";
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Max,
+  Min,
+} from "class-validator";
 
 export class ClaimWarehouseBatchDto {
   @IsInt() @Min(1) version!: number;
@@ -14,6 +24,15 @@ export class ReceiveWarehouseBatchDto {
   @IsString() @Length(8, 100) idempotencyKey!: string;
   @IsOptional() @IsUUID() reasonId?: string;
   @IsOptional() @IsString() @Length(3, 500) comment?: string;
+}
+
+export class TransferWarehousePickupDto {
+  @IsUUID() productId!: string;
+  @IsUUID() workshopId!: string;
+  @IsDateString({ strict: true }) productionDate!: string;
+  @IsIn(["DAY", "NIGHT"]) productionWindow!: "DAY" | "NIGHT";
+  @IsInt() @Min(1) @Max(100_000) quantity!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 
 export class ExplainWarehouseDiscrepancyDto {

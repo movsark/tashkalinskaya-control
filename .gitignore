@@ -11,6 +11,7 @@
 # Зависимости и результаты сборки
 node_modules/
 .next/
+.next-e2e/
 dist/
 build/
 coverage/

@@ -1,12 +1,15 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  CancelLoadingLineDto,
   ConfirmLoadingSessionDto,
   CreateLoadingLineDto,
   OpenLoadingGroupDto,
   ReassignLoadingLineDto,
+  ReassignTerritoryLoadingLineDto,
   RespondLoadingLineDto,
   ReviseLoadingLineDto,
+  SendTerritoryLoadingLineDto,
 } from "./loading.dto";
 import { LoadingRepository } from "./loading.repository";
 
@@ -37,6 +40,23 @@ export class LoadingService {
       sessionVersion: dto.sessionVersion,
     });
   }
+  sendToTerritory(
+    territoryId: string,
+    dto: SendTerritoryLoadingLineDto,
+    actor: AuthenticatedActor,
+    cid: string,
+  ) {
+    assertDate(dto.dispatchDate);
+    return this.repository.sendToTerritory({
+      actor: toActor(actor),
+      correlationId: cid,
+      dispatchDate: dto.dispatchDate,
+      idempotencyKey: dto.idempotencyKey,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      territoryId,
+    });
+  }
   reviseLine(id: string, dto: ReviseLoadingLineDto, actor: AuthenticatedActor, cid: string) {
     return this.repository.reviseLine({
       actor: toActor(actor),
@@ -59,20 +79,47 @@ export class LoadingService {
       version: dto.version,
     });
   }
+  reassignLineToTerritory(
+    id: string,
+    dto: ReassignTerritoryLoadingLineDto,
+    actor: AuthenticatedActor,
+    cid: string,
+  ) {
+    return this.repository.reassignLineToTerritory({
+      actor: toActor(actor),
+      correlationId: cid,
+      idempotencyKey: dto.idempotencyKey,
+      lineId: id,
+      reason: dto.reason.trim(),
+      targetTerritoryId: dto.targetTerritoryId,
+      version: dto.version,
+    });
+  }
+  cancelLine(id: string, dto: CancelLoadingLineDto, actor: AuthenticatedActor, cid: string) {
+    return this.repository.cancelLine({
+      actor: toActor(actor),
+      correlationId: cid,
+      idempotencyKey: dto.idempotencyKey,
+      lineId: id,
+      reason: dto.reason.trim(),
+      version: dto.version,
+    });
+  }
   respondLine(id: string, dto: RespondLoadingLineDto, actor: AuthenticatedActor, cid: string) {
     if (dto.responseType === "COUNTER" && dto.counterQuantity === undefined)
       throw new BadRequestException("Укажите предлагаемое количество");
     if (dto.responseType !== "COUNTER" && dto.counterQuantity !== undefined)
       throw new BadRequestException("Другое количество допустимо только для предложения");
-    if (dto.responseType !== "CONFIRM" && (dto.reason?.trim().length ?? 0) < 3)
-      throw new BadRequestException("Для спора нужна причина");
+    if (dto.responseType === "COUNTER" && (dto.reason?.trim().length ?? 0) < 3)
+      throw new BadRequestException("Для другого количества нужна причина");
+    const reason = dto.reason?.trim() || null;
     return this.repository.respondLine({
       actor: toActor(actor),
       correlationId: cid,
       counterQuantity: dto.counterQuantity ?? null,
       idempotencyKey: dto.idempotencyKey,
       lineId: id,
-      reason: dto.reason?.trim() ?? null,
+      reason,
       responseType: dto.responseType,
       revisionId: dto.revisionId,
       version: dto.version,

@@ -3,7 +3,6 @@
 import type {
   AuthenticatedUser,
   PlanningSetupView,
-  ProductionPlanView,
   TerritoryDailyNormView,
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
@@ -14,11 +13,8 @@ import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
   getPlanningSetup,
-  getProductionPlan,
   getSession,
   getTerritoryDailyNorm,
-  overrideProductionPlan,
-  runProductionPlan,
   saveTerritoryDailyNorm,
 } from "../../../lib/api";
 
@@ -26,6 +22,8 @@ export default function ProductionPlanPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [setup, setSetup] = useState<PlanningSetupView | null>(null);
+  const [overviewNorms, setOverviewNorms] = useState<Record<string, TerritoryDailyNormView>>({});
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [dispatchDate, setDispatchDate] = useState(tomorrow());
   const [territoryId, setTerritoryId] = useState("");
   const [groupCode, setGroupCode] = useState("");
@@ -74,6 +72,30 @@ export default function ProductionPlanPage() {
   }, [router]);
 
   useEffect(() => {
+    if (territories.length === 0) return;
+    let cancelled = false;
+    setOverviewLoading(true);
+    Promise.all(
+      territories.map(
+        async (territory) =>
+          [territory.id, await getTerritoryDailyNorm(territory.id, dispatchDate)] as const,
+      ),
+    )
+      .then((entries) => {
+        if (!cancelled) setOverviewNorms(Object.fromEntries(entries));
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(messageOf(caught));
+      })
+      .finally(() => {
+        if (!cancelled) setOverviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchDate, territories]);
+
+  useEffect(() => {
     if (territoryId === "") {
       setNorm(null);
       setQuantities({});
@@ -110,6 +132,7 @@ export default function ProductionPlanPage() {
         session.csrfToken,
       );
       setNorm(saved);
+      setOverviewNorms((current) => ({ ...current, [selectedTerritory.id]: saved }));
       setQuantities(Object.fromEntries(saved.lines.map((line) => [line.productId, line.quantity])));
       setMessage(`Норма сохранена: территория ${selectedTerritory.number}, ${selectedGroup.name}.`);
     } catch (caught) {
@@ -126,19 +149,22 @@ export default function ProductionPlanPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            План производства · <Link href="/planning">календарь и запросы</Link>
+            План вывоза · <Link href="/planning">календарь и запросы</Link>
           </small>
         </div>
       </header>
 
       <section className="workspace-title planning-title">
         <div>
-          <p className="eyebrow">Нормы территорий</p>
-          <h1>План производства</h1>
-          <p>Сначала выберите территорию, затем группу продукции и укажите количество товаров.</p>
+          <p className="eyebrow">Норма вывоза по территориям</p>
+          <h1>План вывоза</h1>
+          <p>
+            Здесь указано, что водители должны вывезти в выбранную дату. Производственный план
+            показывается отдельно ниже и относится к дате изготовления.
+          </p>
           {isAdmin ? (
             <Link className="secondary-button" href="/planning/monthly-import">
-              Загрузить месячный план
+              Загрузить нормы на месяц
             </Link>
           ) : null}
         </div>
@@ -157,6 +183,14 @@ export default function ProductionPlanPage() {
 
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="logistics-success">{message}</p> : null}
+
+      <DispatchOverview
+        dispatchDate={dispatchDate}
+        loading={overviewLoading}
+        norms={overviewNorms}
+        products={setup?.products ?? []}
+        productGroups={setup?.productGroups ?? []}
+      />
 
       <nav className="territory-norm-breadcrumbs" aria-label="Путь выбора">
         <button
@@ -183,6 +217,7 @@ export default function ProductionPlanPage() {
 
       {territoryId === "" ? (
         <TerritoryGrid
+          norms={overviewNorms}
           territories={territories}
           onSelect={(nextTerritoryId) => {
             setTerritoryId(nextTerritoryId);
@@ -253,16 +288,16 @@ export default function ProductionPlanPage() {
           ) : null}
         </section>
       )}
-
-      <PublishedPlanSummary isAdmin={isAdmin} session={session} />
     </main>
   );
 }
 
 function TerritoryGrid({
+  norms,
   onSelect,
   territories,
 }: {
+  norms: Record<string, TerritoryDailyNormView>;
   onSelect: (territoryId: string) => void;
   territories: PlanningSetupView["territories"];
 }) {
@@ -280,9 +315,92 @@ function TerritoryGrid({
           <button key={territory.id} onClick={() => onSelect(territory.id)} type="button">
             <span>{territory.number}</span>
             <strong>Территория {territory.number}</strong>
-            <small>Открыть норму →</small>
+            <small>
+              {norms[territory.id]?.lines.reduce((sum, line) => sum + line.quantity, 0) ?? 0} шт. к
+              вывозу →
+            </small>
           </button>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function DispatchOverview({
+  dispatchDate,
+  loading,
+  norms,
+  productGroups,
+  products,
+}: {
+  dispatchDate: string;
+  loading: boolean;
+  norms: Record<string, TerritoryDailyNormView>;
+  productGroups: PlanningSetupView["productGroups"];
+  products: PlanningSetupView["products"];
+}) {
+  const [openGroupCode, setOpenGroupCode] = useState<string | null>(null);
+  const lines = Object.values(norms).flatMap((item) => item.lines);
+  const quantityByProduct = new Map<string, number>();
+  for (const line of lines) {
+    quantityByProduct.set(
+      line.productId,
+      (quantityByProduct.get(line.productId) ?? 0) + line.quantity,
+    );
+  }
+  const total = lines.reduce((sum, line) => sum + line.quantity, 0);
+  return (
+    <section className="dispatch-overview">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Вывоз {shortDate(dispatchDate)}</p>
+          <h2>Общий объём вывоза</h2>
+        </div>
+        <strong>{loading ? "Считаем…" : `${total} шт.`}</strong>
+      </div>
+      <div className="dispatch-overview__groups">
+        {productGroups.map((group) => {
+          const groupProducts = products.filter((product) => product.categoryCode === group.code);
+          const quantity = groupProducts.reduce(
+            (sum, product) => sum + (quantityByProduct.get(product.id) ?? 0),
+            0,
+          );
+          const isOpen = openGroupCode === group.code;
+          return (
+            <article
+              className={`dispatch-overview__group-item${isOpen ? " is-open" : ""}`}
+              key={group.code}
+            >
+              <button
+                aria-expanded={isOpen}
+                className="dispatch-overview__group-toggle"
+                onClick={() => setOpenGroupCode(isOpen ? null : group.code)}
+                type="button"
+              >
+                <span>
+                  <b>{group.name}</b>
+                  <small>{productCountLabel(groupProducts.length)}</small>
+                </span>
+                <strong>{quantity} шт.</strong>
+                <i aria-hidden="true">{isOpen ? "−" : "+"}</i>
+              </button>
+              {isOpen ? (
+                <div className="dispatch-overview__group-products">
+                  {groupProducts.length ? (
+                    groupProducts.map((product) => (
+                      <p key={product.id}>
+                        <span>{product.name}</span>
+                        <strong>{quantityByProduct.get(product.id) ?? 0} шт.</strong>
+                      </p>
+                    ))
+                  ) : (
+                    <p>В этой группе пока нет товаров.</p>
+                  )}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -329,235 +447,6 @@ function ProductGroupGrid({
   );
 }
 
-function PublishedPlanSummary({
-  isAdmin,
-  session,
-}: {
-  isAdmin: boolean;
-  session: AuthenticatedUser | null;
-}) {
-  const [productionDate, setProductionDate] = useState(tomorrow());
-  const [plan, setPlan] = useState<ProductionPlanView | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const totalQuantity = useMemo(
-    () => plan?.productionLines.reduce((sum, line) => sum + line.quantity, 0) ?? 0,
-    [plan],
-  );
-
-  useEffect(() => {
-    setError("");
-    getProductionPlan(productionDate)
-      .then(setPlan)
-      .catch((caught) => {
-        if (caught instanceof ApiRequestError && caught.status === 404) setPlan(null);
-        else setError(messageOf(caught));
-      });
-  }, [productionDate]);
-
-  async function act(operation: () => Promise<ProductionPlanView>, success: string) {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      setPlan(await operation());
-      setMessage(success);
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <details className="workspace-more published-plan-summary">
-      <summary>Сводный опубликованный план по цехам</summary>
-      <div className="workspace-more__content">
-        <label className="published-plan-date">
-          Дата производства
-          <input
-            type="date"
-            value={productionDate}
-            onChange={(event) => setProductionDate(event.target.value)}
-          />
-        </label>
-        {error ? <p className="form-error">{error}</p> : null}
-        {message ? <p className="logistics-success">{message}</p> : null}
-        {!plan ? (
-          <div className="planning-plan-empty">
-            <h2>План ещё не сформирован</h2>
-            <p>Сначала заполните нормы территорий и календарную связь дат.</p>
-            {isAdmin ? (
-              <button
-                className="button button-primary"
-                disabled={busy || !session}
-                onClick={() => {
-                  if (!session) return;
-                  void act(
-                    () => runProductionPlan(productionDate, session.csrfToken),
-                    "План рассчитан и опубликован.",
-                  );
-                }}
-              >
-                {busy ? "Формируем…" : "Сформировать сейчас"}
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <>
-            {plan.warnings.length ? (
-              <section className="planning-plan-warning" role="alert">
-                <strong>Нужно обратить внимание</strong>
-                <p>{plan.warnings.map(warningLabel).join(" · ")}</p>
-              </section>
-            ) : null}
-            <section className="planning-plan-meta" aria-label="Сводка плана">
-              <div>
-                <small>Товаров</small>
-                <strong>{plan.productionLines.length}</strong>
-              </div>
-              <div>
-                <small>Всего произвести</small>
-                <strong>{totalQuantity} шт.</strong>
-              </div>
-              <div>
-                <small>Опубликован</small>
-                <strong>{dateTime(plan.publishedAt)}</strong>
-              </div>
-              <div>
-                <small>Версия</small>
-                <strong>№ {plan.version}</strong>
-              </div>
-            </section>
-            <div className="planning-plan-table">
-              {plan.productionLines.map((line) => (
-                <PublishedPlanLine
-                  busy={busy}
-                  isAdmin={isAdmin}
-                  key={`${line.workshopId}:${line.productId}`}
-                  line={line}
-                  onOverride={(quantity, reason) => {
-                    if (!session) return;
-                    void act(
-                      () =>
-                        overrideProductionPlan(
-                          productionDate,
-                          { productId: line.productId, quantity, reason },
-                          session.csrfToken,
-                        ),
-                      "Создана новая версия опубликованного плана.",
-                    );
-                  }}
-                />
-              ))}
-            </div>
-            <details className="workspace-more planning-calculation">
-              <summary>
-                Как рассчитан план <b>{plan.demandLines.length}</b>
-              </summary>
-              <div className="workspace-more__content planning-plan-table">
-                {plan.demandLines.map((line) => (
-                  <article
-                    className="planning-plan-line planning-demand-line"
-                    key={`${line.dispatchDate}:${line.territoryId}:${line.productId}`}
-                  >
-                    <div>
-                      <strong>{line.productName}</strong>
-                      <small>
-                        {line.directionKind === "STORE"
-                          ? "Фирменный магазин"
-                          : `Территория ${line.territoryNumber}`}{" "}
-                        · вывоз {shortNumericDate(line.dispatchDate)}
-                      </small>
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>Спрос</dt>
-                        <dd>{line.effectiveDemand}</dd>
-                      </div>
-                      <div>
-                        <dt>Со склада</dt>
-                        <dd>{line.allocatedFreeStock}</dd>
-                      </div>
-                      <div>
-                        <dt>Из возврата</dt>
-                        <dd>{line.allocatedGoodReturn}</dd>
-                      </div>
-                      <div>
-                        <dt>Произвести</dt>
-                        <dd>{line.newProduction}</dd>
-                      </div>
-                    </dl>
-                  </article>
-                ))}
-              </div>
-            </details>
-          </>
-        )}
-      </div>
-    </details>
-  );
-}
-
-function PublishedPlanLine({
-  busy,
-  isAdmin,
-  line,
-  onOverride,
-}: {
-  busy: boolean;
-  isAdmin: boolean;
-  line: ProductionPlanView["productionLines"][number];
-  onOverride: (quantity: number, reason: string) => void;
-}) {
-  const [quantity, setQuantity] = useState(line.quantity);
-  const [reason, setReason] = useState("");
-  return (
-    <article className="planning-plan-line">
-      <div>
-        <strong>{line.productName}</strong>
-        <small>
-          {line.productCode} · {line.workshopName}
-        </small>
-      </div>
-      <strong>{line.quantity} шт.</strong>
-      {isAdmin ? (
-        <details className="planning-plan-edit">
-          <summary>Изменить опубликованный план</summary>
-          <div className="planning-plan-override">
-            <label>
-              Новое количество
-              <input
-                min="0"
-                onChange={(event) => setQuantity(Number(event.target.value))}
-                type="number"
-                value={quantity}
-              />
-            </label>
-            <label>
-              Причина
-              <input
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="Обязательно укажите причину"
-                value={reason}
-              />
-            </label>
-            <button
-              className="button button-secondary"
-              disabled={busy || reason.trim().length < 3}
-              onClick={() => onOverride(quantity, reason.trim())}
-              type="button"
-            >
-              Сохранить новую версию
-            </button>
-          </div>
-        </details>
-      ) : null}
-    </article>
-  );
-}
-
 function tomorrow(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
@@ -596,29 +485,6 @@ function shortDate(value: string): string {
     month: "long",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
-}
-
-function shortNumericDate(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(
-    new Date(`${value}T00:00:00`),
-  );
-}
-
-function dateTime(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-    new Date(value),
-  );
-}
-
-function warningLabel(code: string): string {
-  return (
-    (
-      {
-        INVENTORY_NOT_CONFIRMED: "физический пересчёт склада не подтверждён",
-        STORE_ORDER_MISSING: "заказ фирменного магазина отсутствует",
-      } as Record<string, string>
-    )[code] ?? code
-  );
 }
 
 function messageOf(error: unknown): string {

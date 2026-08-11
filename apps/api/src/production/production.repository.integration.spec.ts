@@ -19,16 +19,20 @@ const outsiderId = randomUUID();
 const workshopId = randomUUID();
 const otherWorkshopId = randomUUID();
 const productId = randomUUID();
+const otherWorkshopProductId = randomUUID();
+const claimProductId = randomUUID();
 const planRunId = randomUUID();
 const snapshotId = randomUUID();
 const planId = randomUUID();
 const planLineId = randomUUID();
 const offset = Number.parseInt(adminId.slice(0, 8), 16) % 40_000;
 const productionDate = isoDate(new Date(Date.UTC(2300, 0, 1 + offset)));
+const claimProductionDate = addDays(productionDate, 2);
 
 const admin = actor(adminId, "ADMIN", "FACTORY", null);
 const manager = actor(managerId, "WORKSHOP_MANAGER", "WORKSHOP", workshopId);
 const chef = actor(chefId, "CONFECTIONER", "WORKSHOP", workshopId);
+const absentChef = actor(absentChefId, "CONFECTIONER", "WORKSHOP", workshopId);
 const warehouse = actor(warehouseId, "WAREHOUSE_KEEPER", "WAREHOUSE", randomUUID());
 const outsider = actor(outsiderId, "WORKSHOP_MANAGER", "WORKSHOP", otherWorkshopId);
 
@@ -93,9 +97,28 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
     await database.query(
       `insert into catalog.product (
          id, product_code, name, category_id, unit_code, primary_workshop_id
-       ) values ($1,$2,'Ночной торт B11',
-         '11000000-0000-4000-8000-000000000001','PCS',$3)`,
-      [productId, `B11-${adminId.slice(0, 8).toUpperCase()}`, workshopId],
+       ) values
+         ($1,$2,'Ночной торт B11',
+          '11000000-0000-4000-8000-000000000001','PCS',$3),
+         ($4,$5,'Торт другого цеха B11',
+          '11000000-0000-4000-8000-000000000001','PCS',$6)`,
+      [
+        productId,
+        `B11-${adminId.slice(0, 8).toUpperCase()}`,
+        workshopId,
+        otherWorkshopProductId,
+        `B11-O-${adminId.slice(0, 6).toUpperCase()}`,
+        otherWorkshopId,
+      ],
+    );
+    await database.query(
+      `insert into catalog.product (
+         id, product_code, name, category_id, unit_code, primary_workshop_id
+       ) values (
+         $1,$2,'Торт для само-назначения B11',
+         '11000000-0000-4000-8000-000000000001','PCS',null
+       )`,
+      [claimProductId, `B11-C-${adminId.slice(0, 6).toUpperCase()}`],
     );
     await database.query(
       `insert into production.product_profile (
@@ -142,13 +165,46 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
   });
 
   it("shows tomorrow territory norms in today's production workspace", async () => {
+    const requestId = randomUUID();
+    const dispatchDate = addDays(productionDate, 1);
     await database.query(
       `insert into planning.territory_daily_norm (
          id, territory_id, dispatch_date, product_id, quantity, version,
          reason, created_by, correlation_id
-       ) values ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
-                 'Проверка плана на сегодня', $4, $5)`,
-      [randomUUID(), addDays(productionDate, 1), productId, adminId, randomUUID()],
+       ) values
+         ($1, '12000000-0000-4000-8000-000000000001', $2, $3, 7, 1,
+          'Проверка плана на сегодня', $4, $5),
+         ($6, '12000000-0000-4000-8000-000000000001', $2, $7, 4, 1,
+          'Проверка полной нормы кондитера', $4, $8)`,
+      [
+        randomUUID(),
+        dispatchDate,
+        productId,
+        adminId,
+        randomUUID(),
+        randomUUID(),
+        otherWorkshopProductId,
+        randomUUID(),
+      ],
+    );
+    await database.query(
+      `insert into planning.norm_change_request (
+         id, request_kind, territory_id, dispatch_date, status,
+         requester_employee_id, decided_by, decided_at, correlation_id
+       ) values (
+         $1, 'ONE_OFF', '12000000-0000-4000-8000-000000000001', $2, 'APPROVED',
+         $3, $3, now(), $4
+       )`,
+      [requestId, dispatchDate, adminId, randomUUID()],
+    );
+    await database.query(
+      `insert into planning.one_off_norm_override (
+         id, territory_id, dispatch_date, product_id, quantity,
+         request_id, approved_by
+       ) values (
+         $1, '12000000-0000-4000-8000-000000000001', $2, $3, 5, $4, $5
+       )`,
+      [randomUUID(), dispatchDate, productId, requestId, adminId],
     );
 
     const workspace = await repository.workspace(productionDate, workshopId, manager);
@@ -158,7 +214,134 @@ describe.runIf(hasDatabase)("ProductionRepository with PostgreSQL", () => {
       source: "NEXT_DAY_FALLBACK",
     });
     expect(workspace.normDemand.lines).toContainEqual(
-      expect.objectContaining({ productId, quantity: 7, workshopId }),
+      expect.objectContaining({ productId, quantity: 5, workshopId }),
+    );
+    expect(workspace.normDemand.lines).not.toContainEqual(
+      expect.objectContaining({ productId: otherWorkshopProductId }),
+    );
+
+    const confectionerWorkspace = await repository.workspace(productionDate, workshopId, chef);
+    expect(confectionerWorkspace.normDemand.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId, quantity: 5, workshopId }),
+        expect.objectContaining({
+          productId: otherWorkshopProductId,
+          quantity: 4,
+          workshopId: otherWorkshopId,
+        }),
+      ]),
+    );
+  });
+
+  it("lets confectioners share norm demand and reports each contribution", async () => {
+    await database.query(
+      `insert into planning.territory_daily_norm (
+         id, territory_id, dispatch_date, product_id, quantity, version,
+         reason, created_by, correlation_id
+       ) values (
+         $1, '12000000-0000-4000-8000-000000000001', $2, $3, 13, 1,
+         'Проверка само-назначения кондитера', $4, $5
+       )`,
+      [randomUUID(), addDays(claimProductionDate, 1), claimProductId, adminId, randomUUID()],
+    );
+
+    const claimed = await repository.claimNormDemand({
+      actor: chef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(claimed).toMatchObject({
+      planId: null,
+      planLineId: null,
+      sourceKind: "DAILY_NORM_CLAIM",
+      status: "IN_PROGRESS",
+      targetQuantity: 13,
+      workshopId,
+    });
+    expect(claimed.assignments).toEqual([
+      expect.objectContaining({ employeeId: chefId, isLead: true }),
+    ]);
+
+    const repeated = await repository.claimNormDemand({
+      actor: chef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(repeated.id).toBe(claimed.id);
+    const joined = await repository.claimNormDemand({
+      actor: absentChef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(joined.id).toBe(claimed.id);
+    expect(joined.assignments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ employeeId: chefId, isLead: true }),
+        expect.objectContaining({ employeeId: absentChefId, isLead: false }),
+      ]),
+    );
+    const repeatedJoin = await repository.claimNormDemand({
+      actor: absentChef,
+      correlationId: randomUUID(),
+      productId: claimProductId,
+      productionDate: claimProductionDate,
+    });
+    expect(repeatedJoin.version).toBe(joined.version);
+
+    await repository.submitBatch({
+      actor: chef,
+      comment: null,
+      correlationId: randomUUID(),
+      idempotencyKey: `B11-CLAIM-BATCH-${randomUUID()}`,
+      producedAt: new Date(),
+      quantity: 5,
+      reasonId: null,
+      replacementForBatchId: null,
+      taskId: claimed.id,
+      taskVersion: joined.version,
+    });
+    const joinedWorkspace = await repository.workspace(claimProductionDate, workshopId, absentChef);
+    const joinedTask = joinedWorkspace.tasks.find((task) => task.id === claimed.id)!;
+    await repository.submitBatch({
+      actor: absentChef,
+      comment: null,
+      correlationId: randomUUID(),
+      idempotencyKey: `B11-JOINED-BATCH-${randomUUID()}`,
+      producedAt: new Date(),
+      quantity: 3,
+      reasonId: null,
+      replacementForBatchId: null,
+      taskId: claimed.id,
+      taskVersion: joinedTask.version,
+    });
+    const workspace = await repository.workspace(claimProductionDate, workshopId, chef);
+    expect(workspace.tasks).toContainEqual(
+      expect.objectContaining({
+        id: claimed.id,
+        declaredQuantity: 8,
+        remainingToDeclare: 5,
+      }),
+    );
+    expect(workspace.normDemand.lines).toContainEqual(
+      expect.objectContaining({
+        productId: claimProductId,
+        work: expect.objectContaining({
+          contributions: expect.arrayContaining([
+            expect.objectContaining({ employeeId: chefId, quantity: 5 }),
+            expect.objectContaining({ employeeId: absentChefId, quantity: 3 }),
+          ]),
+          declaredQuantity: 8,
+          participants: expect.arrayContaining([
+            expect.objectContaining({ employeeId: chefId, isLead: true }),
+            expect.objectContaining({ employeeId: absentChefId, isLead: false }),
+          ]),
+          remainingQuantity: 5,
+          taskId: claimed.id,
+        }),
+      }),
     );
   });
 

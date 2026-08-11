@@ -59,6 +59,22 @@ export const appDestinations: readonly AppDestination[] = [
     symbol: "С",
   },
   {
+    driverLabel: "Возвраты и порча",
+    driverShortLabel: "Возвраты",
+    href: "/returns",
+    label: "Годный возврат",
+    roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
+    shortLabel: "Возврат",
+    symbol: "В",
+  },
+  {
+    href: "/spoilage",
+    label: "Склад порчи",
+    roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
+    shortLabel: "Порча",
+    symbol: "Б",
+  },
+  {
     href: "/logistics",
     label: "Территории и водители",
     roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
@@ -82,7 +98,7 @@ export const appDestinations: readonly AppDestination[] = [
   },
   {
     href: "/planning/plan",
-    label: "План производства",
+    label: "План вывоза",
     roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER"],
     shortLabel: "План",
     symbol: "П",
@@ -95,6 +111,13 @@ export const appDestinations: readonly AppDestination[] = [
     roles: ["ADMIN", "DRIVER", "MANAGER"],
     shortLabel: "Нормы",
     symbol: "Н",
+  },
+  {
+    href: "/reports",
+    label: "Отчёты",
+    roles: ["ACCOUNTANT", "ADMIN", "MANAGER"],
+    shortLabel: "Отчёты",
+    symbol: "О",
   },
   {
     href: "/store",
@@ -111,32 +134,11 @@ export const appDestinations: readonly AppDestination[] = [
     symbol: "И",
   },
   {
-    href: "/returns",
-    label: "Годный возврат",
-    roles: ["ADMIN", "DRIVER", "MANAGER", "WAREHOUSE_KEEPER"],
-    shortLabel: "Возврат",
-    symbol: "В",
-  },
-  {
-    href: "/spoilage",
-    label: "Порча и списания",
-    roles: ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"],
-    shortLabel: "Порча",
-    symbol: "С",
-  },
-  {
     href: "/catalog",
     label: "Товары и импорт",
     roles: ["ADMIN", "MANAGER"],
     shortLabel: "Товары",
     symbol: "Т",
-  },
-  {
-    href: "/reports",
-    label: "Контроль и отчёты",
-    roles: ["ACCOUNTANT", "ADMIN", "MANAGER"],
-    shortLabel: "Отчёты",
-    symbol: "О",
   },
   {
     href: "/terminals",

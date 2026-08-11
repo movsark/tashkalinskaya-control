@@ -65,15 +65,18 @@ export default function MonthlyPlanImportPage() {
         <div className="workspace-user">
           <span>{session?.employee.fullName ?? "Загрузка…"}</span>
           <small>
-            <Link href="/planning/plan">План производства</Link>
+            <Link href="/planning/plan">План вывоза</Link>
           </small>
         </div>
       </header>
       <section className="workspace-title">
         <div>
-          <p className="eyebrow">Нормы территорий</p>
-          <h1>Загрузить месячный план</h1>
-          <p>Файл сначала проверяется. Нормы не меняются до отдельного подтверждения.</p>
+          <p className="eyebrow">Нормы вывоза территорий</p>
+          <h1>Загрузить нормы вывоза на месяц</h1>
+          <p>
+            Файл содержит объём вывоза по датам и территориям. Данные не меняются до отдельного
+            подтверждения.
+          </p>
         </div>
       </section>
       {error ? <p className="form-error">{error}</p> : null}
@@ -81,7 +84,7 @@ export default function MonthlyPlanImportPage() {
       <section className="import-panel">
         <form onSubmit={submit}>
           <label>
-            Файл месячного плана
+            Файл месячных норм вывоза
             <input
               accept=".xlsx"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}

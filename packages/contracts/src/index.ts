@@ -397,14 +397,33 @@ export interface TerritoryRunView {
 }
 
 export interface DriverLogisticsDayView {
+  readonly activeRoutes: readonly DriverRouteShiftView[];
   readonly availableTerritoryIds: readonly string[];
   readonly dispatchDate: string;
   readonly driverProfileVersion: number;
   readonly homeTerritoryId: string | null;
   readonly requests: readonly DriverTerritoryRequestView[];
+  readonly routeHistory: readonly DriverRouteShiftView[];
   readonly runs: readonly TerritoryRunView[];
   readonly territories: readonly TerritoryView[];
   readonly totalNormQuantity: number;
+}
+
+export type DriverRouteShiftStatus = "ACTIVE" | "ENDED" | "TAKEN_OVER";
+
+export interface DriverRouteShiftView {
+  readonly dispatchDate: string;
+  readonly driverEmployeeId: string;
+  readonly driverName: string;
+  readonly endedAt: string | null;
+  readonly endReason: string | null;
+  readonly id: string;
+  readonly startedAt: string;
+  readonly status: DriverRouteShiftStatus;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+  readonly version: number;
 }
 
 export interface DriverHomeTerritoryView {
@@ -745,8 +764,8 @@ export interface ProductionTaskView {
   readonly defects: readonly ProductionDefectView[];
   readonly id: string;
   readonly overproductionQuantity: number;
-  readonly planId: string;
-  readonly planLineId: string;
+  readonly planId: string | null;
+  readonly planLineId: string | null;
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
@@ -755,6 +774,7 @@ export interface ProductionTaskView {
   readonly rejectedQuantity: number;
   readonly remainingToDeclare: number;
   readonly shortfallQuantity: number;
+  readonly sourceKind: "DAILY_NORM_CLAIM" | "PUBLISHED_PLAN";
   readonly sourceTransferId: string | null;
   readonly status:
     | "ASSIGNED"
@@ -793,6 +813,24 @@ export interface ProductionNormDemandLineView {
   readonly productId: string;
   readonly productName: string;
   readonly quantity: number;
+  readonly work: {
+    readonly contributions: readonly {
+      readonly employeeId: string;
+      readonly employeeName: string;
+      readonly quantity: number;
+    }[];
+    readonly declaredQuantity: number;
+    readonly participants: readonly {
+      readonly employeeId: string;
+      readonly employeeName: string;
+      readonly isLead: boolean;
+    }[];
+    readonly remainingQuantity: number;
+    readonly status: ProductionTaskView["status"];
+    readonly targetQuantity: number;
+    readonly taskId: string;
+    readonly version: number;
+  } | null;
   readonly workshopId: string | null;
   readonly workshopName: string | null;
 }
@@ -853,14 +891,26 @@ export interface WarehouseQueueItemView {
   readonly claimedById: string | null;
   readonly claimedByName: string | null;
   readonly isNight: boolean;
+  readonly movedQuantity: number;
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
   readonly productionDate: string;
   readonly quantity: number;
+  readonly remainingQuantity: number;
   readonly submittedAt: string;
   readonly workshopId: string;
   readonly workshopName: string;
+}
+
+export interface WarehousePickupTransferView {
+  readonly id: string;
+  readonly movedQuantity: number;
+  readonly productId: string;
+  readonly quantity: number;
+  readonly remainingQuantity: number;
+  readonly transferredAt: string;
+  readonly transferredByName: string;
 }
 
 export interface WarehouseBalanceView {
@@ -869,6 +919,8 @@ export interface WarehouseBalanceView {
   readonly integrityStatus: "MISMATCH" | "OK";
   readonly onHandQuantity: number;
   readonly productCode: string;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
   readonly productId: string;
   readonly productName: string;
   readonly reservedLoadingQuantity: number;
@@ -986,7 +1038,14 @@ export interface LoadingPlanSnapshotView {
   readonly weeklyNormQuantity: number;
 }
 
+export interface LoadingAcceptanceView {
+  readonly acceptedAt: string;
+  readonly driverName: string;
+  readonly quantity: number;
+}
+
 export interface LoadingLineView extends LoadingPlanSnapshotView {
+  readonly acceptances: readonly LoadingAcceptanceView[];
   readonly comment: string | null;
   readonly counterQuantity: number | null;
   readonly currentRevisionId: string;
@@ -998,8 +1057,9 @@ export interface LoadingLineView extends LoadingPlanSnapshotView {
   readonly productName: string;
   readonly quantity: number;
   readonly responseReason: string | null;
+  readonly responseDriverName: string | null;
   readonly responseType: "CONFIRM" | "COUNTER" | "REJECT" | null;
-  readonly status: "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
+  readonly status: "CANCELLED" | "CONFIRMED" | "DISPUTED" | "SENT_TO_DRIVER";
   readonly version: number;
 }
 
@@ -1057,6 +1117,23 @@ export interface LoadingProductView {
   readonly freeQuantity: number;
   readonly id: string;
   readonly name: string;
+  readonly plannedQuantity: number;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+  readonly territories: readonly LoadingTerritoryDemandView[];
+}
+
+export interface LoadingTerritoryDemandView {
+  readonly canSend: boolean;
+  readonly driverName: string | null;
+  readonly plannedQuantity: number;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
 }
 
 export interface LoadingWarehouseDayView {
@@ -1066,9 +1143,23 @@ export interface LoadingWarehouseDayView {
   readonly serverTime: string;
 }
 
+export interface LoadingDriverProductView {
+  readonly acceptedQuantity: number;
+  readonly awaitingAcceptanceQuantity: number;
+  readonly code: string;
+  readonly id: string;
+  readonly name: string;
+  readonly plannedQuantity: number;
+  readonly productGroupCode: string;
+  readonly productGroupName: string;
+  readonly remainingQuantity: number;
+  readonly sentQuantity: number;
+}
+
 export interface LoadingDriverDayView {
   readonly dispatchDate: string;
   readonly priorityReturns: readonly GoodReturnPriorityView[];
+  readonly products: readonly LoadingDriverProductView[];
   readonly serverTime: string;
   readonly sessions: readonly LoadingSessionView[];
 }
@@ -1092,6 +1183,11 @@ export interface GoodReturnPoolLineView {
   readonly productCode: string;
   readonly productId: string;
   readonly productName: string;
+  readonly sources: readonly {
+    readonly quantity: number;
+    readonly sourceDriverName: string;
+    readonly territoryNumber: number | null;
+  }[];
   readonly totalQuantity: number;
 }
 
@@ -1107,9 +1203,54 @@ export interface GoodReturnReceiptView {
   }[];
   readonly receivedAt: string;
   readonly receivedByName: string;
+  readonly sourceDispatchDate: string | null;
   readonly sourceDriverId: string;
   readonly sourceDriverName: string;
+  readonly sourceTerritoryNumber: number | null;
   readonly totalQuantity: number;
+}
+
+export interface GoodReturnRequestView {
+  readonly acceptedAt: string | null;
+  readonly acceptedByName: string | null;
+  readonly comment: string | null;
+  readonly dispatchDate: string;
+  readonly id: string;
+  readonly lines: readonly {
+    readonly productCode: string;
+    readonly productId: string;
+    readonly productName: string;
+    readonly quantity: number;
+  }[];
+  readonly sourceDriverId: string;
+  readonly sourceDriverName: string;
+  readonly status: "ACCEPTED" | "PENDING";
+  readonly submittedAt: string;
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly totalQuantity: number;
+  readonly version: number;
+}
+
+export interface GoodReturnDriverWorkspaceView {
+  readonly dispatchDate: string;
+  readonly requests: readonly GoodReturnRequestView[];
+  readonly serverTime: string;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly number: number;
+    readonly products: readonly {
+      readonly alreadyReturnedQuantity: number;
+      readonly availableReturnQuantity: number;
+      readonly dispatchedQuantity: number;
+      readonly productCode: string;
+      readonly productGroupCode: string;
+      readonly productGroupName: string;
+      readonly productId: string;
+      readonly productName: string;
+    }[];
+  }[];
 }
 
 export interface GoodReturnAllocationView {
@@ -1139,6 +1280,7 @@ export interface GoodReturnsWorkspaceView {
     readonly name: string;
   }[];
   readonly receipts: readonly GoodReturnReceiptView[];
+  readonly requests: readonly GoodReturnRequestView[];
   readonly serverTime: string;
   readonly territories: readonly {
     readonly id: string;
@@ -1178,6 +1320,7 @@ export interface ExternalDocumentCheckView {
 }
 
 export interface WriteoffRequestView {
+  readonly awaitingReceipt: boolean;
   readonly businessDate: string;
   readonly comment: string;
   readonly createdAt: string;
@@ -1197,13 +1340,40 @@ export interface WriteoffRequestView {
   readonly productId: string;
   readonly productName: string;
   readonly quantity: number;
+  readonly receivedAt: string | null;
+  readonly receivedByName: string | null;
   readonly reasonCode: string;
   readonly reasonName: string;
   readonly sourceDriverName: string | null;
+  readonly sourceDispatchDate: string | null;
+  readonly sourceBasis: "STORE_RETURN" | "TODAY_ROUTE" | null;
   readonly sourceKind: WriteoffSourceKind;
   readonly sourceLabel: string | null;
+  readonly sourceTerritoryNumber: number | null;
   readonly status: WriteoffStatus;
   readonly version: number;
+}
+
+export interface DriverSpoilageWorkspaceView {
+  readonly dispatchDate: string;
+  readonly reasons: readonly SpoilageReasonView[];
+  readonly requests: readonly WriteoffRequestView[];
+  readonly serverTime: string;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly number: number;
+    readonly products: readonly {
+      readonly alreadyClassifiedQuantity: number;
+      readonly availableSpoilageQuantity: number;
+      readonly dispatchedQuantity: number;
+      readonly productCode: string;
+      readonly productGroupCode: string;
+      readonly productGroupName: string;
+      readonly productId: string;
+      readonly productName: string;
+    }[];
+  }[];
 }
 
 export interface SpoilageWorkspaceView {
@@ -1224,6 +1394,22 @@ export interface SpoilageWorkspaceView {
   }[];
   readonly serverTime: string;
   readonly writtenOffQuantity: number;
+}
+
+export interface SpoilageSummaryView {
+  readonly fromDate: string | null;
+  readonly territories: readonly {
+    readonly products: readonly {
+      readonly productCode: string;
+      readonly productId: string;
+      readonly productName: string;
+      readonly quantity: number;
+    }[];
+    readonly quantity: number;
+    readonly territoryNumber: number;
+  }[];
+  readonly toDate: string | null;
+  readonly totalQuantity: number;
 }
 
 export type NotificationSeverity = "CRITICAL" | "HIGH" | "NORMAL";
@@ -1279,6 +1465,8 @@ export interface NotificationsWorkspaceView {
 }
 
 export const REPORT_CODES = [
+  "PRODUCTION_OUTBOUND",
+  "DRIVER_TERRITORY",
   "MOVEMENTS",
   "PLAN_FACT",
   "DEFECTS",
@@ -1358,6 +1546,54 @@ export interface ReportsWorkspaceView {
   readonly catalog: readonly ReportCatalogItemView[];
   readonly jobs: readonly ReportJobView[];
   readonly serverTime: string;
+}
+
+export interface ProductionOutboundReportRowView {
+  readonly onHandQuantity: number;
+  readonly outboundQuantity: number;
+  readonly producedQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+}
+
+export interface ProductionOutboundReportView {
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly generatedAt: string;
+  readonly rows: readonly ProductionOutboundReportRowView[];
+  readonly totals: {
+    readonly onHandQuantity: number;
+    readonly outboundQuantity: number;
+    readonly producedQuantity: number;
+  };
+  readonly warehouseAsOf: string;
+}
+
+export interface DriverTerritoryReportRowView {
+  readonly driverId: string;
+  readonly driverName: string;
+  readonly goodReturnQuantity: number;
+  readonly outboundQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly spoilageQuantity: number;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+}
+
+export interface DriverTerritoryReportView {
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly generatedAt: string;
+  readonly rows: readonly DriverTerritoryReportRowView[];
+  readonly totals: {
+    readonly goodReturnQuantity: number;
+    readonly outboundQuantity: number;
+    readonly spoilageQuantity: number;
+  };
 }
 
 export interface ReportSnapshotColumn {

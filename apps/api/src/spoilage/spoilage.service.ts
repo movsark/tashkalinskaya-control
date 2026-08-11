@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  AcceptDriverSpoilageRequestDto,
   CheckExternalDocumentDto,
+  CreateDriverSpoilageRequestDto,
   CreateWriteoffRequestDto,
   DecideWriteoffRequestDto,
 } from "./spoilage.dto";
@@ -12,6 +14,12 @@ export class SpoilageService {
   constructor(private readonly repository: SpoilageRepository) {}
   workspace(actor: AuthenticatedActor) {
     return this.repository.workspace(toActor(actor));
+  }
+  summary(fromDate: string | null, toDate: string | null, actor: AuthenticatedActor) {
+    return this.repository.summary(fromDate, toDate, toActor(actor));
+  }
+  driverWorkspace(dispatchDate: string, actor: AuthenticatedActor) {
+    return this.repository.driverWorkspace(dispatchDate, toActor(actor));
   }
   create(dto: CreateWriteoffRequestDto, actor: AuthenticatedActor, correlationId: string) {
     return this.repository.create({
@@ -27,8 +35,44 @@ export class SpoilageService {
       quantity: dto.quantity,
       reasonId: dto.reasonId,
       sourceDriverId: dto.sourceDriverId ?? null,
+      sourceDispatchDate: null,
+      sourceBasis: null,
       sourceKind: dto.sourceKind,
       sourceLabel: dto.sourceLabel?.trim() ?? null,
+      sourceTerritoryId: null,
+    });
+  }
+  createDriver(
+    dto: CreateDriverSpoilageRequestDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ) {
+    return this.repository.createDriver({
+      actor: toActor(actor),
+      businessDate: dto.dispatchDate,
+      comment: dto.comment.trim(),
+      correlationId,
+      externalDocumentNumber: null,
+      idempotencyKey: dto.idempotencyKey,
+      photoUploadId: dto.photoUploadId ?? null,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      reasonId: dto.reasonId,
+      territoryId: dto.territoryId,
+    });
+  }
+  acceptDriverSpoilage(
+    id: string,
+    dto: AcceptDriverSpoilageRequestDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ) {
+    return this.repository.acceptDriverSpoilage({
+      actor: toActor(actor),
+      correlationId,
+      idempotencyKey: dto.idempotencyKey,
+      requestId: id,
+      version: dto.version,
     });
   }
   decide(

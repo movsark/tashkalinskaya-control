@@ -51,6 +51,8 @@ const publicCeremonies = new Set([
   "AuthController.activationOptions",
   "AuthController.login",
   "AuthController.loginOptions",
+  "AuthController.localUatLogin",
+  "AuthController.localUatProfiles",
   "AuthController.confirmPhoneRecovery",
   "AuthController.recoveryConfig",
   "AuthController.recover",

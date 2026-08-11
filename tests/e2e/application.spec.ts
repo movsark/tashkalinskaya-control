@@ -160,7 +160,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText("Выберите, что нужно сделать сейчас.")).toBeVisible();
-    await expect(page.getByRole("link", { exact: true, name: "План производства" })).toBeVisible();
+    await expect(page.getByRole("link", { exact: true, name: "План вывоза" })).toBeVisible();
     const primaryNavigation = page.getByRole("navigation", { name: "Основная навигация" });
     await expect(primaryNavigation).toBeVisible();
     await primaryNavigation.getByRole("button", { name: "Меню" }).click();
@@ -176,7 +176,281 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       menu.getByRole("link", { exact: true, name: "Управление погрузкой" }),
     ).toBeVisible();
+    await expect(menu.getByRole("link", { exact: true, name: "Годный возврат" })).toHaveAttribute(
+      "href",
+      "/returns",
+    );
+    await expect(menu.getByRole("link", { exact: true, name: "Склад порчи" })).toHaveAttribute(
+      "href",
+      "/spoilage",
+    );
     await expect(menu.getByRole("link", { exact: true, name: "Моя погрузка" })).toHaveCount(0);
+  });
+
+  test("a warehouse keeper sees a pickup reminder for produced batches", async ({ page }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    let movedQuantity = 0;
+    await page.route("**/api/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-warehouse-token",
+          deviceId: "20000000-0000-4000-8000-000000000030",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Тестовый Кладовщик",
+            id: "20000000-0000-4000-8000-000000000031",
+            login: "warehouse-e2e",
+            personnelNumber: "E2E-WAREHOUSE",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000032",
+                roleCode: "WAREHOUSE_KEEPER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/warehouse/pickups/transfer")) {
+        const body = route.request().postDataJSON() as { quantity: number };
+        movedQuantity += body.quantity;
+        return json(route, {
+          id: "20000000-0000-4000-8000-000000000037",
+          movedQuantity,
+          productId: "20000000-0000-4000-8000-000000000034",
+          quantity: body.quantity,
+          remainingQuantity: 14 - movedQuantity,
+          transferredAt: "2026-08-10T07:07:00.000Z",
+          transferredByName: "Тестовый Кладовщик",
+        });
+      }
+      if (path.endsWith("/warehouse/workspace")) {
+        return json(route, {
+          balances: [
+            {
+              blockedQuantity: 0,
+              freeQuantity: 14,
+              integrityStatus: "OK",
+              onHandQuantity: 14,
+              productCode: "TV-015",
+              productGroupCode: "BASIC_CAKES",
+              productGroupName: "Торты Базовые",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              reservedLoadingQuantity: 0,
+              reservedStoreQuantity: 0,
+              returnPoolQuantity: 0,
+              updatedAt: "2026-08-10T07:06:00.000Z",
+            },
+            {
+              blockedQuantity: 0,
+              freeQuantity: 5,
+              integrityStatus: "OK",
+              onHandQuantity: 7,
+              productCode: "SV-001",
+              productGroupCode: "DRY_BAKERY",
+              productGroupName: "Сухая выпечка",
+              productId: "20000000-0000-4000-8000-000000000040",
+              productName: "СВ Бакусы",
+              reservedLoadingQuantity: 2,
+              reservedStoreQuantity: 0,
+              returnPoolQuantity: 0,
+              updatedAt: "2026-08-10T07:06:00.000Z",
+            },
+          ],
+          discrepancies: [],
+          queue: [
+            {
+              batchId: "20000000-0000-4000-8000-000000000033",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              movedQuantity,
+              productCode: "TV-015",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 10,
+              remainingQuantity: 10 - movedQuantity,
+              submittedAt: "2026-08-10T07:00:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
+            {
+              batchId: "20000000-0000-4000-8000-000000000036",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              movedQuantity: 0,
+              productCode: "TV-015",
+              productId: "20000000-0000-4000-8000-000000000034",
+              productName: "ТБ Рыжик (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 4,
+              remainingQuantity: 4,
+              submittedAt: "2026-08-10T07:05:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
+            {
+              batchId: "20000000-0000-4000-8000-000000000038",
+              batchVersion: 1,
+              claimedAt: null,
+              claimedById: null,
+              claimedByName: null,
+              isNight: false,
+              movedQuantity: 0,
+              productCode: "TV-016",
+              productId: "20000000-0000-4000-8000-000000000039",
+              productName: "ТБ Наполеон (0,8кг)",
+              productionDate: "2026-08-10",
+              quantity: 6,
+              remainingQuantity: 6,
+              submittedAt: "2026-08-10T07:05:00.000Z",
+              workshopId: "20000000-0000-4000-8000-000000000035",
+              workshopName: "Тортовый цех",
+            },
+          ],
+          reasons: [],
+          serverTime: "2026-08-10T07:06:00.000Z",
+          warehouseName: "Склад готовой продукции",
+        });
+      }
+      if (path.endsWith("/returns/workspace")) {
+        return json(route, {
+          allocations: [],
+          dispatchDate: "2026-08-10",
+          drivers: [],
+          planPublished: false,
+          pool: [],
+          products: [],
+          receipts: [],
+          requests: [
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-10",
+              id: "20000000-0000-4000-8000-000000000041",
+              lines: [],
+              sourceDriverId: "20000000-0000-4000-8000-000000000042",
+              sourceDriverName: "Тестовый Водитель",
+              status: "PENDING",
+              submittedAt: "2026-08-10T07:08:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000043",
+              territoryNumber: 1,
+              totalQuantity: 1,
+              version: 1,
+            },
+          ],
+          serverTime: "2026-08-10T07:08:00.000Z",
+          territories: [],
+        });
+      }
+      if (path.endsWith("/spoilage/workspace")) {
+        return json(route, {
+          blockedQuantity: 0,
+          drivers: [],
+          products: [],
+          reasons: [],
+          requests: [],
+          returnPool: [],
+          serverTime: "2026-08-10T07:08:00.000Z",
+          writtenOffQuantity: 0,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) {
+        return json(route, notificationWorkspace());
+      }
+      if (path.endsWith("/health/live")) {
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T07:06:00.000Z",
+          version: "test",
+        });
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/");
+    const warehousePrimary = page.getByRole("link", { name: /Основная работа Склад/ });
+    await expect(warehousePrimary).toBeVisible();
+    await expect(warehousePrimary.getByLabel("На складе ожидают 2 товара")).toHaveText("2");
+    const returnsLink = page.getByRole("link", { name: /Годный возврат/ });
+    await expect(returnsLink).toHaveClass(/has-attention/u);
+    await expect(returnsLink.getByLabel("Ожидают приёмки возвраты: 1")).toHaveText("1");
+    await expect(page.getByRole("link", { name: /Склад порчи/ })).toBeVisible();
+    await warehousePrimary.click();
+    await expect(page).toHaveURL(/\/warehouse$/);
+    const reminder = page.getByRole("status");
+    await expect(
+      reminder.getByRole("heading", { name: "Нужно забрать готовую продукцию" }),
+    ).toBeVisible();
+    await expect(reminder).toContainText("2 товара · 20 шт.");
+    await expect(reminder).toContainText("при необходимости — в холодильную камеру");
+    await expect(page.getByText("Доступно для погрузки", { exact: true })).toBeVisible();
+    await expect(page.getByText("Всего на складе", { exact: true })).toBeVisible();
+    const pickupCard = page.getByRole("article").filter({
+      has: page.getByRole("button", { name: /ТБ Рыжик/ }),
+    });
+    const napoleonCard = page.getByRole("article").filter({
+      has: page.getByRole("button", { name: /ТБ Наполеон/ }),
+    });
+    await expect(pickupCard.getByText("Перемещено", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("0 шт.", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("Осталось забрать", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("14 шт.", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await pickupCard.getByRole("button", { name: /ТБ Рыжик/ }).click();
+    await expect(pickupCard.getByText("готово: 14 шт.")).toBeVisible();
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await napoleonCard.getByRole("button", { name: /ТБ Наполеон/ }).click();
+    await expect(pickupCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toBeVisible();
+    await pickupCard.getByRole("button", { name: /ТБ Рыжик/ }).click();
+    await expect(napoleonCard.getByLabel("Сколько перемещено сейчас")).toHaveCount(0);
+    await pickupCard.getByLabel("Сколько перемещено сейчас").fill("4");
+    await pickupCard.getByRole("button", { exact: true, name: "Перемещено" }).click();
+    await expect(page.getByText("Переместить на склад 4 шт.?", { exact: true })).toBeVisible();
+    await pickupCard.getByRole("button", { exact: true, name: "Да" }).click();
+    await expect(page.getByText("Перемещено 4 шт. Остаток к переносу обновлён.")).toBeVisible();
+    await expect(pickupCard.getByText("4 шт.", { exact: true })).toBeVisible();
+    await expect(pickupCard.getByText("10 шт.", { exact: true })).toBeVisible();
+    await page.getByText("Складские остатки", { exact: true }).click();
+    const balances = page.getByRole("region", { name: "Остатки склада" });
+    const grouping = balances.getByRole("button", { name: /Группировка по разделам/ });
+    await expect(grouping).toHaveAttribute("aria-pressed", "true");
+    await expect(balances.getByRole("button", { name: /Торты Базовые/ })).toBeVisible();
+    await expect(balances.getByRole("button", { name: /Сухая выпечка/ })).toBeVisible();
+    await expect(balances.getByText("ТБ Рыжик (0,8кг)", { exact: true })).toHaveCount(0);
+    await balances.getByRole("button", { name: /Торты Базовые/ }).click();
+    const ryzhik = balances.getByRole("button", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("Всего");
+    await expect(ryzhik).toContainText("14 шт.");
+    await ryzhik.click();
+    await expect(balances.getByText("Доступно для погрузки", { exact: true })).toBeVisible();
+    await expect(balances.getByText("Резерв погрузки", { exact: true })).toBeVisible();
+    await grouping.click();
+    await expect(grouping).toHaveAttribute("aria-pressed", "false");
+    await expect(balances.getByRole("button", { name: /ТБ Рыжик/ })).toBeVisible();
+    await expect(balances.getByRole("button", { name: /СВ Бакусы/ })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
   });
 
   test("a bound personal device signs in with login and password only", async ({ page }) => {
@@ -649,10 +923,167 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page.getByText("Нет связи", { exact: true })).toHaveCount(0);
   });
 
+  test("a driver starts a territory route before opening loading", async ({ page }) => {
+    const driverId = "20000000-0000-4000-8000-000000000065";
+    const territoryId = "20000000-0000-4000-8000-000000000066";
+    const occupiedTerritoryId = "20000000-0000-4000-8000-000000000063";
+    let activeRoute: Record<string, unknown> | null = null;
+    let activatedTerritoryId = "";
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-driver-route-gate",
+        deviceId: "20000000-0000-4000-8000-000000000067",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Водитель перед погрузкой",
+          id: driverId,
+          login: "driver-route-gate",
+          personnelNumber: "DRIVER-GATE",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000068",
+              roleCode: "DRIVER",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/days/*", (route) =>
+      json(route, {
+        activeRoutes: [
+          {
+            dispatchDate: "2026-08-10",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000061",
+            driverName: "Другой водитель",
+            endedAt: null,
+            endReason: null,
+            id: "20000000-0000-4000-8000-000000000062",
+            startedAt: "2026-08-10T03:30:00.000Z",
+            status: "ACTIVE",
+            territoryId: occupiedTerritoryId,
+            territoryName: "Территория 1",
+            territoryNumber: 1,
+            version: 1,
+          },
+          ...(activeRoute ? [activeRoute] : []),
+        ],
+        availableTerritoryIds: [territoryId],
+        dispatchDate: "2026-08-10",
+        driverProfileVersion: 1,
+        homeTerritoryId: territoryId,
+        requests: [],
+        runs: [],
+        territories: [
+          {
+            description: null,
+            id: occupiedTerritoryId,
+            name: "Территория 1",
+            number: 1,
+            sortOrder: 1,
+            status: "ACTIVE",
+            version: 1,
+          },
+          {
+            description: null,
+            id: territoryId,
+            name: "Территория 2",
+            number: 2,
+            sortOrder: 2,
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        totalNormQuantity: activeRoute ? 15 : 0,
+      }),
+    );
+    await page.route("**/api/v1/logistics/me/route/activate", async (route) => {
+      const input = route.request().postDataJSON() as { territoryId: string };
+      activatedTerritoryId = input.territoryId;
+      activeRoute = {
+        dispatchDate: "2026-08-10",
+        driverEmployeeId: driverId,
+        driverName: "Водитель перед погрузкой",
+        endedAt: null,
+        endReason: null,
+        id: "20000000-0000-4000-8000-000000000069",
+        startedAt: "2026-08-10T04:00:00.000Z",
+        status: "ACTIVE",
+        territoryId,
+        territoryName: "Территория 2",
+        territoryNumber: 2,
+        version: 1,
+      };
+      await json(route, activeRoute);
+    });
+    await page.route("**/api/v1/loading/driver/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        priorityReturns: [],
+        products: [
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "T-001",
+            id: "20000000-0000-4000-8000-000000000064",
+            name: "Торт после выхода",
+            plannedQuantity: 15,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 15,
+            sentQuantity: 0,
+          },
+        ],
+        serverTime: "2026-08-10T04:01:00.000Z",
+        sessions: [],
+      }),
+    );
+
+    await page.goto("/logistics/today");
+    const gate = page.getByRole("region", { name: "Выход на рейс" });
+    await expect(gate.getByRole("heading", { name: "Сначала выйдите на рейс" })).toBeVisible();
+    await expect(gate.getByLabel("Территория рейса")).toHaveValue(territoryId);
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).not.toBeVisible();
+    await gate.getByLabel("Территория рейса").selectOption(occupiedTerritoryId);
+    await expect(gate.getByText("Сейчас работает Другой водитель")).toBeVisible();
+    await expect(gate.getByRole("button", { name: "Приступил к рейсу" })).toBeDisabled();
+    await gate.getByLabel("Территория рейса").selectOption(territoryId);
+    await gate.getByRole("button", { name: "Приступил к рейсу" }).click();
+
+    await expect.poll(() => activatedTerritoryId).toBe(territoryId);
+    await expect(page.getByText("Вы на рейсе", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Территория 2" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
+    await expect(page.getByText("Торт после выхода", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: /Торты Базовые/u }).click();
+    await expect(page.getByText("Торт после выхода", { exact: true })).toBeVisible();
+    await expect(gate).toHaveCount(0);
+    const activeRoutePanel = page.getByRole("region", { name: "Текущий рейс" });
+    const handoverButton = activeRoutePanel.getByRole("button", { name: "Передать рейс" });
+    const completeButton = activeRoutePanel.getByRole("button", { name: "Завершить рейс" });
+    await expect(handoverButton).toHaveCSS("font-size", "18px");
+    await expect(completeButton).toHaveCSS("font-size", "18px");
+    await expect(handoverButton).toHaveCSS("min-height", "64px");
+    await expect(completeButton).toHaveCSS("min-height", "64px");
+    const handoverBox = await handoverButton.boundingBox();
+    const completeBox = await completeButton.boundingBox();
+    expect(handoverBox).not.toBeNull();
+    expect(completeBox).not.toBeNull();
+    expect(Math.abs((handoverBox?.width ?? 0) - (completeBox?.width ?? 0))).toBeLessThanOrEqual(1);
+    expect(Math.abs((handoverBox?.height ?? 0) - (completeBox?.height ?? 0))).toBeLessThanOrEqual(
+      1,
+    );
+  });
+
   test("a driver sees a compact loading screen and opens quantity details only when needed", async ({
     page,
   }) => {
-    let territoryRequest: unknown = null;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/health/live", (route) =>
       json(route, {
@@ -689,8 +1120,26 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
+        activeRoutes: [
+          {
+            dispatchDate: "2026-08-04",
+            driverEmployeeId: "20000000-0000-4000-8000-000000000071",
+            driverName: "Водитель теста",
+            endedAt: null,
+            endReason: null,
+            id: "20000000-0000-4000-8000-000000000069",
+            startedAt: "2026-08-04T05:45:00.000Z",
+            status: "ACTIVE",
+            territoryId: "20000000-0000-4000-8000-000000000075",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+            version: 1,
+          },
+        ],
         availableTerritoryIds: ["20000000-0000-4000-8000-000000000075"],
         dispatchDate: "2026-08-04",
+        driverProfileVersion: 1,
+        homeTerritoryId: "20000000-0000-4000-8000-000000000075",
         requests: [],
         runs: [
           {
@@ -735,6 +1184,68 @@ test.describe("B20 browser and HTTP regression", () => {
       json(route, {
         dispatchDate: "2026-08-04",
         priorityReturns: [],
+        products: [
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 10,
+            code: "T-001",
+            id: "20000000-0000-4000-8000-000000000080",
+            name: "Торт тестовый",
+            plannedQuantity: 10,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 10,
+            sentQuantity: 10,
+          },
+          {
+            acceptedQuantity: 5,
+            awaitingAcceptanceQuantity: 0,
+            code: "TP-001",
+            id: "20000000-0000-4000-8000-000000000081",
+            name: "Торт Премиум тестовый",
+            plannedQuantity: 5,
+            productGroupCode: "PREMIUM_CAKES",
+            productGroupName: "Торты Премиум",
+            remainingQuantity: 0,
+            sentQuantity: 5,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "PI-001",
+            id: "20000000-0000-4000-8000-000000000082",
+            name: "Пирог тестовый",
+            plannedQuantity: 7,
+            productGroupCode: "PIES_AND_PASTRIES",
+            productGroupName: "Пироги",
+            remainingQuantity: 7,
+            sentQuantity: 0,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "DE-001",
+            id: "20000000-0000-4000-8000-000000000083",
+            name: "Десерт тестовый",
+            plannedQuantity: 8,
+            productGroupCode: "DESSERTS",
+            productGroupName: "Десерты",
+            remainingQuantity: 8,
+            sentQuantity: 0,
+          },
+          {
+            acceptedQuantity: 0,
+            awaitingAcceptanceQuantity: 0,
+            code: "SV-001",
+            id: "20000000-0000-4000-8000-000000000084",
+            name: "СВ Тестовая выпечка",
+            plannedQuantity: 7,
+            productGroupCode: "DRY_BAKERY",
+            productGroupName: "Сухая выпечка",
+            remainingQuantity: 7,
+            sentQuantity: 0,
+          },
+        ],
         serverTime: "2026-08-04T06:15:00.000Z",
         sessions: [
           {
@@ -787,29 +1298,12 @@ test.describe("B20 browser and HTTP regression", () => {
         ],
       }),
     );
-    await page.route("**/api/v1/logistics/me/territory-requests", async (route) => {
-      territoryRequest = route.request().postDataJSON();
-      await json(route, {
-        createdAt: "2026-08-04T04:00:00.000Z",
-        decisionComment: null,
-        dispatchDate: "2026-08-04",
-        driverName: "Водитель теста",
-        id: "20000000-0000-4000-8000-000000000081",
-        reason: "Заменяю водителя",
-        requesterEmployeeId: "20000000-0000-4000-8000-000000000071",
-        status: "SUBMITTED",
-        territoryId: "20000000-0000-4000-8000-000000000075",
-        territoryName: "Территория 3",
-        territoryNumber: 3,
-        territoryRunId: null,
-        version: 1,
-      });
-    });
-
     await page.goto("/");
     await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
     const driverNavigation = page.getByRole("navigation", { name: "Основная навигация" });
-    await expect(driverNavigation.getByText("Погрузка", { exact: true })).toBeVisible();
+    const loadingTab = driverNavigation.getByRole("link", { name: /Погрузка/u });
+    await expect(loadingTab).toBeVisible();
+    await expect(loadingTab.getByLabel("Ожидает подтверждения: 1")).toBeVisible();
     await driverNavigation.getByRole("button", { name: "Меню" }).click();
     const driverMenu = page.getByRole("dialog", { name: "Разделы приложения" });
     await expect(driverMenu.getByRole("link", { exact: true, name: "Моя норма" })).toBeVisible();
@@ -820,27 +1314,367 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/logistics/today");
     await expect(page.getByRole("heading", { name: "Моя погрузка" })).toBeVisible();
-    await expect(page.getByText("Запросить другую территорию")).toBeVisible();
+    await expect(page.getByText("Вы на рейсе", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Текущий рейс" }).getByRole("heading", {
+        name: "Территория 3",
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Завершить рейс" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть «Мою норму»" })).toHaveCount(0);
     await page.getByLabel("Дата вывоза").fill("2026-08-04");
-    await page
-      .locator(".driver-territory-request select")
-      .selectOption("20000000-0000-4000-8000-000000000075", { force: true });
-    await page.locator(".driver-territory-request input").fill("Заменяю водителя");
-    await page.getByRole("button", { name: "Отправить запрос" }).click();
-    await expect
-      .poll(() => territoryRequest)
-      .toEqual({
-        dispatchDate: "2026-08-04",
-        reason: "Заменяю водителя",
-        territoryId: "20000000-0000-4000-8000-000000000075",
-      });
     await expect(page.getByText("Общая норма", { exact: true })).toBeVisible();
-    await expect(page.getByText("37 шт.", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".driver-day-total").getByText("37 шт.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/Рейсов:/u)).toHaveCount(0);
+    await expect(page.getByText(/Машина:/u)).toHaveCount(0);
+    await expect(page.getByText("Газель 03", { exact: true })).toHaveCount(0);
+    const pendingLoading = page.locator(".driver-pending-loading");
+    await expect(pendingLoading.getByRole("heading", { name: "Нужно подтвердить" })).toBeVisible();
+    await expect(pendingLoading.getByLabel("Ожидает подтверждения: 1")).toBeVisible();
+    const pendingProduct = pendingLoading.getByRole("button", {
+      name: "Торт тестовый, 10 шт.",
+    });
+    await expect(pendingProduct).toBeVisible();
+    const pendingProductBox = await pendingProduct.boundingBox();
+    expect(pendingProductBox).not.toBeNull();
+    expect(pendingProductBox?.height ?? 0).toBeLessThanOrEqual(72);
+    await expect(page.getByRole("heading", { name: "Что нужно взять сегодня" })).toBeVisible();
+    const assortment = page.locator(".driver-assortment");
+    expect(
+      await pendingLoading.evaluate((element) => {
+        const assortmentElement = document.querySelector(".driver-assortment");
+        return Boolean(
+          assortmentElement &&
+          element.compareDocumentPosition(assortmentElement) & Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    ).toBe(true);
+    await expect(assortment).toContainText("Принято5 шт.");
+    await expect(assortment).toContainText("Ждёт подтверждения10 шт.");
+    await expect(assortment).toContainText("Осталось добрать32 шт.");
+    await expect(assortment.getByRole("button", { name: /^Все 37 шт\.$/u })).toBeVisible();
+    await expect(
+      assortment.getByRole("button", { name: /^Осталось забрать 32 шт\.$/u }),
+    ).toBeVisible();
+    await expect(assortment.getByRole("button", { name: /^Принято 5 шт\.$/u })).toBeVisible();
+    for (const group of ["Торты Базовые", "Торты Премиум", "Пироги", "Десерты", "Сухая выпечка"]) {
+      await expect(assortment.getByRole("button", { name: new RegExp(group, "u") })).toBeVisible();
+    }
+    await assortment.getByRole("button", { name: /Торты Базовые/u }).click();
+    const basicProduct = assortment.locator(".driver-assortment-product").filter({
+      hasText: "Торт тестовый",
+    });
+    await expect(basicProduct).toContainText("Принято 0");
+    await expect(basicProduct).toContainText("Осталось 10");
+    await expect(basicProduct).not.toContainText("Ждёт вашего подтверждения");
+    await expect(basicProduct).not.toContainText("Склад ещё не передал");
+    const productMetrics = basicProduct.locator(".driver-assortment-product__metrics");
+    await expect(productMetrics).toHaveCount(0);
+    const collapsedProductBox = await basicProduct.boundingBox();
+    expect(collapsedProductBox).not.toBeNull();
+    expect(collapsedProductBox?.height ?? 0).toBeLessThanOrEqual(80);
+    await basicProduct.getByRole("button", { name: /Торт тестовый/u }).click();
+    await expect(productMetrics).toBeVisible();
+    await expect(productMetrics).toContainText("Норма 10");
+    await expect(productMetrics).toContainText("Ждёт 10");
+    const expandedProductBox = await basicProduct.boundingBox();
+    expect(expandedProductBox).not.toBeNull();
+    expect(expandedProductBox?.height ?? 0).toBeGreaterThan(collapsedProductBox?.height ?? 0);
+    await assortment.getByRole("button", { name: /^Принято 5 шт\.$/u }).click();
+    await assortment.getByRole("button", { name: /Торты Премиум/u }).click();
+    const premiumProduct = assortment.locator(".driver-assortment-product").filter({
+      hasText: "Торт Премиум тестовый",
+    });
+    await expect(premiumProduct).toBeVisible();
+    await expect(premiumProduct).toContainText("Принято 5");
+    await expect(premiumProduct).toContainText("Осталось 0");
+    await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
+    await assortment.getByRole("button", { name: /^Осталось забрать 32 шт\.$/u }).click();
+    await expect(assortment.getByText("Торт Премиум тестовый", { exact: true })).toHaveCount(0);
+    await assortment.getByRole("button", { name: /Пироги/u }).click();
+    const pieProduct = assortment.locator(".driver-assortment-product").filter({
+      hasText: "Пирог тестовый",
+    });
+    await expect(pieProduct).not.toContainText("Склад ещё не передал");
+    await assortment.getByRole("searchbox", { name: "Поиск товара" }).fill("SV-001");
+    await expect(assortment.getByText("СВ Тестовая выпечка", { exact: true })).toBeVisible();
+    await expect(assortment.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Мой маршрут", { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Подтвердить 10" })).toBeVisible();
-    await expect(page.getByText("Норма 10", { exact: true })).not.toBeVisible();
-    await page.getByText("Из чего сложилось количество", { exact: true }).click();
-    await expect(page.getByText("Норма 10", { exact: true })).toBeVisible();
+    await expect(page.getByText("Из чего сложилось количество", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Кто принимал товар", { exact: true })).toHaveCount(0);
+    await pendingProduct.click();
+    const acceptanceDialog = page.getByRole("dialog", { name: "Торт тестовый" });
+    await expect(acceptanceDialog).toBeVisible();
+    await expect(acceptanceDialog).toContainText("Количество 10 шт.");
+    await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
+    await acceptanceDialog.getByRole("button", { name: "Отклонить" }).click();
+    await expect(acceptanceDialog.getByLabel("Комментарий (необязательно)")).toBeVisible();
+    await expect(acceptanceDialog.getByRole("button", { name: "Отклонить" })).toBeEnabled();
+    await acceptanceDialog.getByRole("button", { name: "Назад" }).click();
+    await expect(acceptanceDialog.getByRole("button", { name: "Подтвердить" })).toBeVisible();
+    await acceptanceDialog.getByRole("button", { name: "Закрыть подтверждение товара" }).click();
+    await expect(acceptanceDialog).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("a warehouse keeper searches a product and sends its quantity to a territory driver", async ({
+    page,
+  }) => {
+    const productId = "20000000-0000-4000-8000-000000000082";
+    const territoryOneId = "20000000-0000-4000-8000-000000000083";
+    const territoryTwoId = "20000000-0000-4000-8000-000000000084";
+    let sentQuantity = 0;
+    let sentPayload: Record<string, unknown> | null = null;
+    let cancelPayload: Record<string, unknown> | null = null;
+    let cancelled = false;
+    let accepted = false;
+    let rejected = false;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-warehouse-loading-ui",
+        deviceId: "20000000-0000-4000-8000-000000000085",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: null,
+          employmentStatus: "ACTIVE",
+          fullName: "Тестовый Кладовщик",
+          id: "20000000-0000-4000-8000-000000000086",
+          login: "warehouse-loading-ui",
+          personnelNumber: "WAREHOUSE-LOADING-UI",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000087",
+              roleCode: "WAREHOUSE_KEEPER",
+              scopeId: null,
+              scopeType: "FACTORY",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/loading/warehouse/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        groups:
+          sentQuantity > 0
+            ? [
+                {
+                  sessions: [
+                    {
+                      dispatchDate: "2026-08-10",
+                      driverName: "Тестовый Водитель",
+                      groupId: "20000000-0000-4000-8000-000000000091",
+                      id: "20000000-0000-4000-8000-000000000089",
+                      lines: [
+                        {
+                          allocatedFreeStock: sentQuantity,
+                          allocatedGoodReturn: 0,
+                          comment: null,
+                          counterQuantity: null,
+                          currentRevisionId: "20000000-0000-4000-8000-000000000092",
+                          currentRevisionNo: 1,
+                          id: "20000000-0000-4000-8000-000000000088",
+                          isOverPlan: sentQuantity > 10,
+                          newProduction: 0,
+                          oneOffQuantity: null,
+                          plannedQuantity: 10,
+                          productCode: "TB-015",
+                          productId,
+                          productName: "ТБ Рыжик (0,8кг)",
+                          quantity: sentQuantity,
+                          responseDriverName: rejected || accepted ? "Тестовый Водитель" : null,
+                          responseReason: rejected ? "Перепутано наименование" : null,
+                          responseType: rejected ? "REJECT" : accepted ? "CONFIRM" : null,
+                          status: rejected ? "DISPUTED" : accepted ? "CONFIRMED" : "SENT_TO_DRIVER",
+                          version: 1,
+                          weeklyNormQuantity: 10,
+                        },
+                      ],
+                      status: "IN_PROGRESS",
+                      territoryId: territoryTwoId,
+                      territoryName: "Территория 2",
+                      territoryNumber: 2,
+                      totalQuantity: sentQuantity,
+                      unresolvedLines: accepted ? 0 : 1,
+                      version: 1,
+                    },
+                  ],
+                },
+              ]
+            : [],
+        products: [
+          {
+            barcodes: [],
+            code: "TB-015",
+            freeQuantity: 27 - sentQuantity,
+            id: productId,
+            name: "ТБ Рыжик (0,8кг)",
+            plannedQuantity: 28,
+            productGroupCode: "BASIC_CAKES",
+            productGroupName: "Торты Базовые",
+            remainingQuantity: 28 - sentQuantity,
+            sentQuantity,
+            territories: [
+              {
+                canSend: false,
+                driverName: null,
+                plannedQuantity: 18,
+                remainingQuantity: 18,
+                sentQuantity: 0,
+                territoryId: territoryOneId,
+                territoryName: "Территория 1",
+                territoryNumber: 1,
+              },
+              {
+                canSend: true,
+                driverName: "Тестовый Водитель",
+                plannedQuantity: 10,
+                remainingQuantity: Math.max(0, 10 - sentQuantity),
+                sentQuantity,
+                territoryId: territoryTwoId,
+                territoryName: "Территория 2",
+                territoryNumber: 2,
+              },
+            ],
+          },
+        ],
+        serverTime: "2026-08-10T06:15:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/loading/territories/*/lines", async (route) => {
+      sentPayload = route.request().postDataJSON() as Record<string, unknown>;
+      sentQuantity += Number(sentPayload.quantity);
+      accepted = false;
+      await json(route, {
+        lineId: "20000000-0000-4000-8000-000000000088",
+        sessionId: "20000000-0000-4000-8000-000000000089",
+      });
+    });
+    await page.route("**/api/v1/loading/lines/*/cancel", async (route) => {
+      cancelPayload = route.request().postDataJSON() as Record<string, unknown>;
+      cancelled = true;
+      sentQuantity = 0;
+      rejected = false;
+      await json(route, { lineId: "20000000-0000-4000-8000-000000000088" });
+    });
+
+    await page.goto("/logistics/warehouse");
+    await expect(page.getByRole("heading", { name: "Управление погрузкой" })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    const baseGroup = page.getByRole("button", { name: /Торты Базовые/u });
+    await expect(baseGroup).toContainText("На складе27 шт.");
+    await expect(baseGroup).toContainText("Осталось28 шт.");
+    await expect(baseGroup).toContainText("Не хватает−1 шт.");
+    const productRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
+    await expect(productRow).toContainText("На складе27 шт.");
+    await expect(productRow.locator(".loading-product__shortage")).toHaveAttribute(
+      "aria-label",
+      "Не хватает 1 шт.",
+    );
+    await expect(productRow.locator(".loading-product__shortage")).toHaveText("−1");
+    await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
+      "28 шт.",
+    );
+    expect(
+      await baseGroup.evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThan(70);
+    expect(
+      await productRow
+        .locator(".loading-product__summary")
+        .evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThan(80);
+    await productRow.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    await expect(productRow.locator(".loading-territory-panel")).toHaveCount(0);
+    await expect(productRow.getByText("Норма", { exact: true })).toHaveCount(0);
+    await productRow.getByRole("button", { name: /Территория 1/u }).click();
+    const unavailableDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 1/u,
+    });
+    await expect(unavailableDialog).toBeVisible();
+    await expect(unavailableDialog.getByText("Водитель не выбран")).toHaveCount(0);
+    await expect(
+      unavailableDialog.getByText(/водитель ещё не нажал «Приступил к рейсу»/u),
+    ).toBeVisible();
+    await expect(unavailableDialog).toContainText("Остаток нормы: 18 шт.");
+    await expect(unavailableDialog.getByRole("spinbutton")).toHaveValue("18");
+    await expect(unavailableDialog.getByRole("spinbutton")).toBeDisabled();
+    await unavailableDialog.getByRole("button", { name: "Закрыть окно передачи" }).click();
+    await productRow.getByRole("button", { name: /Территория 2/u }).click();
+    const sendDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 2/u,
+    });
+    await expect(sendDialog).toBeVisible();
+    await expect(sendDialog).toContainText("ТБ Рыжик (0,8кг)");
+    await expect(sendDialog).toContainText("Остаток нормы: 10 шт.");
+    await expect(sendDialog).toContainText("На складе: 27 шт.");
+    await expect(sendDialog.getByRole("spinbutton")).toHaveValue("10");
+    await sendDialog.getByRole("spinbutton").fill("28");
+    await expect(sendDialog.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
+    await expect(sendDialog.getByText("На складе доступно не более 27 шт.")).toBeVisible();
+    await sendDialog.getByRole("spinbutton").fill("12");
+    await expect(sendDialog.getByText("Сверх нормы: 2 шт.")).toBeVisible();
+    await sendDialog.getByRole("button", { name: "Отправить водителю" }).click();
+    await expect(sendDialog).toHaveCount(0);
+    await expect.poll(() => sentPayload?.quantity).toBe(12);
+    await expect(productRow).toContainText("На складе15 шт.");
+    await expect(productRow.getByRole("button", { name: /Передано.*12 шт\./u })).toBeVisible();
+    await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
+      "16 шт.",
+    );
+    accepted = true;
+    await page.reload();
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    const acceptedProductRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
+    await acceptedProductRow.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    await acceptedProductRow.getByRole("button", { name: /Территория 2/u }).click();
+    const additionalDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 2/u,
+    });
+    await expect(additionalDialog).toContainText("Остаток нормы: 0 шт.");
+    await expect(additionalDialog.getByRole("spinbutton")).toHaveValue("1");
+    await additionalDialog.getByRole("spinbutton").fill("2");
+    await expect(additionalDialog.getByText("Сверх нормы: 2 шт.")).toBeVisible();
+    await additionalDialog.getByRole("button", { name: "Отправить водителю" }).click();
+    await expect.poll(() => sentPayload?.quantity).toBe(2);
+    await expect(acceptedProductRow).toContainText("На складе13 шт.");
+    await acceptedProductRow.getByRole("button", { name: /Передано.*14 шт\./u }).click();
+    await expect(
+      acceptedProductRow.locator(".loading-transfer-item > header strong", {
+        hasText: "Территория 2",
+      }),
+    ).toBeVisible();
+    await expect(acceptedProductRow.getByText("Ждём приёмку")).toBeVisible();
+    rejected = true;
+    await page.reload();
+    const rejectedStage = page.getByRole("region", { name: "Водитель отклонил товар" });
+    await expect(rejectedStage).toBeVisible();
+    await expect(rejectedStage.getByLabel("Отклонено передач: 1")).toBeVisible();
+    await rejectedStage
+      .getByRole("button", { name: /ТБ Рыжик.*отклонено 14 шт.*Территория 2/u })
+      .click();
+    const rejectedDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await expect(rejectedDialog).toContainText("Перепутано наименование");
+    await expect(rejectedDialog).toContainText("Тестовый Водитель");
+    await expect(rejectedDialog).toContainText("Территория2");
+    await rejectedDialog.getByRole("button", { name: "Подтвердить возврат на склад" }).click();
+    await expect.poll(() => cancelled).toBe(true);
+    expect(cancelPayload?.reason).toBe("Возвращено на склад после отклонения водителем");
+    await expect(rejectedStage).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    const returnedProductRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
+    await expect(returnedProductRow).toContainText("На складе27 шт.");
+    await expect(
+      returnedProductRow.getByRole("button", { name: /Передано.*0 шт\./u }),
+    ).toBeDisabled();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -854,6 +1688,7 @@ test.describe("B20 browser and HTTP regression", () => {
     const territoryId = "20000000-0000-4000-8000-000000000090";
     const productId = "20000000-0000-4000-8000-000000000091";
     const dryProductId = "20000000-0000-4000-8000-000000000097";
+    let driverRequests: Array<Record<string, unknown>> = [];
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
       json(route, {
@@ -882,6 +1717,7 @@ test.describe("B20 browser and HTTP regression", () => {
     );
     await page.route("**/api/v1/logistics/me/days/*", (route) =>
       json(route, {
+        activeRoutes: [],
         availableTerritoryIds: [territoryId],
         dispatchDate: "2026-08-10",
         driverProfileVersion: 1,
@@ -972,31 +1808,89 @@ test.describe("B20 browser and HTTP regression", () => {
             weekday: 1,
           },
         ],
-        requests: [],
+        requests: driverRequests,
         territoryId,
         weekStart: "2026-08-03",
       }),
     );
+    await page.route("**/api/v1/planning/requests", async (route) => {
+      const input = route.request().postDataJSON() as {
+        comment?: string;
+        dispatchDate?: string;
+        dispatchWeekday?: number;
+        effectiveFrom?: string;
+        effectiveUntil?: string;
+        kind: "MONTH_WEEKDAY" | "ONE_OFF";
+        lines: Array<{ productId: string; quantity: number }>;
+      };
+      const created = {
+        decisionComment: null,
+        dispatchDate: input.dispatchDate ?? null,
+        dispatchWeekday: input.dispatchWeekday ?? null,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveUntil: input.effectiveUntil ?? null,
+        id: "20000000-0000-4000-8000-000000000099",
+        kind: input.kind,
+        lines: input.lines.map((line) => ({
+          baseQuantity: 10,
+          productCode: "T-001",
+          productId: line.productId,
+          productName: "Торт тестовый",
+          proposedQuantity: line.quantity,
+        })),
+        requesterComment: input.comment ?? null,
+        requesterEmployeeId: "20000000-0000-4000-8000-000000000093",
+        requesterName: "Водитель нормы",
+        status: "SUBMITTED",
+        submittedAt: "2026-08-09T19:00:00.000Z",
+        territoryId,
+        territoryNumber: 3,
+        version: 1,
+      };
+      driverRequests = [created];
+      return json(route, created, 201);
+    });
 
     await page.goto("/planning");
     await expect(page.getByRole("heading", { level: 1, name: "Моя норма" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Все товары/ })).toContainText("17 шт.");
-    await expect(page.getByRole("button", { name: /Сухая выпечка/ })).toContainText("7 шт.");
+    await expect(page.getByRole("region", { name: "Рейс сегодня" })).toHaveCount(0);
+    const weekdayButtons = page.locator(".driver-weekday-accordion__trigger");
+    const monday = weekdayButtons.filter({ hasText: "Понедельник" });
+    const tuesday = weekdayButtons.filter({ hasText: "Вторник" });
+    await expect(weekdayButtons).toHaveCount(7);
+    await expect(monday).toHaveAttribute("aria-expanded", "false");
+    await monday.click();
+    await expect(monday).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("details.driver-norm-group")).toHaveCount(5);
+    const dryGroup = page.locator("details.driver-norm-group").filter({
+      has: page.getByText("Сухая выпечка", { exact: true }),
+    });
+    await expect(dryGroup).toContainText("1 тов. · 7 шт.");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+    await dryGroup.locator("summary").click();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
+    await tuesday.click();
+    await expect(monday).toHaveAttribute("aria-expanded", "false");
+    await expect(tuesday).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("details.driver-norm-group")).toHaveCount(5);
+    await expect(page.locator("details.driver-norm-group").first()).toContainText("0 тов. · 0 шт.");
+    await monday.click();
+    await expect(monday).toHaveAttribute("aria-expanded", "true");
+    const cakeGroup = page.locator("details.driver-norm-group").filter({
+      has: page.getByText("Торты Базовые", { exact: true }),
+    });
+    await cakeGroup.locator("summary").click();
     await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
-    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
-    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
-    await expect(page.getByText("Торт тестовый", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: /Все товары/ }).click();
-    const friday = page.locator(".driver-weekday-switcher button").filter({ hasText: "Пт" });
+    const friday = weekdayButtons.filter({ hasText: "Пятница" });
     await expect(friday).toBeDisabled();
     await expect(friday).toContainText("выходной");
-    await page
-      .locator(".driver-selected-norm__lines > div")
-      .filter({ hasText: "Торт тестовый" })
-      .getByRole("button", { name: "Изменить" })
-      .click();
+    const cakeProductEntry = page.locator(".driver-norm-product-entry").filter({
+      has: page.getByText("Торт тестовый", { exact: true }),
+    });
+    await cakeProductEntry.locator(".driver-norm-product").click();
     await expect(page.getByRole("heading", { name: "Торт тестовый" })).toBeVisible();
+    await expect(cakeProductEntry.locator("form.driver-inline-request")).toBeVisible();
     await expect
       .poll(() =>
         page.locator("form.driver-inline-request").evaluate((form) => {
@@ -1008,6 +1902,16 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.getByLabel("Как изменить").selectOption("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toHaveValue("MONTH_WEEKDAY");
     await expect(page.getByLabel("Как изменить")).toContainText(/Каждый понедельник до/);
+    const quantityInput = page.locator(".driver-quantity-stepper input");
+    await page.getByRole("button", { name: "Увеличить количество" }).click();
+    await expect(quantityInput).toHaveValue("11");
+    await page.getByRole("button", { name: "Уменьшить количество" }).click();
+    await expect(quantityInput).toHaveValue("10");
+    await page.getByRole("button", { name: "Отправить запрос" }).click();
+    await expect(page.getByText("Запрос отправлен", { exact: true })).toBeVisible();
+    await expect(page.getByText("Ожидает решения администратора", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Изменить запрос" }).click();
+    await expect(page.getByRole("button", { name: "Сохранить изменения" })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -1015,7 +1919,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("an administrator sees production quantities before calculation details", async ({
+  test("an administrator sees dispatch quantities by territories without driver or production blocks", async ({
     page,
   }) => {
     const productId = "20000000-0000-4000-8000-000000000100";
@@ -1076,11 +1980,102 @@ test.describe("B20 browser and HTTP regression", () => {
         territories,
       }),
     );
+    await page.route("**/api/v1/logistics/setup", (route) =>
+      json(route, {
+        assignments: [],
+        drivers: [
+          {
+            canDriveFrom: null,
+            canDriveTo: null,
+            comment: null,
+            employeeId: "20000000-0000-4000-8000-000000000188",
+            employeeName: "Водитель плана",
+            homeTerritoryId: territories[2].id,
+            personnelNumber: "DRIVER-PLAN",
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        territories,
+        vehicles: [
+          {
+            capacityNote: null,
+            comment: null,
+            displayName: "Скрытая машина",
+            id: "20000000-0000-4000-8000-000000000189",
+            registrationNumber: "ТЕСТ",
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/logistics/days/*", (route) =>
+      json(route, {
+        dispatchDate: "2026-08-10",
+        driverNormTotals: [],
+        driverRequests: [],
+        groups: [
+          {
+            dispatchDate: "2026-08-10",
+            groupNo: 1,
+            id: "20000000-0000-4000-8000-000000000190",
+            loadingZone: "MAIN",
+            plannedEndAt: "2026-08-10T07:00:00+03:00",
+            plannedStartAt: "2026-08-10T06:00:00+03:00",
+            status: "DRAFT",
+            version: 1,
+          },
+        ],
+        runs: [],
+        summary: { completeAssignments: 0, draft: 0, published: 0, total: 0 },
+      }),
+    );
+    await page.route("**/api/v1/employees", (route) => json(route, { items: [], total: 0 }));
     await page.route("**/api/v1/planning/territory-norms/*", (route) =>
       json(route, {
         dispatchDate: "2026-08-06",
         lines: [{ productId: dryProductId, quantity: 7, version: 1 }],
         territoryId: territories[2].id,
+      }),
+    );
+    await page.route("**/api/v1/planning/requests", (route) =>
+      json(route, [
+        {
+          decisionComment: null,
+          dispatchDate: "2026-08-10",
+          dispatchWeekday: null,
+          effectiveFrom: null,
+          effectiveUntil: null,
+          id: "20000000-0000-4000-8000-000000000108",
+          kind: "ONE_OFF",
+          lines: [
+            {
+              baseQuantity: 7,
+              productCode: "SV-001",
+              productId: dryProductId,
+              productName: "СВ Печенье тестовое",
+              proposedQuantity: 9,
+            },
+          ],
+          requesterComment: "Нужно увеличить на две штуки",
+          requesterEmployeeId: "20000000-0000-4000-8000-000000000109",
+          requesterName: "Тестовый водитель",
+          status: "SUBMITTED",
+          submittedAt: "2026-08-09T19:00:00.000Z",
+          territoryId: territories[2].id,
+          territoryNumber: 3,
+          version: 1,
+        },
+      ]),
+    );
+    await page.route("**/api/v1/planning/weeks/*", (route) =>
+      json(route, {
+        calendar: [],
+        norms: [],
+        requests: [],
+        territoryId: territories[0].id,
+        weekStart: "2026-08-10",
       }),
     );
     await page.route("**/api/v1/planning/plans/*", (route) =>
@@ -1129,38 +2124,394 @@ test.describe("B20 browser and HTTP regression", () => {
       }),
     );
 
+    await page.goto("/planning");
+    await expect(page.locator(".planning-requester-comment")).toContainText(
+      "Комментарий водителя: Нужно увеличить на две штуки",
+    );
+    await expect(page.getByPlaceholder("Причина решения")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Утвердить", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Отклонить", exact: true })).toBeEnabled();
+
     await page.goto("/planning/plan");
-    await expect(page.getByRole("heading", { level: 1, name: "План производства" })).toBeVisible();
-    await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
-    await page.getByRole("button", { name: /Территория 3/ }).click();
-    await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
-    await page.getByRole("button", { name: /Сухая выпечка/ }).click();
-    await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
-    await page.getByText("Сводный опубликованный план по цехам", { exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "План вывоза" })).toBeVisible();
+    const dispatchDateInput = page.getByLabel("Дата вывоза");
+    await expect(dispatchDateInput).toHaveCSS("min-height", "64px");
+    await page.getByText("Дата вывоза", { exact: true }).click();
+    const dateDialog = page.getByRole("dialog", { name: "Выберите дату" });
+    await expect(dateDialog).toBeVisible();
+    const selectedDate = dateDialog.locator('.date-calendar-day[aria-pressed="true"]');
+    await expect(selectedDate).toHaveCSS("min-height", "44px");
+    await expect(selectedDate).toHaveCSS("border-radius", "999px");
+    const anotherDate = dateDialog
+      .locator('.date-calendar-day:not([aria-pressed="true"]):not(:disabled)')
+      .first();
+    const anotherDateValue = await anotherDate.getAttribute("data-date");
+    expect(anotherDateValue).not.toBeNull();
+    await anotherDate.click();
+    await expect(dispatchDateInput).toHaveValue(anotherDateValue!);
+    await expect(page.getByRole("heading", { name: "Общий объём вывоза" })).toBeVisible();
     await expect(
-      page.locator(".published-plan-summary .planning-plan-line").getByText("12 шт.", {
+      page.locator(".dispatch-overview .planning-section-heading").getByText("63 шт.", {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByText("физический пересчёт склада не подтверждён")).toBeVisible();
-    const demandDetails = page.locator(".planning-calculation .planning-demand-line");
-    const publishedProductLine = page
-      .locator(".published-plan-summary .planning-plan-line")
-      .filter({ hasText: "Торт тестовый" });
-    await expect(demandDetails).not.toBeVisible();
-    await expect(publishedProductLine.getByLabel("Новое количество")).not.toBeVisible();
-
-    await page.getByText("Как рассчитан план", { exact: false }).click();
+    await expect(page.getByRole("heading", { name: "По водителям" })).toHaveCount(0);
+    await expect(page.getByText("План производства по цехам", { exact: true })).toHaveCount(0);
+    const overviewDryGroup = page
+      .locator(".dispatch-overview__group-item")
+      .filter({ hasText: "Сухая выпечка" });
+    await overviewDryGroup.getByRole("button").click();
+    await expect(overviewDryGroup.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
     await expect(
-      demandDetails.getByText("Территория 3 · вывоз 05.08", { exact: true }),
+      overviewDryGroup.locator(".dispatch-overview__group-products").getByText("63 шт.", {
+        exact: true,
+      }),
     ).toBeVisible();
-    await publishedProductLine.getByText("Изменить опубликованный план", { exact: true }).click();
-    await expect(publishedProductLine.getByLabel("Новое количество")).toBeVisible();
+    await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
+    await page.getByRole("button", { name: /Территория 3/ }).click();
+    await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
+    await page
+      .locator(".territory-product-group-grid")
+      .getByRole("button", { name: /Сухая выпечка/ })
+      .click();
+    await expect(page.getByLabel("Количество СВ Печенье тестовое")).toHaveValue("7");
+
+    await page.goto("/logistics");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Территории и водители" }),
+    ).toBeVisible();
+    await expect(page.getByText("9", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Водитель плана", { exact: true })).toBeVisible();
+    await expect(page.getByText("Группа 1", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Новая машина" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Закрепление" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Дополнительный рейс" })).toHaveCount(0);
+    await expect(page.getByText("Готовые назначения", { exact: true })).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
+  });
+
+  test("two confectioners share one product and see each other's ready quantity", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 844, width: 390 });
+    const workshopId = "20000000-0000-4000-8000-000000000180";
+    const confectionerId = "20000000-0000-4000-8000-000000000182";
+    const otherConfectionerId = "20000000-0000-4000-8000-000000000190";
+    const taskId = "20000000-0000-4000-8000-000000000187";
+    let requestedProductionDate = "";
+    let claimed = false;
+    let currentDeclaredQuantity = 0;
+    const otherDeclaredQuantity = 4;
+    let taskVersion = 2;
+    await page.route("**/api/v1/auth/session", (route) =>
+      json(route, {
+        csrfToken: "csrf-confectioner-production",
+        deviceId: "20000000-0000-4000-8000-000000000181",
+        employee: {
+          accountStatus: "ACTIVE",
+          departmentId: workshopId,
+          employmentStatus: "ACTIVE",
+          fullName: "Кондитер производства",
+          id: confectionerId,
+          login: "confectioner-production",
+          personnelNumber: "E2E-CONFECTIONER",
+          roles: [
+            {
+              id: "20000000-0000-4000-8000-000000000183",
+              roleCode: "CONFECTIONER",
+              scopeId: workshopId,
+              scopeType: "WORKSHOP",
+            },
+          ],
+          version: 1,
+        },
+        sessionExpiresAt: "2027-08-09T10:00:00.000Z",
+      }),
+    );
+    await page.route("**/api/v1/production/workspace?*", (route) => {
+      requestedProductionDate = new URL(route.request().url()).searchParams.get("date") ?? "";
+      return json(route, {
+        availableTransferWorkshops: [],
+        employees: [],
+        normDemand: {
+          dispatchDates: ["2026-08-10"],
+          lines: [
+            {
+              productCode: "TB-001",
+              productGroup: "Торты Базовые",
+              productId: "20000000-0000-4000-8000-000000000184",
+              productName: "Торт тестовый",
+              quantity: 12,
+              work: {
+                contributions: [
+                  {
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    quantity: otherDeclaredQuantity,
+                  },
+                  ...(currentDeclaredQuantity > 0
+                    ? [
+                        {
+                          employeeId: confectionerId,
+                          employeeName: "Кондитер производства",
+                          quantity: currentDeclaredQuantity,
+                        },
+                      ]
+                    : []),
+                ],
+                declaredQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
+                participants: [
+                  {
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    isLead: true,
+                  },
+                  ...(claimed
+                    ? [
+                        {
+                          employeeId: confectionerId,
+                          employeeName: "Кондитер производства",
+                          isLead: false,
+                        },
+                      ]
+                    : []),
+                ],
+                remainingQuantity: 12 - otherDeclaredQuantity - currentDeclaredQuantity,
+                status: "IN_PROGRESS",
+                targetQuantity: 12,
+                taskId,
+                version: taskVersion,
+              },
+              workshopId,
+              workshopName: "Кондитерский цех",
+            },
+            {
+              productCode: "SV-001",
+              productGroup: "Сухая выпечка",
+              productId: "20000000-0000-4000-8000-000000000185",
+              productName: "СВ Печенье тестовое",
+              quantity: 7,
+              work: null,
+              workshopId: "20000000-0000-4000-8000-000000000186",
+              workshopName: "Цех сухой выпечки",
+            },
+          ],
+          source: "NEXT_DAY_FALLBACK",
+        },
+        productionDate: "2026-08-09",
+        reasons: [],
+        serverTime: "2026-08-09T10:00:00.000Z",
+        tasks: claimed
+          ? [
+              {
+                acceptedQuantity: 0,
+                assignments: [
+                  {
+                    assignedAt: "2026-08-09T09:00:00.000Z",
+                    employeeId: otherConfectionerId,
+                    employeeName: "Кондитер смены",
+                    id: "20000000-0000-4000-8000-000000000191",
+                    isLead: true,
+                  },
+                  {
+                    assignedAt: "2026-08-09T10:00:00.000Z",
+                    employeeId: confectionerId,
+                    employeeName: "Кондитер производства",
+                    id: "20000000-0000-4000-8000-000000000188",
+                    isLead: false,
+                  },
+                ],
+                awaitingWarehouseQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
+                batches: [
+                  {
+                    id: "20000000-0000-4000-8000-000000000192",
+                    overproduction: false,
+                    overproductionComment: null,
+                    producedAt: "2026-08-09T09:30:00.000Z",
+                    productionDate: "2026-08-09",
+                    productionWindow: "DAY",
+                    quantity: otherDeclaredQuantity,
+                    replacementForBatchId: null,
+                    status: "AWAITING_WAREHOUSE",
+                    submittedAt: "2026-08-09T09:30:00.000Z",
+                    submittedById: otherConfectionerId,
+                    submittedByName: "Кондитер смены",
+                    version: 1,
+                  },
+                  ...(currentDeclaredQuantity > 0
+                    ? [
+                        {
+                          id: "20000000-0000-4000-8000-000000000189",
+                          overproduction: false,
+                          overproductionComment: null,
+                          producedAt: "2026-08-09T10:30:00.000Z",
+                          productionDate: "2026-08-09",
+                          productionWindow: "DAY",
+                          quantity: currentDeclaredQuantity,
+                          replacementForBatchId: null,
+                          status: "AWAITING_WAREHOUSE",
+                          submittedAt: "2026-08-09T10:30:00.000Z",
+                          submittedById: confectionerId,
+                          submittedByName: "Кондитер производства",
+                          version: 1,
+                        },
+                      ]
+                    : []),
+                ],
+                confirmedDefectQuantity: 0,
+                correctionOfTaskId: null,
+                declaredQuantity: otherDeclaredQuantity + currentDeclaredQuantity,
+                defects: [],
+                id: taskId,
+                overproductionQuantity: 0,
+                planId: null,
+                planLineId: null,
+                productCode: "TB-001",
+                productId: "20000000-0000-4000-8000-000000000184",
+                productName: "Торт тестовый",
+                productionDate: "2026-08-09",
+                productionWindow: "DAY",
+                rejectedQuantity: 0,
+                remainingToDeclare: 12 - otherDeclaredQuantity - currentDeclaredQuantity,
+                shortfallQuantity: 12,
+                sourceKind: "DAILY_NORM_CLAIM",
+                sourceTransferId: null,
+                status: "IN_PROGRESS",
+                targetQuantity: 12,
+                version: taskVersion,
+                withdrawnQuantity: 0,
+                workshopId,
+                workshopName: "Кондитерский цех",
+              },
+            ]
+          : [],
+        transfers: [],
+        workshopId: null,
+        workshops: [{ id: workshopId, name: "Кондитерский цех" }],
+      });
+    });
+    await page.route("**/api/v1/production/days/*/products/*/claim", (route) => {
+      claimed = true;
+      taskVersion += 1;
+      return json(route, { id: taskId });
+    });
+    await page.route("**/api/v1/production/tasks/*/batches", async (route) => {
+      const body = route.request().postDataJSON() as { quantity: number };
+      currentDeclaredQuantity += body.quantity;
+      taskVersion += 1;
+      return json(route, { id: "20000000-0000-4000-8000-000000000189" });
+    });
+    await page.route("**/api/v1/health/live", (route) =>
+      json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-09T10:00:00.000Z",
+        version: "test",
+      }),
+    );
+
+    await page.goto("/production");
+
+    await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
+    await expect(page.getByLabel("Производственная дата")).toHaveCount(0);
+    await expect(page.getByLabel("План производства")).toBeVisible();
+    await expect(page.getByText("План производства", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /План производства/ })).toContainText(
+      "2 поз. · 19 шт.",
+    );
+    await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("0 поз. · 0 шт.");
+    const baseGroup = page.getByRole("button", { name: /Торты Базовые/ });
+    const dryGroup = page.getByRole("button", { name: /Сухая выпечка/ });
+    await expect(baseGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+
+    const productionSearch = page.getByRole("searchbox", { name: "Найти товар" });
+    await productionSearch.fill("печенье");
+    await expect(baseGroup).not.toBeVisible();
+    await expect(dryGroup).toBeVisible();
+    await expect(dryGroup).toBeDisabled();
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Найдено: 1 поз.", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+
+    await productionSearch.fill("SV-001");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Очистить поиск" }).click();
+    await expect(productionSearch).toHaveValue("");
+    await expect(baseGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+
+    await baseGroup.click();
+    await expect(baseGroup).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Торт тестовый", { exact: true })).toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).not.toBeVisible();
+
+    const sharedProduct = page.getByRole("button", { name: /Торт тестовый/ });
+    await expect(sharedProduct).toContainText("План12 шт.");
+    await expect(sharedProduct).toContainText("Произведено4 шт.");
+    await expect(sharedProduct).toContainText("Осталось8 шт.");
+
+    await dryGroup.click();
+    await expect(baseGroup).toHaveAttribute("aria-expanded", "false");
+    await expect(dryGroup).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Торт тестовый", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("СВ Печенье тестовое", { exact: true })).toBeVisible();
+    const freeProduct = page.getByRole("button", { name: /СВ Печенье тестовое/ });
+    await expect(freeProduct).toContainText("План7 шт.");
+    await expect(freeProduct).toContainText("Произведено0 шт.");
+    await expect(freeProduct).toContainText("Осталось7 шт.");
+
+    await baseGroup.click();
+    await sharedProduct.click();
+    await expect(page.getByText("Кондитер смены произвёл 4 шт.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Присоединиться к работе" }).click();
+    await expect(page.getByLabel("В работе")).toBeVisible();
+    await expect(page.getByRole("tab", { name: /В работе/ })).toContainText("1 поз. · 12 шт.");
+
+    const workProduct = page.getByRole("button", { name: /Торт тестовый/ });
+    await expect(workProduct).toContainText("План12 шт.");
+    await expect(workProduct).toContainText("Произведено4 шт.");
+    await expect(workProduct).toContainText("Осталось8 шт.");
+    await expect(page.getByText("Выполняют вместе", { exact: true })).not.toBeVisible();
+
+    await workProduct.click();
+    await expect(page.getByText("Выполняют вместе", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Кондитер смены · произведено 4 шт.", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByLabel("Произведено сейчас").fill("6");
+    await page.getByRole("button", { name: "Произведено", exact: true }).click();
+    await expect(page.getByLabel("Подтверждение произведённого количества")).toContainText(
+      "Торт тестовый: 6 шт. Вы уверены?",
+    );
+    await expect(workProduct).toContainText("Произведено4 шт.");
+
+    await page.getByRole("button", { name: "Нет", exact: true }).click();
+    await expect(page.getByLabel("Произведено сейчас")).toHaveValue("6");
+    await expect(workProduct).toContainText("Произведено4 шт.");
+
+    await page.getByRole("button", { name: "Произведено", exact: true }).click();
+    await page.getByRole("button", { name: "Да", exact: true }).click();
+    await expect(workProduct).toContainText("Произведено10 шт.");
+    await expect(workProduct).toContainText("Осталось2 шт.");
+    await expect(
+      page.getByText("Кондитер производства · произведено 6 шт.", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("tab", { name: /План производства/ }).click();
+    await page.getByRole("button", { name: /Торты Базовые/ }).click();
+    await expect(page.getByText("Вы в работе · вместе 2", { exact: true })).toBeVisible();
+    await expect(sharedProduct).toContainText("Произведено10 шт.");
+    await expect(sharedProduct).toContainText("Осталось2 шт.");
+    expect(requestedProductionDate).toBe(moscowToday());
   });
 
   test("an anonymous user is redirected from a protected report screen", async ({ page }) => {
@@ -1171,48 +2522,207 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page).toHaveURL(/\/login\?returnTo=%2Freports$/);
   });
 
-  test("manager can open the control center and queue a report with CSRF", async ({ page }) => {
-    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
-    let jobs: Record<string, unknown>[] = [];
+  test("admin optionally adds a new product to every territory day", async ({ page }) => {
+    const createBodies: Array<Record<string, unknown>> = [];
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-catalog-product",
+          deviceId: "20000000-0000-4000-8000-000000000202",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Администратор каталога",
+            id: "20000000-0000-4000-8000-000000000203",
+            login: "catalog-admin",
+            personnelNumber: "CAT-01",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000204",
+                roleCode: "ADMIN",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2026-08-11T18:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/catalog/products") && request.method() === "GET") {
+        return json(route, { items: [], total: 0 });
+      }
+      if (path.endsWith("/catalog/products") && request.method() === "POST") {
+        const body = request.postDataJSON() as Record<string, unknown>;
+        createBodies.push(body);
+        return json(route, {
+          barcodes: [],
+          category: "Торты Базовые",
+          externalCode: null,
+          id: `20000000-0000-4000-8000-${String(createBodies.length).padStart(12, "0")}`,
+          name: body.name,
+          primaryWorkshop: null,
+          productCode: `TB-${String(createBodies.length).padStart(3, "0")}`,
+          status: "ACTIVE",
+          unit: "шт",
+          version: 1,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) {
+        return json(route, notificationWorkspace());
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/catalog");
+    await page.getByLabel("Название товара").fill("ТБ Новый торт");
+    await page.getByLabel("Количество каждой территории на каждый день").fill("4");
+    await page.getByRole("button", { name: "Добавить товар" }).click();
+    await expect(page.getByText(/по 4 шт\. всем территориям/)).toBeVisible();
+    expect(createBodies[0]).toMatchObject({
+      categoryCode: "BASIC_CAKES",
+      dailyNormQuantity: 4,
+      name: "ТБ Новый торт",
+    });
+
+    await page.getByLabel("Название товара").fill("ТБ Только каталог");
+    await expect(page.getByLabel("Количество каждой территории на каждый день")).toHaveValue("");
+    await page.getByRole("button", { name: "Добавить товар" }).click();
+    await expect(page.getByText("Товар добавлен без норм.", { exact: true })).toBeVisible();
+    expect(createBodies[1]).toEqual({
+      categoryCode: "BASIC_CAKES",
+      name: "ТБ Только каталог",
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("manager first sees the list with the two implemented reports", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     await mockReportsApi(
       page,
-      () => jobs,
-      (request) => {
-        createRequest = request;
-        jobs = [
-          {
-            completedAt: null,
-            dateFrom: "2026-08-01",
-            dateTo: "2026-08-01",
-            errorMessage: null,
-            expiresAt: "2027-08-01T10:00:00.000Z",
-            fileName: null,
-            format: "XLSX",
-            id: "20000000-0000-4000-8000-000000000001",
-            reportCode: "MOVEMENTS",
-            reportTitle: "Движения склада",
-            requestedAt: "2026-08-01T10:00:00.000Z",
-            requestedByName: "Руководитель теста",
-            rowCount: 12,
-            sha256: null,
-            status: "QUEUED",
-          },
-        ];
-      },
+      () => [],
+      () => undefined,
+      true,
     );
 
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "Контроль и отчёты" })).toBeVisible();
-    await expect(page.getByText("Свободный склад")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Отчёты", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Список отчётов" })).toBeVisible();
+    await expect(page.getByText("2 отчёта", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Производство и вывоз/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Вывоз и возвраты по территориям/ }),
+    ).toBeVisible();
+    await expect(page.getByText("Движения склада", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("Другие отчёты", { exact: true })).not.toBeVisible();
     await expect(page.locator(".report-registry")).not.toHaveAttribute("open");
-    await page.getByRole("button", { name: "Сформировать в фоне" }).click();
-    await expect(page.getByText("Отчёт поставлен в очередь")).toBeVisible();
-    await page.locator(".report-registry > summary").click();
-    await expect(page.locator(".report-job-list")).toBeVisible();
+    await page.getByRole("button", { name: /Производство и вывоз/ }).click();
+    await expect(page.getByRole("heading", { name: "Производство и вывоз" })).toBeVisible();
+    await page.getByRole("button", { name: "К списку отчётов" }).click();
+    await expect(page.getByRole("heading", { name: "Список отчётов" })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("manager sees factory production, net outbound and warehouse stock and exports all territories", async ({
+    page,
+  }) => {
+    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await mockReportsApi(
+      page,
+      () => [],
+      (request) => {
+        createRequest = request;
+      },
+      true,
+    );
+
+    await page.goto("/reports");
+    await page.getByRole("button", { name: /Производство и вывоз/ }).click();
+    await expect(page.getByRole("heading", { name: "Производство и вывоз" })).toBeVisible();
+    const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("12 шт.");
+    await expect(ryzhik).toContainText("8 шт.");
+    await expect(ryzhik).toContainText("4 шт.");
+    await expect(page.getByLabel("Территория")).toHaveCount(0);
+    await expect(page.locator(".production-outbound-caption strong")).toHaveText("Вся фабрика");
+    expect(
+      await page.getByRole("button", { name: "Показать" }).evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.left >= 0 && bounds.right <= document.documentElement.clientWidth;
+      }),
+    ).toBe(true);
+    expect(
+      await page
+        .locator(".production-outbound-table-wrap")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Выгрузить в Excel" }).click();
     expect(createRequest).not.toBeNull();
     expect(createRequest?.csrf).toBe("csrf-e2e-token");
-    expect(createRequest?.body).toMatchObject({ format: "XLSX", reportCode: "MOVEMENTS" });
+    expect(createRequest?.body).toMatchObject({
+      format: "XLSX",
+      reportCode: "PRODUCTION_OUTBOUND",
+    });
+    expect(createRequest?.body).not.toHaveProperty("scopeId");
+    expect(createRequest?.body).not.toHaveProperty("scopeLabel");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("manager sees outbound, accepted good return and accepted spoilage by driver", async ({
+    page,
+  }) => {
+    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await mockReportsApi(
+      page,
+      () => [],
+      (request) => {
+        createRequest = request;
+      },
+      true,
+    );
+
+    await page.goto("/reports");
+    await page.getByRole("button", { name: /Вывоз и возвраты по территориям/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "Вывоз и возвраты по территориям" }),
+    ).toBeVisible();
+    const territoryHeaders = page.locator(".driver-report-group > header strong");
+    await expect(territoryHeaders.getByText("Территория 2", { exact: true })).toBeVisible();
+    await expect(page.getByText("Водитель теста", { exact: true })).toBeVisible();
+    await expect(territoryHeaders.getByText("Территория 3", { exact: true })).toBeVisible();
+    await page.getByLabel("Территория").selectOption("20000000-0000-4000-8000-000000000097");
+    await expect(territoryHeaders.getByText("Территория 3", { exact: true })).not.toBeVisible();
+    const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("12 шт.");
+    await expect(ryzhik).toContainText("3 шт.");
+    await expect(ryzhik).toContainText("2 шт.");
+    await page.getByRole("button", { name: "Выгрузить в Excel" }).click();
+    expect(createRequest).not.toBeNull();
+    expect(createRequest?.csrf).toBe("csrf-e2e-token");
+    expect(createRequest?.body).toMatchObject({
+      format: "XLSX",
+      reportCode: "DRIVER_TERRITORY",
+      scopeId: "20000000-0000-4000-8000-000000000097",
+      scopeLabel: "Территория 2",
+    });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -1221,11 +2731,16 @@ test.describe("B20 browser and HTTP regression", () => {
   });
 
   test("support workspaces keep rare actions collapsed on a phone", async ({ page }) => {
+    const currentDate = moscowToday();
     const employeeId = "20000000-0000-4000-8000-000000000110";
     const productId = "20000000-0000-4000-8000-000000000111";
+    const acceptedReturnIds = new Set<string>();
+    const acceptedSpoilageIds = new Set<string>();
+    const summaryQueries: string[] = [];
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      const method = route.request().method();
       if (path.endsWith("/auth/session")) {
         return json(route, {
           csrfToken: "csrf-support-ui",
@@ -1272,29 +2787,197 @@ test.describe("B20 browser and HTTP regression", () => {
         });
       }
       if (path.endsWith("/store/late-requests")) return json(route, []);
+      const returnAcceptance = path.match(/\/returns\/requests\/([^/]+)\/accept$/u);
+      if (method === "POST" && returnAcceptance) {
+        acceptedReturnIds.add(returnAcceptance[1]!);
+        return json(route, { receiptId: crypto.randomUUID(), requestId: returnAcceptance[1] });
+      }
+      const spoilageAcceptance = path.match(/\/spoilage\/requests\/([^/]+)\/acceptance$/u);
+      if (method === "POST" && spoilageAcceptance) {
+        acceptedSpoilageIds.add(spoilageAcceptance[1]!);
+        return json(route, { receiptId: crypto.randomUUID(), requestId: spoilageAcceptance[1] });
+      }
       if (path.endsWith("/returns/workspace")) {
         return json(route, {
           allocations: [],
-          dispatchDate: "2026-08-05",
+          dispatchDate: "2026-08-10",
           drivers: [],
           planPublished: false,
           pool: [],
           products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
           receipts: [],
+          requests: [
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-10",
+              id: "20000000-0000-4000-8000-000000000115",
+              lines: [
+                {
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  quantity: 3,
+                },
+              ],
+              sourceDriverId: "20000000-0000-4000-8000-000000000116",
+              sourceDriverName: "Водитель Территории 2",
+              status: "PENDING",
+              submittedAt: "2026-08-05T15:00:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000117",
+              territoryNumber: 2,
+              totalQuantity: 3,
+              version: 1,
+            },
+            {
+              acceptedAt: null,
+              acceptedByName: null,
+              comment: null,
+              dispatchDate: "2026-08-10",
+              id: "20000000-0000-4000-8000-00000000011a",
+              lines: [
+                {
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  quantity: 2,
+                },
+              ],
+              sourceDriverId: "20000000-0000-4000-8000-000000000116",
+              sourceDriverName: "Водитель Территории 2",
+              status: "PENDING",
+              submittedAt: "2026-08-05T15:05:00.000Z",
+              territoryId: "20000000-0000-4000-8000-000000000117",
+              territoryNumber: 2,
+              totalQuantity: 2,
+              version: 1,
+            },
+          ],
           serverTime: "2026-08-04T08:00:00+03:00",
           territories: [],
         });
       }
       if (path.endsWith("/spoilage/workspace")) {
         return json(route, {
-          blockedQuantity: 0,
+          blockedQuantity: 4,
           drivers: [],
           products: [{ code: "T-001", id: productId, name: "Торт тестовый" }],
           reasons: [],
-          requests: [],
+          requests: [
+            {
+              awaitingReceipt: true,
+              businessDate: "2026-08-10",
+              comment: "Вернулась порча",
+              createdAt: "2026-08-05T15:00:00.000Z",
+              createdByName: "Водитель Территории 2",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-000000000118",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 2,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: null,
+              receivedByName: null,
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 2",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 2,
+              status: "SUBMITTED",
+              version: 1,
+            },
+            {
+              awaitingReceipt: false,
+              businessDate: "2026-08-10",
+              comment: "Принято отдельно",
+              createdAt: "2026-08-05T14:00:00.000Z",
+              createdByName: "Водитель Территории 1",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-000000000119",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 4,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: "2026-08-05T14:10:00.000Z",
+              receivedByName: "Тестовый кладовщик",
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 1",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 1,
+              status: "SUBMITTED",
+              version: 2,
+            },
+            {
+              awaitingReceipt: true,
+              businessDate: "2026-08-10",
+              comment: "Повторная порча",
+              createdAt: "2026-08-05T15:05:00.000Z",
+              createdByName: "Водитель Территории 2",
+              decision: null,
+              externalCheck: null,
+              externalDocumentNumber: null,
+              id: "20000000-0000-4000-8000-00000000011b",
+              photo: null,
+              physicalSourceKind: "DRIVER",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              quantity: 1,
+              reasonCode: "DAMAGED",
+              reasonName: "Повреждение",
+              receivedAt: null,
+              receivedByName: null,
+              sourceBasis: "TODAY_ROUTE",
+              sourceDispatchDate: "2026-08-10",
+              sourceDriverName: "Водитель Территории 2",
+              sourceKind: "PHYSICAL_SPOILAGE",
+              sourceLabel: null,
+              sourceTerritoryNumber: 2,
+              status: "SUBMITTED",
+              version: 1,
+            },
+          ],
           returnPool: [],
           serverTime: "2026-08-04T08:00:00+03:00",
           writtenOffQuantity: 0,
+        });
+      }
+      if (path.endsWith("/spoilage/summary")) {
+        summaryQueries.push(new URL(route.request().url()).search);
+        return json(route, {
+          fromDate: "2026-08-01",
+          territories: [
+            {
+              products: [
+                {
+                  productCode: "T-001",
+                  productId,
+                  productName: "Торт тестовый",
+                  quantity: 4,
+                },
+              ],
+              quantity: 4,
+              territoryNumber: 1,
+            },
+          ],
+          toDate: "2026-08-10",
+          totalQuantity: 4,
         });
       }
       if (path.endsWith("/notifications/workspace")) {
@@ -1309,12 +2992,106 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/returns");
     await expect(page.getByRole("heading", { name: "Годный возврат" })).toBeVisible();
-    await expect(page.locator(".returns-allocation-form")).not.toHaveAttribute("open");
-    await expect(page.locator(".returns-receipts")).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: "Возврат от водителей" })).toBeVisible();
+    const returnsSwitch = page.getByRole("navigation", {
+      name: "Годный возврат и склад порчи",
+    });
+    await expect(returnsSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
+    await expect(returnsSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
+    await expect(page.getByText("Территория 2 · вывоз 10 августа")).toBeVisible();
+    await expect(page.getByText("Водитель Территории 2")).toBeVisible();
+    const pendingReturn = page.locator(".returns-request-list > article.is-pending");
+    await expect(pendingReturn).toBeVisible();
+    await expect(pendingReturn).toHaveCount(1);
+    expect(
+      await pendingReturn.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgb(255, 247, 223)");
+    const returnRequestLines = page.locator(".returns-request-lines");
+    await expect(returnRequestLines.getByText(/Торт тестовый/u)).toBeVisible();
+    await expect(returnRequestLines.getByText("5 шт.")).toBeVisible();
+    const acceptReturns = page.getByRole("button", { name: "Принять 5 шт." });
+    await expect(acceptReturns).toHaveCount(1);
+    await acceptReturns.click();
+    await expect(
+      page.getByText("Возврат принят: 5 шт. добавлено в общий остаток склада."),
+    ).toBeVisible();
+    expect([...acceptedReturnIds].sort()).toEqual(
+      ["20000000-0000-4000-8000-000000000115", "20000000-0000-4000-8000-00000000011a"].sort(),
+    );
+    await expect(page.getByText(/сразу добавится в общий свободный остаток склада/u)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Принять возврат" })).toHaveCount(0);
+    await expect(page.getByText("Распределить возврат", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Общий пул по товарам" })).toHaveCount(0);
+    await expect(page.getByText("Назначения территориям", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Последние приёмки", { exact: true })).toHaveCount(0);
 
+    await page.setViewportSize({ height: 844, width: 1180 });
     await page.goto("/spoilage");
-    await expect(page.getByRole("heading", { name: "Порча и запросы на списание" })).toBeVisible();
-    await expect(page.locator(".spoilage-panel.workspace-more")).not.toHaveAttribute("open");
+    await expect(page.getByRole("heading", { name: "Склад порчи", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Порча от водителей" })).toBeVisible();
+    const spoilageSwitch = page.getByRole("navigation", {
+      name: "Годный возврат и склад порчи",
+    });
+    await expect(spoilageSwitch.getByLabel("Ожидают приёмки годные возвраты: 1")).toHaveText("1");
+    await expect(spoilageSwitch.getByLabel("Ожидает приёмки порча: 1")).toHaveText("1");
+    const periodPanel = page.locator(".spoilage-period-panel");
+    await expect(
+      periodPanel.getByRole("heading", { name: "Принятая порча за период" }),
+    ).toBeVisible();
+    await expect(periodPanel).toContainText("Принято от водителей · все территории");
+    await expect(periodPanel).toContainText("4 шт.");
+    await expect(periodPanel.getByText("Общая порча · все территории")).toHaveCount(0);
+    await expect(periodPanel.getByText("Ожидает приёмки", { exact: true })).toHaveCount(0);
+    const periodHeadingBox = await periodPanel.getByRole("heading").boundingBox();
+    const fromDateBox = await periodPanel.getByLabel("С", { exact: true }).boundingBox();
+    const toDateBox = await periodPanel.getByLabel("По", { exact: true }).boundingBox();
+    expect(periodHeadingBox).not.toBeNull();
+    expect(fromDateBox).not.toBeNull();
+    expect(toDateBox).not.toBeNull();
+    expect(periodHeadingBox!.y + periodHeadingBox!.height).toBeLessThanOrEqual(fromDateBox!.y);
+    expect(fromDateBox!.x + fromDateBox!.width).toBeLessThanOrEqual(toDateBox!.x);
+    await expect(page.locator(".spoilage-territory-group")).toHaveCount(1);
+    const territoryOne = page.locator(".spoilage-territory-group").filter({
+      hasText: "Территория 1",
+    });
+    await expect(territoryOne).toContainText("4 шт.");
+    await territoryOne.locator("summary").click();
+    await expect(territoryOne).toContainText("Торт тестовый");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-01");
+    await expect.poll(() => summaryQueries.at(-1)).toContain(`toDate=${currentDate}`);
+    await periodPanel.getByLabel("С", { exact: true }).fill("2026-08-05");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-05");
+    await periodPanel.getByLabel("По", { exact: true }).fill("2026-08-06");
+    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-06");
+    await page.setViewportSize({ height: 844, width: 390 });
+    const pendingSpoilage = page.locator(".spoilage-receipt-card.is-pending");
+    await expect(pendingSpoilage).toHaveCount(1);
+    await expect(pendingSpoilage).toContainText("Территория 2");
+    await expect(pendingSpoilage).toContainText("Водитель Территории 2");
+    await expect(pendingSpoilage).toContainText("Торт тестовый");
+    await expect(pendingSpoilage).toContainText("3 шт.");
+    expect(
+      await pendingSpoilage.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgb(255, 247, 221)");
+    const acceptSpoilage = page.getByRole("button", { name: "Принять 3 шт." });
+    await expect(acceptSpoilage).toHaveCount(1);
+    await acceptSpoilage.click();
+    await expect(
+      page.getByText("Порча принята: 3 шт. добавлено в отдельный склад порчи."),
+    ).toBeVisible();
+    expect([...acceptedSpoilageIds].sort()).toEqual(
+      ["20000000-0000-4000-8000-000000000118", "20000000-0000-4000-8000-00000000011b"].sort(),
+    );
+    await expect(
+      page.getByRole("heading", { name: "Текущий остаток склада порчи", exact: true }),
+    ).toBeVisible();
+    const spoilageStock = page.locator(".spoilage-stock-group");
+    await expect(spoilageStock).toContainText("Территория 1");
+    await expect(spoilageStock).toContainText("Водитель Территории 1");
+    await expect(spoilageStock).toContainText("4 шт.");
+    await expect(page.getByRole("heading", { name: "Зафиксировать порчу" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Очередь администратора" })).toHaveCount(0);
+    await expect(page.getByText("Решения и сверка документов", { exact: true })).toHaveCount(0);
 
     await page.goto("/notifications");
     await expect(page.getByRole("heading", { name: "Уведомления" })).toBeVisible();
@@ -1324,6 +3101,468 @@ test.describe("B20 browser and HTTP regression", () => {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
+  });
+
+  test("driver returns distinguish a route that has not started from a completed route", async ({
+    page,
+  }) => {
+    const currentDate = moscowToday();
+    const driverId = "20000000-0000-4000-8000-000000000117";
+    const territoryId = "20000000-0000-4000-8000-000000000118";
+    let routeCompleted = false;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-driver-empty-route",
+          deviceId: "20000000-0000-4000-8000-000000000119",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Водитель без рейса",
+            id: driverId,
+            login: "driver-empty-route",
+            personnelNumber: "EMPTY-ROUTE",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-00000000011a",
+                roleCode: "DRIVER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/returns/me/workspace")) {
+        return json(route, {
+          dispatchDate: currentDate,
+          requests: [],
+          serverTime: "2026-08-10T13:00:00.000Z",
+          territories: [],
+        });
+      }
+      if (path.endsWith("/spoilage/me/workspace")) {
+        return json(route, {
+          dispatchDate: currentDate,
+          reasons: [],
+          requests: [],
+          serverTime: "2026-08-10T13:00:00.000Z",
+          territories: [],
+        });
+      }
+      if (path.endsWith(`/logistics/me/days/${currentDate}`)) {
+        return json(route, {
+          activeRoutes: [],
+          availableTerritoryIds: [territoryId],
+          dispatchDate: currentDate,
+          driverProfileVersion: 1,
+          homeTerritoryId: territoryId,
+          requests: [],
+          routeHistory: routeCompleted
+            ? [
+                {
+                  dispatchDate: currentDate,
+                  driverEmployeeId: driverId,
+                  driverName: "Водитель без рейса",
+                  endedAt: "2026-08-10T12:30:00.000Z",
+                  endReason: "COMPLETE",
+                  id: "20000000-0000-4000-8000-00000000011b",
+                  startedAt: "2026-08-10T06:00:00.000Z",
+                  status: "ENDED",
+                  territoryId,
+                  territoryName: "Территория 2",
+                  territoryNumber: 2,
+                  version: 2,
+                },
+              ]
+            : [],
+          runs: [],
+          territories: [],
+          totalNormQuantity: 0,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) return json(route, notificationWorkspace());
+      if (path.endsWith("/health/live")) {
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T13:00:00.000Z",
+          version: "test",
+        });
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/returns");
+    await expect(
+      page.getByRole("heading", { name: "Рейс на эту дату ещё не начат" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Рейс на эту дату уже завершён" })).toHaveCount(
+      0,
+    );
+    const loadingLink = page.getByRole("link", { name: "Открыть «Мою погрузку»" });
+    await expect(loadingLink).toBeVisible();
+    await expect(loadingLink).toHaveCSS("align-items", "center");
+    await expect(loadingLink).toHaveCSS("font-size", "18px");
+    await expect(loadingLink).toHaveCSS("justify-content", "center");
+    await expect(loadingLink).toHaveCSS("min-height", "58px");
+    await expect(loadingLink).toHaveCSS("text-decoration-line", "none");
+
+    routeCompleted = true;
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Рейс на эту дату уже завершён" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Рейс на эту дату ещё не начат" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("a driver sends a partial good return from the grouped received assortment", async ({
+    page,
+  }) => {
+    const currentDate = moscowToday();
+    const driverId = "20000000-0000-4000-8000-000000000120";
+    const territoryId = "20000000-0000-4000-8000-000000000121";
+    const productId = "20000000-0000-4000-8000-000000000122";
+    const storeReturnProductId = "20000000-0000-4000-8000-000000000126";
+    let submitted: Record<string, unknown> | null = null;
+    const submittedSpoilage: Record<string, unknown>[] = [];
+    let requestCreated = false;
+    const existingSpoilageRequests = [
+      {
+        comment: "Заявлено водителем",
+        createdAt: "2026-08-10T14:00:00.000Z",
+        createdByName: "Водитель возврата",
+        decision: null,
+        externalCheck: null,
+        externalDocumentNumber: null,
+        id: "20000000-0000-4000-8000-000000000129",
+        photo: null,
+        physicalSourceKind: "DRIVER",
+        productCode: "SV-001",
+        productId: storeReturnProductId,
+        productName: "СВ Бакусы",
+        quantity: 2,
+        reasonCode: "OTHER",
+        reasonName: "Другое",
+        receivedAt: null,
+        receivedByName: null,
+        sourceBasis: "STORE_RETURN",
+        sourceDispatchDate: "2026-08-10",
+        sourceDriverName: "Водитель возврата",
+        sourceKind: "PHYSICAL_SPOILAGE",
+        sourceLabel: "Территория 2",
+        sourceTerritoryNumber: 2,
+        status: "SUBMITTED",
+        version: 1,
+      },
+      {
+        comment: "Заявлено водителем",
+        createdAt: "2026-08-10T13:00:00.000Z",
+        createdByName: "Водитель возврата",
+        decision: null,
+        externalCheck: null,
+        externalDocumentNumber: null,
+        id: "20000000-0000-4000-8000-000000000130",
+        photo: null,
+        physicalSourceKind: "DRIVER",
+        productCode: "SV-001",
+        productId: storeReturnProductId,
+        productName: "СВ Бакусы",
+        quantity: 1,
+        reasonCode: "OTHER",
+        reasonName: "Другое",
+        receivedAt: "2026-08-10T13:10:00.000Z",
+        receivedByName: "Тестовый Кладовщик",
+        sourceBasis: "STORE_RETURN",
+        sourceDispatchDate: "2026-08-10",
+        sourceDriverName: "Водитель возврата",
+        sourceKind: "PHYSICAL_SPOILAGE",
+        sourceLabel: "Территория 2",
+        sourceTerritoryNumber: 2,
+        status: "SUBMITTED",
+        version: 2,
+      },
+    ];
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-driver-return",
+          deviceId: "20000000-0000-4000-8000-000000000123",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Водитель возврата",
+            id: driverId,
+            login: "driver-return",
+            personnelNumber: "RETURN-DRIVER",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000124",
+                roleCode: "DRIVER",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2027-08-10T10:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/returns/me/workspace")) {
+        return json(route, {
+          dispatchDate: currentDate,
+          requests: requestCreated
+            ? [
+                {
+                  acceptedAt: null,
+                  acceptedByName: null,
+                  comment: "Не продано",
+                  dispatchDate: currentDate,
+                  id: "20000000-0000-4000-8000-000000000125",
+                  lines: [
+                    {
+                      productCode: "TB-015",
+                      productId,
+                      productName: "ТБ Рыжик (0,8кг)",
+                      quantity: 10,
+                    },
+                  ],
+                  sourceDriverId: driverId,
+                  sourceDriverName: "Водитель возврата",
+                  status: "PENDING",
+                  submittedAt: "2026-08-10T15:00:00.000Z",
+                  territoryId,
+                  territoryNumber: 2,
+                  totalQuantity: 10,
+                  version: 1,
+                },
+              ]
+            : [],
+          serverTime: "2026-08-10T15:00:00.000Z",
+          territories: [
+            {
+              id: territoryId,
+              name: "Территория 2",
+              number: 2,
+              products: [
+                {
+                  alreadyReturnedQuantity: requestCreated ? 10 : 0,
+                  availableReturnQuantity: requestCreated ? 4 : 14,
+                  dispatchedQuantity: 14,
+                  productCode: "TB-015",
+                  productGroupCode: "BASIC_CAKES",
+                  productGroupName: "Торты Базовые",
+                  productId,
+                  productName: "ТБ Рыжик (0,8кг)",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (path.endsWith("/returns/requests")) {
+        submitted = request.postDataJSON() as Record<string, unknown>;
+        requestCreated = true;
+        return json(route, { requestId: "20000000-0000-4000-8000-000000000125" });
+      }
+      if (path.endsWith("/spoilage/me/workspace")) {
+        return json(route, {
+          dispatchDate: currentDate,
+          reasons: [
+            {
+              code: "OTHER",
+              displayName: "Другое",
+              id: "16000000-0000-4000-8000-000000000006",
+              photoRequired: false,
+            },
+          ],
+          requests: existingSpoilageRequests,
+          serverTime: "2026-08-10T15:00:00.000Z",
+          territories: [
+            {
+              id: territoryId,
+              name: "Территория 2",
+              number: 2,
+              products: [
+                {
+                  alreadyClassifiedQuantity: requestCreated ? 10 : 0,
+                  availableSpoilageQuantity: requestCreated ? 4 : 14,
+                  dispatchedQuantity: 14,
+                  productCode: "TB-015",
+                  productGroupCode: "BASIC_CAKES",
+                  productGroupName: "Торты Базовые",
+                  productId,
+                  productName: "ТБ Рыжик (0,8кг)",
+                },
+                {
+                  alreadyClassifiedQuantity: 0,
+                  availableSpoilageQuantity: 0,
+                  dispatchedQuantity: 0,
+                  productCode: "SV-001",
+                  productGroupCode: "DRY_BAKERY",
+                  productGroupName: "Сухая выпечка",
+                  productId: storeReturnProductId,
+                  productName: "СВ Бакусы",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (path.endsWith("/spoilage/me/requests") && request.method() === "POST") {
+        submittedSpoilage.push(request.postDataJSON() as Record<string, unknown>);
+        return json(route, { requestId: "20000000-0000-4000-8000-000000000128" });
+      }
+      if (path.endsWith(`/logistics/me/days/${currentDate}`)) {
+        return json(route, {
+          activeRoutes: [
+            {
+              dispatchDate: currentDate,
+              driverEmployeeId: driverId,
+              driverName: "Водитель возврата",
+              endedAt: null,
+              endReason: null,
+              id: "20000000-0000-4000-8000-000000000127",
+              startedAt: "2026-08-10T03:30:00.000Z",
+              status: "ACTIVE",
+              territoryId,
+              territoryName: "Территория 2",
+              territoryNumber: 2,
+              version: 1,
+            },
+          ],
+          availableTerritoryIds: [],
+          dispatchDate: currentDate,
+          driverProfileVersion: 1,
+          homeTerritoryId: territoryId,
+          requests: [],
+          runs: [],
+          territories: [],
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) return json(route, notificationWorkspace());
+      if (path.endsWith("/health/live"))
+        return json(route, {
+          service: "api",
+          state: "healthy",
+          timestamp: "2026-08-10T15:00:00.000Z",
+          version: "test",
+        });
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/returns");
+    await expect(page.getByRole("heading", { name: "Возвраты и порча" })).toBeVisible();
+    await page.getByLabel("Найти товар для возврата").fill("рыжик");
+    await expect(page.getByText(/Вернуть до/u)).toHaveCount(0);
+    const returnProduct = page.getByRole("button", { name: /ТБ Рыжик/u });
+    const dispatchedQuantity = returnProduct.getByText("Вывезено 14 шт.");
+    await expect(dispatchedQuantity).toBeVisible();
+    const dispatchedBox = await dispatchedQuantity.boundingBox();
+    const expandBox = await returnProduct.locator("i").boundingBox();
+    expect(dispatchedBox).not.toBeNull();
+    expect(expandBox).not.toBeNull();
+    expect(dispatchedBox!.x + dispatchedBox!.width).toBeLessThanOrEqual(expandBox!.x);
+    await returnProduct.click();
+    const returnDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await expect(returnDialog).toBeVisible();
+    await expect(returnDialog.getByText("TB-015 · Территория 2")).toBeVisible();
+    await returnDialog.getByLabel("Количество возврата").fill("10");
+    await returnDialog.getByRole("button", { name: "Вернуть на склад" }).click();
+
+    await expect(page.getByText("Ожидает приёмки", { exact: true })).toBeVisible();
+    expect(submitted).toMatchObject({
+      lines: [{ productId, quantity: 10 }],
+      territoryId,
+    });
+
+    await page.getByRole("button", { name: "Порча" }).click();
+    const spoilageSearch = page.locator(".driver-return-search");
+    const spoilageSearchInput = page.getByLabel("Найти испорченный товар");
+    await spoilageSearchInput.fill("бакус");
+    const spoilageResults = spoilageSearch.locator(".driver-spoilage-search-results");
+    const searchedSpoilageProduct = spoilageResults.getByRole("button", { name: /СВ Бакусы/u });
+    await expect(searchedSpoilageProduct).toBeVisible();
+    await expect(searchedSpoilageProduct.getByText("Ожидает решения · 2 шт.")).toBeVisible();
+    await expect(searchedSpoilageProduct.getByText("Подтверждено · 1 шт.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /ТБ Рыжик/u })).toHaveCount(0);
+    await expect(page.getByText("Порча · весь каталог", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Территория 2" })).toHaveCount(1);
+    await expect(page.getByLabel("Каталог товаров для порчи")).toHaveCount(0);
+    const searchInputBox = await spoilageSearchInput.boundingBox();
+    const searchResultsBox = await spoilageResults.boundingBox();
+    expect(searchInputBox).not.toBeNull();
+    expect(searchResultsBox).not.toBeNull();
+    expect(searchResultsBox!.y - (searchInputBox!.y + searchInputBox!.height)).toBeLessThan(80);
+    await searchedSpoilageProduct.click();
+    const spoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await expect(spoilageDialog).toBeVisible();
+    await expect(spoilageDialog.getByText("SV-001 · Сухая выпечка")).toBeVisible();
+    await expect(spoilageDialog.getByLabel("Количество порчи")).toBeVisible();
+    await expect(spoilageDialog.getByLabel("Причина")).toHaveCount(0);
+    await expect(spoilageDialog.getByText(/Фото/u)).toHaveCount(0);
+    await expect(spoilageDialog.getByLabel("Что произошло")).toHaveCount(0);
+    await expect(page.getByText("Порча из магазина", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Указать количество", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Сегодня вывезено/u)).toHaveCount(0);
+    await expect(page.getByText(/Оформить до/u)).toHaveCount(0);
+    await expect(spoilageResults.locator("form")).toHaveCount(0);
+    await expect(page.getByText(/остаток прошлых дней/u)).toHaveCount(0);
+    const spoilageDialogBox = await spoilageDialog.boundingBox();
+    expect(spoilageDialogBox).not.toBeNull();
+    expect(spoilageDialogBox!.x).toBeGreaterThanOrEqual(0);
+    expect(spoilageDialogBox!.x + spoilageDialogBox!.width).toBeLessThanOrEqual(390);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await spoilageDialog.getByRole("button", { name: "Закрыть окно порчи" }).click();
+    await page.getByRole("button", { name: "Очистить поиск" }).click();
+    await page.getByRole("button", { name: /Сухая выпечка/u }).click();
+    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    const groupedSpoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await expect(groupedSpoilageDialog).toBeVisible();
+    await groupedSpoilageDialog.getByLabel("Количество порчи").fill("2");
+    await groupedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    await expect(page.getByText(/Порча «СВ Бакусы» зафиксирована/u)).toBeVisible();
+    expect(submittedSpoilage[0]).toMatchObject({
+      productId: storeReturnProductId,
+      quantity: 2,
+      reasonId: "16000000-0000-4000-8000-000000000006",
+      territoryId,
+    });
+    await page.getByRole("button", { name: /СВ Бакусы/u }).click();
+    const repeatedSpoilageDialog = page.getByRole("dialog", { name: "СВ Бакусы" });
+    await repeatedSpoilageDialog.getByLabel("Количество порчи").fill("1");
+    await repeatedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    expect(submittedSpoilage).toHaveLength(2);
+    expect(submittedSpoilage[1]).toMatchObject({
+      productId: storeReturnProductId,
+      quantity: 1,
+      territoryId,
+    });
+    await page.getByLabel("Найти испорченный товар").fill("рыжик");
+    await page.getByRole("button", { name: /ТБ Рыжик/u }).click();
+    const unlimitedSpoilageDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
+    await unlimitedSpoilageDialog.getByLabel("Количество порчи").fill("25");
+    await unlimitedSpoilageDialog.getByRole("button", { name: "Отправить порчу" }).click();
+    expect(submittedSpoilage[2]).toMatchObject({
+      productId,
+      quantity: 25,
+      territoryId,
+    });
   });
 });
 
@@ -1349,6 +3588,7 @@ async function mockReportsApi(
   page: Page,
   currentJobs: () => readonly Record<string, unknown>[],
   onCreate: (request: { body: unknown; csrf: string | undefined }) => void,
+  includeProductionOutbound = false,
 ) {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -1382,6 +3622,24 @@ async function mockReportsApi(
     if (path.endsWith("/reports/workspace")) {
       return json(route, {
         catalog: [
+          ...(includeProductionOutbound
+            ? [
+                {
+                  code: "PRODUCTION_OUTBOUND",
+                  description: "Производство, чистый вывоз и склад",
+                  formats: ["XLSX"],
+                  personalData: false,
+                  title: "Производство и вывоз",
+                },
+                {
+                  code: "DRIVER_TERRITORY",
+                  description: "Вывоз, годный возврат и порча по водителям",
+                  formats: ["XLSX"],
+                  personalData: false,
+                  title: "Вывоз и возвраты по территориям",
+                },
+              ]
+            : []),
           {
             code: "MOVEMENTS",
             description: "Подтверждённые складские движения",
@@ -1392,6 +3650,96 @@ async function mockReportsApi(
         ],
         jobs: currentJobs(),
         serverTime: "2026-08-01T10:00:00.000Z",
+      });
+    }
+    if (path.endsWith("/logistics/setup")) {
+      return json(route, {
+        assignments: [],
+        drivers: [],
+        territories: [
+          {
+            description: null,
+            id: "20000000-0000-4000-8000-000000000097",
+            name: "Территория 2",
+            number: 2,
+            sortOrder: 2,
+            status: "ACTIVE",
+            version: 1,
+          },
+          {
+            description: null,
+            id: "20000000-0000-4000-8000-000000000107",
+            name: "Территория 3",
+            number: 3,
+            sortOrder: 3,
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        vehicles: [],
+      });
+    }
+    if (path.endsWith("/reports/production-outbound")) {
+      return json(route, {
+        dateFrom: url.searchParams.get("dateFrom"),
+        dateTo: url.searchParams.get("dateTo"),
+        generatedAt: "2026-08-11T10:00:00.000Z",
+        rows: [
+          {
+            onHandQuantity: 4,
+            outboundQuantity: 8,
+            producedQuantity: 12,
+            productCode: "TB-001",
+            productId: "20000000-0000-4000-8000-000000000098",
+            productName: "ТБ Рыжик",
+          },
+        ],
+        totals: {
+          onHandQuantity: 4,
+          outboundQuantity: 8,
+          producedQuantity: 12,
+        },
+        warehouseAsOf: url.searchParams.get("dateTo"),
+      });
+    }
+    if (path.endsWith("/reports/driver-territory")) {
+      return json(route, {
+        dateFrom: url.searchParams.get("dateFrom"),
+        dateTo: url.searchParams.get("dateTo"),
+        generatedAt: "2026-08-11T10:00:00.000Z",
+        rows: [
+          {
+            driverId: "20000000-0000-4000-8000-000000000096",
+            driverName: "Водитель теста",
+            goodReturnQuantity: 3,
+            outboundQuantity: 12,
+            productCode: "TB-015",
+            productId: "20000000-0000-4000-8000-000000000098",
+            productName: "ТБ Рыжик",
+            spoilageQuantity: 2,
+            territoryId: "20000000-0000-4000-8000-000000000097",
+            territoryName: "Территория 2",
+            territoryNumber: 2,
+          },
+          {
+            driverId: "20000000-0000-4000-8000-000000000106",
+            driverName: "Другой водитель",
+            goodReturnQuantity: 1,
+            outboundQuantity: 4,
+            productCode: "TB-001",
+            productId: "20000000-0000-4000-8000-000000000108",
+            productName: "ТБ Баунти",
+            spoilageQuantity: 0,
+            territoryId: "20000000-0000-4000-8000-000000000107",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+          },
+        ],
+        totals: {
+          goodReturnQuantity: 4,
+          outboundQuantity: 16,
+          spoilageQuantity: 2,
+        },
       });
     }
     if (path.endsWith("/reports/control")) {
@@ -1427,4 +3775,13 @@ async function mockReportsApi(
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ body: JSON.stringify(body), contentType: "application/json", status });
+}
+
+function moscowToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).format(new Date());
 }

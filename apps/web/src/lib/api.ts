@@ -18,11 +18,15 @@ import type {
   EmployeeSummary,
   DriverLogisticsDayView,
   DriverHomeTerritoryView,
+  DriverRouteShiftView,
+  DriverSpoilageWorkspaceView,
   DriverTerritoryRequestView,
+  GoodReturnDriverWorkspaceView,
   GoodReturnsWorkspaceView,
   StoreLateChangeRequestView,
   StoreOrderWorkspaceView,
   SpoilagePhotoView,
+  SpoilageSummaryView,
   SpoilageWorkspaceView,
   ManualAttendanceReasonView,
   ManualAttendanceResult,
@@ -48,9 +52,11 @@ import type {
   ProductionWarehouseQueueView,
   ProductionWorkspaceView,
   ControlCenterView,
+  DriverTerritoryReportView,
   ReportCode,
   ReportExportFormat,
   ReportJobView,
+  ProductionOutboundReportView,
   ReportsWorkspaceView,
   RoleCode,
   RoleAssignmentView,
@@ -63,6 +69,7 @@ import type {
   VehicleView,
   WarehouseLogisticsDayView,
   WarehouseReceiptView,
+  WarehousePickupTransferView,
   WarehouseWorkspaceView,
 } from "@tashkalinskaya/contracts";
 import type {
@@ -244,6 +251,29 @@ export async function stepUp(
 export async function logoutAll(csrfToken: string): Promise<void> {
   return request("/auth/logout-all", {
     headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function logout(csrfToken: string): Promise<void> {
+  return request("/auth/logout", {
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export interface LocalUatProfile {
+  readonly label: string;
+  readonly roleCode: RoleCode;
+}
+
+export async function getLocalUatProfiles(): Promise<readonly LocalUatProfile[]> {
+  return request("/auth/local-uat/profiles");
+}
+
+export async function loginLocalUat(roleCode: RoleCode): Promise<AuthenticatedUser> {
+  return request("/auth/local-uat/login", {
+    body: JSON.stringify({ roleCode }),
     method: "POST",
   });
 }
@@ -735,6 +765,29 @@ export async function selectDriverHomeTerritory(
   });
 }
 
+export async function activateDriverRoute(
+  input: { idempotencyKey: string; territoryId: string },
+  csrfToken: string,
+): Promise<DriverRouteShiftView> {
+  return request("/logistics/me/route/activate", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function endDriverRoute(
+  routeShiftId: string,
+  input: { action: "COMPLETE" | "HANDOVER"; idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<DriverRouteShiftView> {
+  return request(`/logistics/me/route/${routeShiftId}/end`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function createDriverTerritoryRequest(
   input: { dispatchDate: string; reason: string; territoryId: string },
   csrfToken: string,
@@ -810,6 +863,18 @@ export async function createLoadingLine(
   });
 }
 
+export async function sendLoadingToTerritory(
+  territoryId: string,
+  input: { dispatchDate: string; productId: string; quantity: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/territories/${territoryId}/lines`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function reviseLoadingLine(
   lineId: string,
   input: { comment: string; quantity: number; version: number },
@@ -828,6 +893,30 @@ export async function reassignLoadingLine(
   csrfToken: string,
 ): Promise<void> {
   return request(`/loading/lines/${lineId}/reassign`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function reassignLoadingLineToTerritory(
+  lineId: string,
+  input: { reason: string; targetTerritoryId: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/reassign-territory`, {
+    body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function cancelLoadingLine(
+  lineId: string,
+  input: { reason: string; version: number },
+  csrfToken: string,
+): Promise<void> {
+  return request(`/loading/lines/${lineId}/cancel`, {
     body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
@@ -1170,6 +1259,18 @@ export async function assignProductionTask(
   });
 }
 
+export async function claimProductionProduct(
+  productionDate: string,
+  productId: string,
+  csrfToken: string,
+): Promise<ProductionTaskView> {
+  return request(`/production/days/${productionDate}/products/${productId}/claim`, {
+    body: JSON.stringify({}),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function startProductionTask(
   taskId: string,
   version: number,
@@ -1395,7 +1496,7 @@ export async function previewCatalogImport(
 }
 
 export async function createCatalogProduct(
-  input: { categoryCode: string; name: string },
+  input: { categoryCode: string; dailyNormQuantity?: number; name: string },
   csrfToken: string,
 ): Promise<ProductView> {
   return request("/catalog/products", {
@@ -1437,6 +1538,41 @@ export async function getGoodReturnsWorkspace(
   dispatchDate: string,
 ): Promise<GoodReturnsWorkspaceView> {
   return request(`/returns/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
+export async function getDriverGoodReturnsWorkspace(
+  dispatchDate: string,
+): Promise<GoodReturnDriverWorkspaceView> {
+  return request(`/returns/me/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
+export async function submitGoodReturnRequest(
+  input: {
+    comment?: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    lines: ReadonlyArray<{ productId: string; quantity: number }>;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request("/returns/requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function acceptGoodReturnRequest(
+  requestId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ receiptId: string; requestId: string }> {
+  return request(`/returns/requests/${requestId}/accept`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
 }
 
 export async function receiveGoodReturn(
@@ -1502,6 +1638,21 @@ export async function getSpoilageWorkspace(): Promise<SpoilageWorkspaceView> {
   return request("/spoilage/workspace");
 }
 
+export async function getSpoilageSummary(
+  period: { fromDate: string; toDate: string } | null,
+): Promise<SpoilageSummaryView> {
+  const query = period
+    ? `?fromDate=${encodeURIComponent(period.fromDate)}&toDate=${encodeURIComponent(period.toDate)}`
+    : "";
+  return request(`/spoilage/summary${query}`);
+}
+
+export async function getDriverSpoilageWorkspace(
+  dispatchDate: string,
+): Promise<DriverSpoilageWorkspaceView> {
+  return request(`/spoilage/me/workspace?dispatchDate=${encodeURIComponent(dispatchDate)}`);
+}
+
 export async function uploadSpoilagePhoto(
   file: File,
   csrfToken: string,
@@ -1510,6 +1661,39 @@ export async function uploadSpoilagePhoto(
   body.set("file", file);
   return request("/spoilage/photos", {
     body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function uploadDriverSpoilagePhoto(
+  file: File,
+  csrfToken: string,
+): Promise<SpoilagePhotoView> {
+  const body = new FormData();
+  body.set("file", file);
+  return request("/spoilage/me/photos", {
+    body,
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function createDriverSpoilageRequest(
+  input: {
+    comment: string;
+    dispatchDate: string;
+    idempotencyKey: string;
+    photoUploadId?: string;
+    productId: string;
+    quantity: number;
+    reasonId: string;
+    territoryId: string;
+  },
+  csrfToken: string,
+): Promise<{ requestId: string }> {
+  return request("/spoilage/me/requests", {
+    body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
   });
@@ -1533,6 +1717,18 @@ export async function createWriteoffRequest(
   csrfToken: string,
 ): Promise<{ requestId: string }> {
   return request("/spoilage/requests", {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function acceptDriverSpoilageRequest(
+  requestId: string,
+  input: { idempotencyKey: string; version: number },
+  csrfToken: string,
+): Promise<{ receiptId: string; requestId: string }> {
+  return request(`/spoilage/requests/${requestId}/acceptance`, {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",
@@ -1652,12 +1848,30 @@ export async function getReportsWorkspace(): Promise<ReportsWorkspaceView> {
   return request("/reports/workspace");
 }
 
+export async function getProductionOutboundReport(input: {
+  dateFrom: string;
+  dateTo: string;
+}): Promise<ProductionOutboundReportView> {
+  const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
+  return request(`/reports/production-outbound?${query.toString()}`);
+}
+
+export async function getDriverTerritoryReport(input: {
+  dateFrom: string;
+  dateTo: string;
+}): Promise<DriverTerritoryReportView> {
+  const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
+  return request(`/reports/driver-territory?${query.toString()}`);
+}
+
 export async function createReportJob(
   input: {
     dateFrom: string;
     dateTo: string;
     format: ReportExportFormat;
     reportCode: ReportCode;
+    scopeId?: string;
+    scopeLabel?: string;
   },
   csrfToken: string,
 ): Promise<ReportJobView> {
@@ -1705,6 +1919,23 @@ export async function receiveWarehouseBatch(
   csrfToken: string,
 ): Promise<WarehouseReceiptView> {
   return request(`/warehouse/batches/${batchId}/receive`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+export async function transferWarehousePickup(
+  input: {
+    idempotencyKey: string;
+    productId: string;
+    productionDate: string;
+    productionWindow: "DAY" | "NIGHT";
+    quantity: number;
+    workshopId: string;
+  },
+  csrfToken: string,
+): Promise<WarehousePickupTransferView> {
+  return request("/warehouse/pickups/transfer", {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

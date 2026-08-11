@@ -1,15 +1,25 @@
 "use client";
 
-import type { AuthenticatedUser } from "@tashkalinskaya/contracts";
+import type { AuthenticatedUser, WarehouseQueueItemView } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { getSession } from "../lib/api";
+import {
+  getGoodReturnsWorkspace,
+  getSession,
+  getSpoilageWorkspace,
+  getWarehouseWorkspace,
+} from "../lib/api";
 import { destinationLabelFor, destinationsFor, primaryDestinationFor } from "../lib/navigation";
 import { AppBrand } from "./app-brand";
+import { AccountMenu } from "./account-menu";
+import { countPendingDriverSpoilage, countPendingGoodReturns } from "./settlement-attention-switch";
 
 export function AppHome() {
   const [session, setSession] = useState<AuthenticatedUser | null | undefined>(undefined);
+  const [returnAttentionCount, setReturnAttentionCount] = useState(0);
+  const [spoilageAttentionCount, setSpoilageAttentionCount] = useState(0);
+  const [warehouseAttentionCount, setWarehouseAttentionCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -30,6 +40,64 @@ export function AppHome() {
     [session],
   );
   const destinations = useMemo(() => destinationsFor(roles), [roles]);
+  const canSeeWarehouse = destinations.some((destination) => destination.href === "/warehouse");
+  const canReviewSettlements = roles.some((role) =>
+    ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role),
+  );
+
+  useEffect(() => {
+    if (!canSeeWarehouse) {
+      setWarehouseAttentionCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const workspace = await getWarehouseWorkspace();
+        if (active) setWarehouseAttentionCount(countWarehousePickupGroups(workspace.queue));
+      } catch {
+        if (active) setWarehouseAttentionCount(0);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [canSeeWarehouse]);
+
+  useEffect(() => {
+    if (!canReviewSettlements) {
+      setReturnAttentionCount(0);
+      setSpoilageAttentionCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const [returns, spoilage] = await Promise.all([
+          getGoodReturnsWorkspace(moscowDate()),
+          getSpoilageWorkspace(),
+        ]);
+        if (active) {
+          setReturnAttentionCount(countPendingGoodReturns(returns.requests));
+          setSpoilageAttentionCount(countPendingDriverSpoilage(spoilage.requests));
+        }
+      } catch {
+        if (active) {
+          setReturnAttentionCount(0);
+          setSpoilageAttentionCount(0);
+        }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [canReviewSettlements]);
 
   if (session === undefined) {
     return <main className="app-home app-home--loading">Загружаем…</main>;
@@ -62,19 +130,27 @@ export function AppHome() {
     <main className="app-home">
       <header className="app-home__header">
         <AppBrand />
-        <span>{initials(session.employee.fullName)}</span>
+        <AccountMenu session={session} />
       </header>
       <section className="app-home__welcome">
         <small>Добро пожаловать</small>
         <h1>{firstName(session.employee.fullName)}</h1>
         <p>Выберите, что нужно сделать сейчас.</p>
       </section>
-      <Link className="app-home__primary" href={primary.href}>
+      <Link
+        className={`app-home__primary${
+          primary.href === "/warehouse" && warehouseAttentionCount > 0 ? " has-attention" : ""
+        }`}
+        href={primary.href}
+      >
         <span aria-hidden="true">{primary.symbol}</span>
         <div>
           <small>Основная работа</small>
           <strong>{destinationLabelFor(primary, roles)}</strong>
         </div>
+        {primary.href === "/warehouse" ? (
+          <WarehouseAttentionBadge count={warehouseAttentionCount} />
+        ) : null}
         <i aria-hidden="true">›</i>
       </Link>
       <section className="app-home__section">
@@ -82,13 +158,38 @@ export function AppHome() {
         <div className="app-home__grid">
           {destinations
             .filter((destination) => destination.href !== primary.href)
-            .slice(0, 8)
-            .map((destination) => (
-              <Link href={destination.href} key={destination.href}>
-                <span aria-hidden="true">{destination.symbol}</span>
-                <strong>{destinationLabelFor(destination, roles)}</strong>
-              </Link>
-            ))}
+            .slice(0, 10)
+            .map((destination) => {
+              const hasAttention =
+                (destination.href === "/warehouse" && warehouseAttentionCount > 0) ||
+                (destination.href === "/returns" && returnAttentionCount > 0) ||
+                (destination.href === "/spoilage" && spoilageAttentionCount > 0);
+              return (
+                <Link
+                  className={hasAttention ? "has-attention" : undefined}
+                  href={destination.href}
+                  key={destination.href}
+                >
+                  <span aria-hidden="true">{destination.symbol}</span>
+                  <strong>{destinationLabelFor(destination, roles)}</strong>
+                  {destination.href === "/warehouse" ? (
+                    <WarehouseAttentionBadge count={warehouseAttentionCount} />
+                  ) : null}
+                  {destination.href === "/returns" ? (
+                    <SettlementAttentionBadge
+                      count={returnAttentionCount}
+                      label="Ожидают приёмки возвраты"
+                    />
+                  ) : null}
+                  {destination.href === "/spoilage" ? (
+                    <SettlementAttentionBadge
+                      count={spoilageAttentionCount}
+                      label="Ожидает приёмки порча"
+                    />
+                  ) : null}
+                </Link>
+              );
+            })}
           <Link href="/notifications">
             <span aria-hidden="true">!</span>
             <strong>Уведомления</strong>
@@ -99,16 +200,50 @@ export function AppHome() {
   );
 }
 
-function firstName(fullName: string): string {
-  return fullName.trim().split(/\s+/u)[1] ?? fullName.trim().split(/\s+/u)[0] ?? "";
+function WarehouseAttentionBadge({ count }: { count: number }) {
+  if (count === 0) return null;
+  return <AttentionBadge count={count} label={`На складе ${formatWaitingProducts(count)}`} />;
 }
 
-function initials(fullName: string): string {
-  return fullName
-    .trim()
-    .split(/\s+/u)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toLocaleUpperCase("ru-RU");
+function SettlementAttentionBadge({ count, label }: { count: number; label: string }) {
+  if (count === 0) return null;
+  return <AttentionBadge count={count} label={`${label}: ${count}`} />;
+}
+
+function AttentionBadge({ count, label }: { count: number; label: string }) {
+  return (
+    <b aria-label={label} className="app-home__attention-badge">
+      {count > 99 ? "99+" : count}
+    </b>
+  );
+}
+
+function countWarehousePickupGroups(queue: readonly WarehouseQueueItemView[]): number {
+  const groups = new Set<string>();
+  for (const item of queue) {
+    if (item.remainingQuantity <= 0) continue;
+    groups.add(
+      [item.productId, item.workshopId, item.productionDate, item.isNight ? "NIGHT" : "DAY"].join(
+        ":",
+      ),
+    );
+  }
+  return groups.size;
+}
+
+function formatWaitingProducts(count: number): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return `ожидают ${count} товаров`;
+  if (last === 1) return `ожидает ${count} товар`;
+  if (last >= 2 && last <= 4) return `ожидают ${count} товара`;
+  return `ожидают ${count} товаров`;
+}
+
+function moscowDate(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+}
+
+function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/u)[1] ?? fullName.trim().split(/\s+/u)[0] ?? "";
 }

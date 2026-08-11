@@ -198,8 +198,7 @@ export class PlanningRepository {
       ]),
       this.database.query<{ product_id: string; quantity: number; version: number }>(
         `select product_id, quantity, version
-         from planning.territory_daily_norm
-         where territory_id = $1 and dispatch_date = $2 and is_current
+         from planning.effective_territory_norms($2::date, array[$1::uuid])
          order by product_id`,
         [territoryId, dispatchDate],
       ),
@@ -583,6 +582,36 @@ export class PlanningRepository {
         [authorization.cutoffAt],
       );
       const missedCutoff = cutoffState.rows[0]?.missed ?? false;
+      if (!missedCutoff) {
+        const replaced = await client.query<{ id: string }>(
+          `update planning.norm_change_request r
+           set status = 'STALE', decision_comment = 'Заменён водителем',
+               decided_at = now(), version = version + 1
+           where r.requester_employee_id = $1 and r.territory_id = $2
+             and r.status = 'SUBMITTED'
+             and exists (
+               select 1 from planning.norm_change_request_line l
+               where l.request_id = r.id and l.product_id = any($3::uuid[])
+             )
+           returning r.id`,
+          [command.actorEmployeeId, command.territoryId, productIds],
+        );
+        for (const previous of replaced.rows) {
+          await insertAudit(
+            client,
+            command,
+            "NORM_REQUEST_REPLACED",
+            "NORM_CHANGE_REQUEST",
+            previous.id,
+            { replacementRequestId: requestId },
+          );
+          await insertOutbox(client, "planning.norm-request.replaced", previous.id, {
+            replacementRequestId: requestId,
+            requestId: previous.id,
+            territoryId: command.territoryId,
+          });
+        }
+      }
       await client.query(
         `insert into planning.norm_change_request (
            id, request_kind, territory_id, dispatch_weekday, dispatch_date,
@@ -981,12 +1010,10 @@ async function resolveDriverAuthorization(
      order by (l.territory_id is not null) desc, v.version_number desc limit 1`,
     [command.dispatchDate, command.territoryId],
   );
-  if (calendar.rows[0] === undefined)
-    throw new ConflictException("Для даты не опубликована календарная связь");
   return {
     assignmentId: source.run_id === null ? source.assignment_id : null,
-    calendarLinkId: calendar.rows[0].id,
-    cutoffAt: calendar.rows[0].cutoff_at,
+    calendarLinkId: calendar.rows[0]?.id ?? null,
+    cutoffAt: calendar.rows[0]?.cutoff_at ?? null,
     runId: source.run_id,
   };
 }
@@ -1037,18 +1064,26 @@ async function isRequestStale(
     return true;
   }
   if (request.request_kind !== "ONE_OFF") {
-    const assignment = await client.query(
-      `select 1 from logistics.territory_default_assignment
-       where id = $1 and territory_id = $2 and driver_employee_id = $3
-         and valid_from <= $4 and (valid_to is null or valid_to >= $4)`,
-      [
-        request.base_assignment_id,
-        request.territory_id,
-        request.requester_employee_id,
-        referenceDate,
-      ],
+    if (request.base_assignment_id !== null) {
+      const assignment = await client.query(
+        `select 1 from logistics.territory_default_assignment
+         where id = $1 and territory_id = $2 and driver_employee_id = $3
+           and valid_from <= $4 and (valid_to is null or valid_to >= $4)`,
+        [
+          request.base_assignment_id,
+          request.territory_id,
+          request.requester_employee_id,
+          referenceDate,
+        ],
+      );
+      return assignment.rowCount === 0;
+    }
+    const home = await client.query(
+      `select 1 from logistics.driver_profile
+       where employee_id = $1 and home_territory_id = $2 and status = 'ACTIVE'`,
+      [request.requester_employee_id, request.territory_id],
     );
-    return assignment.rowCount === 0;
+    return home.rowCount === 0;
   }
   if (request.base_run_id !== null) {
     const run = await client.query(
@@ -1063,7 +1098,7 @@ async function isRequestStale(
       ],
     );
     if (run.rowCount === 0) return true;
-  } else {
+  } else if (request.base_assignment_id !== null) {
     const assignment = await client.query(
       `select 1 from logistics.territory_default_assignment
        where id = $1 and territory_id = $2 and driver_employee_id = $3
@@ -1076,6 +1111,13 @@ async function isRequestStale(
       ],
     );
     if (assignment.rowCount === 0) return true;
+  } else {
+    const home = await client.query(
+      `select 1 from logistics.driver_profile
+       where employee_id = $1 and home_territory_id = $2 and status = 'ACTIVE'`,
+      [request.requester_employee_id, request.territory_id],
+    );
+    if (home.rowCount === 0) return true;
   }
   const calendar = await client.query<{ id: string }>(
     `select l.id from planning.production_dispatch_link l
@@ -1084,7 +1126,7 @@ async function isRequestStale(
      order by (l.territory_id is not null) desc, v.version_number desc limit 1`,
     [request.dispatch_date, request.territory_id],
   );
-  return calendar.rows[0]?.id !== request.calendar_link_id;
+  return (calendar.rows[0]?.id ?? null) !== request.calendar_link_id;
 }
 
 async function finalizeRequest(

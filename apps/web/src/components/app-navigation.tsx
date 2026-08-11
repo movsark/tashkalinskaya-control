@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { getNotificationsWorkspace, getSession } from "../lib/api";
+import { getLoadingDriverDay, getNotificationsWorkspace, getSession } from "../lib/api";
 import {
   destinationLabelFor,
   destinationShortLabelFor,
@@ -29,6 +29,7 @@ export function AppNavigation() {
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [pendingLoading, setPendingLoading] = useState(0);
   const hidden = hiddenPaths.has(pathname);
 
   useEffect(() => {
@@ -76,6 +77,33 @@ export function AppNavigation() {
   const destinations = useMemo(() => destinationsFor(roles), [roles]);
   const primary = roles.length > 0 ? primaryDestinationFor(roles) : null;
 
+  useEffect(() => {
+    if (!roles.includes("DRIVER")) {
+      setPendingLoading(0);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const loading = await getLoadingDriverDay(todayMoscow());
+        const pending = loading.sessions.reduce(
+          (total, item) =>
+            total + item.lines.filter((line) => line.status === "SENT_TO_DRIVER").length,
+          0,
+        );
+        if (active) setPendingLoading(pending);
+      } catch {
+        if (active) setPendingLoading(0);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [roles]);
+
   if (hidden || session === null || primary === null) return null;
 
   return (
@@ -88,6 +116,11 @@ export function AppNavigation() {
         <Link className={pathname === primary.href ? "is-active" : ""} href={primary.href}>
           <span aria-hidden="true">{primary.symbol}</span>
           <small>{destinationShortLabelFor(primary, roles)}</small>
+          {primary.href === "/logistics/today" && pendingLoading > 0 ? (
+            <b aria-label={`Ожидает подтверждения: ${pendingLoading}`}>
+              {pendingLoading > 99 ? "99+" : pendingLoading}
+            </b>
+          ) : null}
         </Link>
         <Link className={pathname === "/notifications" ? "is-active" : ""} href="/notifications">
           <span aria-hidden="true">!</span>
@@ -143,4 +176,8 @@ export function AppNavigation() {
       ) : null}
     </>
   );
+}
+
+function todayMoscow(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }

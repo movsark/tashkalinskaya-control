@@ -1,65 +1,112 @@
 "use client";
 
-import type { AuthenticatedUser, SpoilageWorkspaceView } from "@tashkalinskaya/contracts";
+import type {
+  AuthenticatedUser,
+  SpoilageSummaryView,
+  SpoilageWorkspaceView,
+  WriteoffRequestView,
+} from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppBrand } from "../../components/app-brand";
 import {
+  countPendingDriverSpoilage,
+  countPendingGoodReturns,
+  SettlementAttentionSwitch,
+} from "../../components/settlement-attention-switch";
+import {
+  acceptDriverSpoilageRequest,
   ApiRequestError,
-  checkWriteoffExternalDocument,
-  createWriteoffRequest,
-  decideWriteoffRequest,
+  getGoodReturnsWorkspace,
   getSession,
-  getSpoilagePhotoUrl,
+  getSpoilageSummary,
   getSpoilageWorkspace,
-  uploadSpoilagePhoto,
 } from "../../lib/api";
 
-const emptyForm = {
-  comment: "",
-  externalDocumentNumber: "",
-  physicalSourceKind: "DRIVER" as "DRIVER" | "OTHER" | "STORE",
-  productId: "",
-  quantity: "",
-  reasonId: "",
-  sourceDriverId: "",
-  sourceKind: "RETURN_POOL" as "PHYSICAL_SPOILAGE" | "RETURN_POOL",
-  sourceLabel: "",
-};
+interface SpoilageStockGroup {
+  readonly dispatchDate: string | null;
+  readonly driverName: string;
+  readonly key: string;
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+    readonly quantity: number;
+  }[];
+  readonly territoryNumber: number;
+  readonly total: number;
+}
+
+interface PendingSpoilageGroup {
+  readonly dispatchDate: string | null;
+  readonly driverName: string;
+  readonly key: string;
+  readonly products: readonly {
+    readonly code: string;
+    readonly id: string;
+    readonly name: string;
+    readonly quantity: number;
+  }[];
+  readonly requests: readonly WriteoffRequestView[];
+  readonly territoryNumber: number;
+  readonly total: number;
+}
 
 export default function SpoilagePage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [data, setData] = useState<SpoilageWorkspaceView | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [decisionComments, setDecisionComments] = useState<Record<string, string>>({});
-  const [checks, setChecks] = useState<
-    Record<string, { comment: string; number: string; result: "MATCHED" | "MISMATCH" }>
-  >({});
+  const [summary, setSummary] = useState<SpoilageSummaryView | null>(null);
+  const [fromDate, setFromDate] = useState(firstDayOfMoscowMonth());
+  const [toDate, setToDate] = useState(moscowDate());
+  const [returnPendingCount, setReturnPendingCount] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
   const roles = useMemo(
     () => new Set(session?.employee.roles.map((role) => role.roleCode) ?? []),
     [session],
   );
-  const canCreate = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
-  const isAdmin = roles.has("ADMIN");
+  const canReceive = roles.has("ADMIN") || roles.has("WAREHOUSE_KEEPER");
 
   async function reload(message?: string) {
-    setData(await getSpoilageWorkspace());
+    const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
+      getSpoilageWorkspace(),
+      getGoodReturnsWorkspace(moscowDate()),
+      getSpoilageSummary({ fromDate, toDate }),
+    ]);
+    setData(nextSpoilage);
+    setSummary(nextSummary);
+    setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
     if (message) setSuccess(message);
   }
 
   useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const [nextSpoilage, nextReturns, nextSummary] = await Promise.all([
+          getSpoilageWorkspace(),
+          getGoodReturnsWorkspace(moscowDate()),
+          getSpoilageSummary({ fromDate, toDate }),
+        ]);
+        if (!active) return;
+        setData(nextSpoilage);
+        setSummary(nextSummary);
+        setReturnPendingCount(countPendingGoodReturns(nextReturns.requests));
+      } catch (caught) {
+        if (active) setError(messageOf(caught));
+      }
+    };
     void (async () => {
       try {
         const current = await getSession();
+        if (!active) return;
         setSession(current);
-        setData(await getSpoilageWorkspace());
+        await refresh();
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace("/login");
@@ -68,15 +115,51 @@ export default function SpoilagePage() {
         setError(messageOf(caught));
       }
     })();
-  }, [router]);
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [fromDate, router, toDate]);
 
-  async function command(id: string, action: () => Promise<unknown>, message: string) {
-    setBusy(id);
+  function changeFromDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return;
+    setFromDate(value);
+    if (value > toDate) setToDate(value);
+  }
+
+  function changeToDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return;
+    setToDate(value);
+    if (value < fromDate) setFromDate(value);
+  }
+
+  async function acceptGroup(group: PendingSpoilageGroup) {
+    if (!session) return;
+    setBusy(group.key);
     setError("");
     setSuccess("");
     try {
-      await action();
-      await reload(message);
+      const results = await Promise.allSettled(
+        group.requests.map((request) =>
+          acceptDriverSpoilageRequest(
+            request.id,
+            { idempotencyKey: crypto.randomUUID(), version: request.version },
+            session.csrfToken,
+          ),
+        ),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (!failures.length) {
+        await reload(`Порча принята: ${group.total} шт. добавлено в отдельный склад порчи.`);
+      } else {
+        await reload();
+        setError(
+          failures.length === results.length
+            ? messageOf(failures[0]!.reason)
+            : "Часть заявок уже изменилась. Очередь обновлена — примите оставшийся товар.",
+        );
+      }
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -84,33 +167,26 @@ export default function SpoilagePage() {
     }
   }
 
-  function csrf() {
-    if (!session) throw new Error("Сессия ещё загружается");
-    return session.csrfToken;
-  }
-
-  if (!data || !session)
+  if (!data || !session || !summary)
     return (
       <main className="workspace-layout spoilage-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
-        <p className="warehouse-loading">{error || "Загружаем порчу и списания…"}</p>
+        <p className="warehouse-loading">{error || "Загружаем порчу…"}</p>
       </main>
     );
 
-  const selectedReason = data.reasons.find((item) => item.id === form.reasonId);
-  const submitted = data.requests.filter((item) => item.status === "SUBMITTED");
-  const registry = data.requests.filter((item) => item.status !== "SUBMITTED");
-  const productOptions =
-    form.sourceKind === "RETURN_POOL"
-      ? data.returnPool.map((item) => ({
-          code: item.productCode,
-          id: item.productId,
-          name: item.productName,
-          suffix: ` · доступно ${item.availableQuantity}`,
-        }))
-      : data.products.map((item) => ({ ...item, suffix: "" }));
+  const pending = data.requests.filter(
+    (item) =>
+      item.awaitingReceipt && item.status === "SUBMITTED" && item.sourceTerritoryNumber !== null,
+  );
+  const pendingGroups = groupPendingSpoilage(pending);
+  const stored = data.requests.filter(
+    (item) =>
+      !item.awaitingReceipt && item.status === "SUBMITTED" && item.sourceTerritoryNumber !== null,
+  );
+  const stockGroups = groupStoredSpoilage(stored);
 
   return (
     <main className="workspace-layout spoilage-page simple-workspace">
@@ -119,487 +195,302 @@ export default function SpoilagePage() {
         <div className="workspace-user">
           <span>{session.employee.fullName}</span>
           <small>
-            Порча и списания · <Link href="/returns">годный возврат</Link> ·{" "}
+            Склад порчи · <Link href="/returns">годный возврат</Link> ·{" "}
             <Link href="/warehouse">склад</Link>
           </small>
         </div>
       </header>
 
-      <section className="spoilage-hero">
+      <section className="spoilage-hero spoilage-receipt-hero">
         <div>
           <p className="eyebrow">Склад</p>
-          <h1>Порча и запросы на списание</h1>
+          <h1>Склад порчи</h1>
           <p>
-            Принятое количество блокируется сразу. Фактическое списание выполняется только после
-            решения администратора.
+            Порча хранится отдельно от обычного склада. Здесь можно принять её от водителя и
+            проверить принятое количество за любой выбранный период.
           </p>
         </div>
         <div className="spoilage-summary">
           <span>
-            Заблокировано <b>{data.blockedQuantity}</b>
+            Ожидает приёмки <b>{countPendingDriverSpoilage(data.requests)}</b>
           </span>
           <span>
-            Списано <b>{data.writtenOffQuantity}</b>
+            На складе порчи <b>{data.blockedQuantity} шт.</b>
           </span>
         </div>
       </section>
+
+      <SettlementAttentionSwitch
+        active="SPOILAGE"
+        returnCount={returnPendingCount}
+        spoilageCount={countPendingDriverSpoilage(data.requests)}
+      />
 
       {error ? <p className="form-error spoilage-notice">{error}</p> : null}
       {success ? <p className="logistics-success spoilage-notice">{success}</p> : null}
 
-      {canCreate ? (
-        <form
-          className="spoilage-panel spoilage-create"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void command(
-              "create",
-              async () => {
-                const uploaded = photo ? await uploadSpoilagePhoto(photo, csrf()) : null;
-                await createWriteoffRequest(
-                  {
-                    businessDate: moscowDate(),
-                    comment: form.comment,
-                    ...(form.externalDocumentNumber
-                      ? { externalDocumentNumber: form.externalDocumentNumber }
-                      : {}),
-                    idempotencyKey: crypto.randomUUID(),
-                    ...(uploaded ? { photoUploadId: uploaded.id } : {}),
-                    ...(form.sourceKind === "PHYSICAL_SPOILAGE"
-                      ? {
-                          physicalSourceKind: form.physicalSourceKind,
-                          ...(form.physicalSourceKind === "DRIVER"
-                            ? { sourceDriverId: form.sourceDriverId }
-                            : { sourceLabel: form.sourceLabel }),
-                        }
-                      : {}),
-                    productId: form.productId,
-                    quantity: positive(form.quantity),
-                    reasonId: form.reasonId,
-                    sourceKind: form.sourceKind,
-                  },
-                  csrf(),
-                );
-                setForm(emptyForm);
-                setPhoto(null);
-              },
-              "Заявка создана, количество заблокировано до решения администратора.",
-            );
-          }}
-        >
-          <div className="spoilage-heading">
-            <div>
-              <p className="eyebrow">Новая заявка</p>
-              <h2>Зафиксировать порчу</h2>
-            </div>
-            <span>Дата операции: {formatDate(moscowDate())}</span>
-          </div>
-          <div className="spoilage-form-grid">
-            <label>
-              Откуда поступило
-              <select
-                value={form.sourceKind}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    productId: "",
-                    sourceKind: event.target.value as typeof form.sourceKind,
-                  })
-                }
-              >
-                <option value="RETURN_POOL">Повреждённый годный возврат</option>
-                <option value="PHYSICAL_SPOILAGE">Физическая порча / старая партия</option>
-              </select>
-            </label>
-            {form.sourceKind === "PHYSICAL_SPOILAGE" ? (
-              <>
-                <label>
-                  Физический источник
-                  <select
-                    value={form.physicalSourceKind}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        physicalSourceKind: event.target.value as typeof form.physicalSourceKind,
-                      })
-                    }
-                  >
-                    <option value="DRIVER">Водитель</option>
-                    <option value="STORE">Магазин</option>
-                    <option value="OTHER">Другой</option>
-                  </select>
-                </label>
-                {form.physicalSourceKind === "DRIVER" ? (
-                  <label>
-                    Водитель-источник
-                    <select
-                      required
-                      value={form.sourceDriverId}
-                      onChange={(event) => setForm({ ...form, sourceDriverId: event.target.value })}
-                    >
-                      <option value="">Выберите водителя</option>
-                      {data.drivers.map((driver) => (
-                        <option key={driver.id} value={driver.id}>
-                          {driver.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <label>
-                    Название источника
-                    <input
-                      minLength={2}
-                      required
-                      value={form.sourceLabel}
-                      onChange={(event) => setForm({ ...form, sourceLabel: event.target.value })}
-                    />
-                  </label>
-                )}
-              </>
-            ) : null}
-            <label>
-              Товар
-              <select
-                required
-                value={form.productId}
-                onChange={(event) => setForm({ ...form, productId: event.target.value })}
-              >
-                <option value="">Выберите товар</option>
-                {productOptions.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.code} · {item.name}
-                    {item.suffix}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Количество
-              <input
-                min="1"
-                required
-                type="number"
-                value={form.quantity}
-                onChange={(event) => setForm({ ...form, quantity: event.target.value })}
-              />
-            </label>
-            <label>
-              Причина
-              <select
-                required
-                value={form.reasonId}
-                onChange={(event) => setForm({ ...form, reasonId: event.target.value })}
-              >
-                <option value="">Выберите причину</option>
-                {data.reasons.map((reason) => (
-                  <option key={reason.id} value={reason.id}>
-                    {reason.displayName}
-                    {reason.photoRequired ? " · нужно фото" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Фото {selectedReason?.photoRequired ? "· обязательно" : "· при необходимости"}
-              <input
-                accept="image/jpeg,image/png,image/webp"
-                required={selectedReason?.photoRequired}
-                type="file"
-                onChange={(event) => setPhoto(event.target.files?.[0] ?? null)}
-              />
-              <small>JPEG, PNG или WebP, до 10 МБ</small>
-            </label>
-            <label>
-              Номер документа 1С / Agent Plus
-              <input
-                placeholder="Можно добавить позже при сверке"
-                value={form.externalDocumentNumber}
-                onChange={(event) =>
-                  setForm({ ...form, externalDocumentNumber: event.target.value })
-                }
-              />
-            </label>
-            <label className="spoilage-comment">
-              Что произошло
-              <textarea
-                minLength={3}
-                required
-                value={form.comment}
-                onChange={(event) => setForm({ ...form, comment: event.target.value })}
-              />
-            </label>
-          </div>
-          <button className="primary-button" disabled={busy === "create"}>
-            Создать и заблокировать количество
-          </button>
-        </form>
-      ) : null}
-
-      <section className="spoilage-panel">
-        <div className="spoilage-heading">
+      <section className="spoilage-panel spoilage-period-panel">
+        <div className="spoilage-period-heading">
           <div>
-            <p className="eyebrow">Требует решения</p>
-            <h2>Очередь администратора</h2>
+            <p className="eyebrow">Контроль отдельно от обычного склада</p>
+            <h2>Принятая порча за период</h2>
           </div>
-          <b>{submitted.length}</b>
+          <div className="spoilage-period-controls">
+            <label>
+              С
+              <input
+                max={toDate}
+                type="date"
+                value={fromDate}
+                onChange={(event) => changeFromDate(event.target.value)}
+              />
+            </label>
+            <label>
+              По
+              <input
+                min={fromDate}
+                type="date"
+                value={toDate}
+                onChange={(event) => changeToDate(event.target.value)}
+              />
+            </label>
+          </div>
         </div>
-        <div className="spoilage-list">
-          {submitted.length ? (
-            submitted.map((item) => (
-              <article key={item.id}>
-                <RequestSummary item={item} onOpenPhoto={openPhoto} />
-                {isAdmin ? (
-                  <div className="spoilage-actions">
-                    <input
-                      minLength={3}
-                      placeholder="Комментарий к решению"
-                      value={decisionComments[item.id] ?? ""}
-                      onChange={(event) =>
-                        setDecisionComments({ ...decisionComments, [item.id]: event.target.value })
-                      }
-                    />
-                    <button
-                      className="primary-button"
-                      disabled={busy === item.id || (decisionComments[item.id]?.length ?? 0) < 3}
-                      onClick={() =>
-                        void command(
-                          item.id,
-                          () =>
-                            decideWriteoffRequest(
-                              item.id,
-                              {
-                                comment: decisionComments[item.id] ?? "",
-                                decision: "APPROVE",
-                                idempotencyKey: crypto.randomUUID(),
-                                version: item.version,
-                              },
-                              csrf(),
-                            ),
-                          "Списание утверждено и проведено по складскому журналу.",
-                        )
-                      }
-                    >
-                      Утвердить списание
-                    </button>
-                    <button
-                      className="text-button is-danger"
-                      disabled={busy === item.id || (decisionComments[item.id]?.length ?? 0) < 3}
-                      onClick={() =>
-                        void command(
-                          item.id,
-                          () =>
-                            decideWriteoffRequest(
-                              item.id,
-                              {
-                                comment: decisionComments[item.id] ?? "",
-                                decision: "REJECT",
-                                idempotencyKey: crypto.randomUUID(),
-                                version: item.version,
-                              },
-                              csrf(),
-                            ),
-                          "Заявка отклонена, заблокированное количество освобождено.",
-                        )
-                      }
-                    >
-                      Отклонить
-                    </button>
+
+        <div className="spoilage-period-total">
+          <article>
+            <span>Принято от водителей · все территории</span>
+            <strong>{summary.totalQuantity} шт.</strong>
+          </article>
+        </div>
+
+        <div className="spoilage-territory-list">
+          {summary.territories.map((territory) => (
+            <details className="spoilage-territory-group" key={territory.territoryNumber}>
+              <summary>
+                <span>
+                  <strong>Территория {territory.territoryNumber}</strong>
+                  <small>Принято от водителей</small>
+                </span>
+                <b>{territory.quantity} шт.</b>
+              </summary>
+              <div className="spoilage-territory-products">
+                {territory.products.map((product) => (
+                  <div className="spoilage-territory-product" key={product.productId}>
+                    <span>
+                      <small>{product.productCode}</small>
+                      <strong>{product.productName}</strong>
+                    </span>
+                    <div>
+                      <b>{product.quantity} шт.</b>
+                      <small>Принято</small>
+                    </div>
                   </div>
-                ) : (
-                  <small>Ожидает решения администратора.</small>
-                )}
-              </article>
-            ))
-          ) : (
-            <p className="logistics-empty">Нет заявок, ожидающих решения.</p>
-          )}
+                ))}
+              </div>
+            </details>
+          ))}
+          {!summary.territories.length ? (
+            <p className="logistics-empty">За выбранный период порчи от территорий нет.</p>
+          ) : null}
         </div>
       </section>
 
-      <details className="spoilage-panel workspace-more">
-        <summary>
-          <span>Решения и сверка документов</span>
-          <small>{registry.length} записей</small>
-        </summary>
-        <div className="spoilage-list">
-          {registry.map((item) => {
-            const draft = checks[item.id] ?? {
-              comment: "",
-              number:
-                item.externalCheck?.externalDocumentNumber ?? item.externalDocumentNumber ?? "",
-              result: "MATCHED" as const,
-            };
-            return (
-              <article key={item.id} className={item.status === "REJECTED" ? "is-rejected" : ""}>
-                <RequestSummary item={item} onOpenPhoto={openPhoto} />
-                {item.decision ? (
-                  <p className="spoilage-decision">
-                    <b>
-                      {item.decision.type === "APPROVE"
-                        ? "Списание утверждено"
-                        : "Заявка отклонена"}
-                    </b>
-                    {" · "}
-                    {item.decision.comment} · {item.decision.decidedByName}
-                  </p>
-                ) : null}
-                {item.externalCheck ? (
-                  <p
-                    className={
-                      item.externalCheck.result === "MATCHED" ? "is-matched" : "is-mismatch"
-                    }
-                  >
-                    Документ {item.externalCheck.externalDocumentNumber}:{" "}
-                    {item.externalCheck.result === "MATCHED" ? "совпадает" : "есть расхождение"}
-                    {item.externalCheck.comment ? ` · ${item.externalCheck.comment}` : ""}
-                  </p>
-                ) : item.status === "EXECUTED" ? (
-                  <p className="spoilage-unchecked">Документ ещё не сверен вручную.</p>
-                ) : null}
-                {isAdmin && item.status === "EXECUTED" ? (
-                  <div className="spoilage-check">
-                    <input
-                      placeholder="Номер документа"
-                      value={draft.number}
-                      onChange={(event) =>
-                        setChecks({
-                          ...checks,
-                          [item.id]: { ...draft, number: event.target.value },
-                        })
-                      }
-                    />
-                    <select
-                      value={draft.result}
-                      onChange={(event) =>
-                        setChecks({
-                          ...checks,
-                          [item.id]: {
-                            ...draft,
-                            result: event.target.value as typeof draft.result,
-                          },
-                        })
-                      }
-                    >
-                      <option value="MATCHED">Совпадает</option>
-                      <option value="MISMATCH">Есть расхождение</option>
-                    </select>
-                    <input
-                      placeholder={
-                        draft.result === "MISMATCH"
-                          ? "Опишите расхождение"
-                          : "Комментарий необязателен"
-                      }
-                      value={draft.comment}
-                      onChange={(event) =>
-                        setChecks({
-                          ...checks,
-                          [item.id]: { ...draft, comment: event.target.value },
-                        })
-                      }
-                    />
-                    <button
-                      className="text-button"
-                      disabled={
-                        busy === `check-${item.id}` ||
-                        !draft.number ||
-                        (draft.result === "MISMATCH" && draft.comment.length < 3)
-                      }
-                      onClick={() =>
-                        void command(
-                          `check-${item.id}`,
-                          () =>
-                            checkWriteoffExternalDocument(
-                              item.id,
-                              {
-                                ...(draft.comment ? { comment: draft.comment } : {}),
-                                externalDocumentNumber: draft.number,
-                                idempotencyKey: crypto.randomUUID(),
-                                result: draft.result,
-                              },
-                              csrf(),
-                            ),
-                          "Сверка документа записана новой неизменяемой ревизией.",
-                        )
-                      }
-                    >
-                      Записать сверку
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-          {!registry.length ? <p className="logistics-empty">Решений пока нет.</p> : null}
+      <section className="spoilage-panel spoilage-receipt-panel">
+        <div className="spoilage-heading">
+          <div>
+            <p className="eyebrow">Нужно принять</p>
+            <h2>Порча от водителей</h2>
+          </div>
+          <b>{countPendingDriverSpoilage(data.requests)}</b>
         </div>
-      </details>
+
+        <div className="spoilage-receipt-list">
+          {pendingGroups.map((group) => (
+            <article className="spoilage-receipt-card is-pending" key={group.key}>
+              <div className="spoilage-receipt-card__source">
+                <b>Территория {group.territoryNumber}</b>
+                <span>{group.driverName}</span>
+                {group.dispatchDate ? <small>Вывоз {formatDate(group.dispatchDate)}</small> : null}
+              </div>
+              <div className="spoilage-receipt-card__products">
+                {group.products.map((product) => (
+                  <div className="spoilage-receipt-card__product" key={product.id}>
+                    <span>
+                      <small>{product.code}</small>
+                      <strong>{product.name}</strong>
+                    </span>
+                    <b>{product.quantity} шт.</b>
+                  </div>
+                ))}
+              </div>
+              {canReceive ? (
+                <div className="spoilage-receipt-card__actions">
+                  <button
+                    className="primary-button"
+                    disabled={busy === group.key}
+                    onClick={() => void acceptGroup(group)}
+                    type="button"
+                  >
+                    {busy === group.key ? "Принимаем…" : `Принять ${group.total} шт.`}
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          ))}
+          {!pending.length ? <p className="logistics-empty">Новых заявок на приёмку нет.</p> : null}
+        </div>
+      </section>
+
+      <section className="spoilage-panel spoilage-stock-panel">
+        <div className="spoilage-heading">
+          <div>
+            <p className="eyebrow">Отдельное хранение до списания</p>
+            <h2>Текущий остаток склада порчи</h2>
+          </div>
+          <b>{data.blockedQuantity} шт.</b>
+        </div>
+
+        <div className="spoilage-stock-list">
+          {stockGroups.map((group) => (
+            <details className="spoilage-stock-group" key={group.key}>
+              <summary>
+                <span>
+                  <strong>Территория {group.territoryNumber}</strong>
+                  <small>
+                    {group.driverName}
+                    {group.dispatchDate ? ` · вывоз ${formatDate(group.dispatchDate)}` : ""}
+                  </small>
+                </span>
+                <b>{group.total} шт.</b>
+              </summary>
+              <div className="spoilage-stock-products">
+                {group.products.map((product) => (
+                  <div className="spoilage-stock-product" key={product.id}>
+                    <span>
+                      <small>{product.code}</small>
+                      <strong>{product.name}</strong>
+                    </span>
+                    <b>{product.quantity} шт.</b>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+          {!stockGroups.length ? <p className="logistics-empty">Принятой порчи пока нет.</p> : null}
+        </div>
+      </section>
     </main>
   );
 }
 
-function RequestSummary({
-  item,
-  onOpenPhoto,
-}: {
-  item: SpoilageWorkspaceView["requests"][number];
-  onOpenPhoto: (id: string) => void;
-}) {
-  return (
-    <div className="spoilage-request-summary">
-      <div>
-        <span>
-          {formatDate(item.businessDate)} · {sourceLabel(item)}
-        </span>
-        <h3>
-          {item.productCode} · {item.productName}
-        </h3>
-        <p>
-          {item.reasonName} · {item.comment}
-        </p>
-        <small>
-          Оформил: {item.createdByName} · {timeLabel(item.createdAt)}
-        </small>
-      </div>
-      <strong>{item.quantity} шт.</strong>
-      {item.photo ? (
-        <button className="text-button" type="button" onClick={() => onOpenPhoto(item.photo!.id)}>
-          Открыть фото
-        </button>
-      ) : null}
-    </div>
-  );
+function groupPendingSpoilage(items: readonly WriteoffRequestView[]): PendingSpoilageGroup[] {
+  const groups = new Map<string, WriteoffRequestView[]>();
+  for (const item of items) {
+    const key = [
+      item.sourceTerritoryNumber,
+      item.sourceDriverName ?? item.createdByName,
+      item.sourceDispatchDate ?? item.businessDate,
+      item.productId,
+    ].join(":");
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, requests]) => {
+      const products = new Map<
+        string,
+        { code: string; id: string; name: string; quantity: number }
+      >();
+      for (const request of requests) {
+        const current = products.get(request.productId);
+        products.set(request.productId, {
+          code: request.productCode,
+          id: request.productId,
+          name: request.productName,
+          quantity: (current?.quantity ?? 0) + request.quantity,
+        });
+      }
+      const first = requests[0]!;
+      return {
+        dispatchDate: first.sourceDispatchDate,
+        driverName: first.sourceDriverName ?? first.createdByName,
+        key,
+        products: [...products.values()].sort((left, right) =>
+          left.name.localeCompare(right.name, "ru"),
+        ),
+        requests,
+        territoryNumber: first.sourceTerritoryNumber!,
+        total: requests.reduce((sum, request) => sum + request.quantity, 0),
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.territoryNumber - right.territoryNumber ||
+        left.driverName.localeCompare(right.driverName, "ru"),
+    );
 }
 
-function openPhoto(id: string) {
-  void getSpoilagePhotoUrl(id)
-    .then((url) => {
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+function groupStoredSpoilage(items: readonly WriteoffRequestView[]): SpoilageStockGroup[] {
+  const groups = new Map<string, WriteoffRequestView[]>();
+  for (const item of items) {
+    const key = [
+      item.sourceTerritoryNumber,
+      item.sourceDriverName ?? item.createdByName,
+      item.sourceDispatchDate ?? item.businessDate,
+    ].join(":");
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, requests]) => {
+      const products = new Map<
+        string,
+        { code: string; id: string; name: string; quantity: number }
+      >();
+      for (const request of requests) {
+        const current = products.get(request.productId);
+        products.set(request.productId, {
+          code: request.productCode,
+          id: request.productId,
+          name: request.productName,
+          quantity: (current?.quantity ?? 0) + request.quantity,
+        });
+      }
+      const first = requests[0]!;
+      return {
+        dispatchDate: first.sourceDispatchDate,
+        driverName: first.sourceDriverName ?? first.createdByName,
+        key,
+        products: [...products.values()].sort((left, right) =>
+          left.name.localeCompare(right.name, "ru"),
+        ),
+        territoryNumber: first.sourceTerritoryNumber!,
+        total: requests.reduce((sum, request) => sum + request.quantity, 0),
+      };
     })
-    .catch((error) => window.alert(messageOf(error)));
+    .sort(
+      (left, right) =>
+        left.territoryNumber - right.territoryNumber ||
+        left.driverName.localeCompare(right.driverName, "ru"),
+    );
 }
-function sourceLabel(item: SpoilageWorkspaceView["requests"][number]) {
-  if (item.sourceKind === "RETURN_POOL") return "повреждённый возврат";
-  return item.sourceDriverName ?? item.sourceLabel ?? "физическая порча";
-}
-function positive(value: string) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1)
-    throw new Error("Количество должно быть целым и больше нуля");
-  return parsed;
-}
-function moscowDate() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
-}
+
 function formatDate(value: string) {
   return new Date(`${value}T12:00:00+03:00`).toLocaleDateString("ru-RU", {
     day: "2-digit",
     month: "long",
   });
 }
-function timeLabel(value: string) {
-  return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
+function moscowDate() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
 }
+
+function firstDayOfMoscowMonth() {
+  return `${moscowDate().slice(0, 7)}-01`;
+}
+
 function messageOf(value: unknown) {
   return value instanceof Error ? value.message : "Операция не выполнена";
 }

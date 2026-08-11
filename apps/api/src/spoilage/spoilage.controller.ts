@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   StreamableFile,
@@ -19,7 +20,9 @@ import type { Response } from "express";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  AcceptDriverSpoilageRequestDto,
   CheckExternalDocumentDto,
+  CreateDriverSpoilageRequestDto,
   CreateWriteoffRequestDto,
   DecideWriteoffRequestDto,
 } from "./spoilage.dto";
@@ -41,11 +44,41 @@ export class SpoilageController {
     return this.service.workspace(actor(request));
   }
 
+  @Get("summary")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER")
+  summary(
+    @Query("fromDate") fromDate: string | undefined,
+    @Query("toDate") toDate: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.summary(fromDate ?? null, toDate ?? null, actor(request));
+  }
+
+  @Get("me/workspace")
+  @RequireRoles("DRIVER")
+  driverWorkspace(
+    @Query("dispatchDate") dispatchDate: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.driverWorkspace(dispatchDate, actor(request));
+  }
+
   @Post("photos")
   @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   uploadPhoto(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.photos.upload(file, actor(request).employee.id);
+  }
+
+  @Post("me/photos")
+  @RequireRoles("DRIVER")
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  uploadDriverPhoto(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() request: AuthenticatedRequest,
   ) {
@@ -71,6 +104,15 @@ export class SpoilageController {
     return this.service.create(dto, actor(request), correlationId(request));
   }
 
+  @Post("me/requests")
+  @RequireRoles("DRIVER")
+  createDriverRequest(
+    @Body() dto: CreateDriverSpoilageRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.createDriver(dto, actor(request), correlationId(request));
+  }
+
   @Post("requests/:id/decision")
   @RequireRoles("ADMIN")
   decide(
@@ -79,6 +121,16 @@ export class SpoilageController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.decide(id, dto, actor(request), correlationId(request));
+  }
+
+  @Post("requests/:id/acceptance")
+  @RequireRoles("ADMIN", "WAREHOUSE_KEEPER")
+  acceptDriverSpoilage(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AcceptDriverSpoilageRequestDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.acceptDriverSpoilage(id, dto, actor(request), correlationId(request));
   }
 
   @Post("requests/:id/external-checks")

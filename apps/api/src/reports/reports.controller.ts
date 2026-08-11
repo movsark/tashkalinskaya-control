@@ -14,7 +14,12 @@ import { ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { CsrfGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
-import { ControlCenterQueryDto, CreateReportJobDto } from "./report.dto";
+import {
+  ControlCenterQueryDto,
+  CreateReportJobDto,
+  DriverTerritoryQueryDto,
+  ProductionOutboundQueryDto,
+} from "./report.dto";
 import { ReportsService } from "./reports.service";
 
 @ApiTags("Контроль и отчеты")
@@ -31,6 +36,19 @@ export class ReportsController {
   @Get("workspace")
   workspace(@Req() request: AuthenticatedRequest) {
     return this.service.workspace(actor(request));
+  }
+
+  @Get("production-outbound")
+  productionOutbound(
+    @Query() query: ProductionOutboundQueryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.productionOutbound(query.dateFrom, query.dateTo, actor(request));
+  }
+
+  @Get("driver-territory")
+  driverTerritory(@Query() query: DriverTerritoryQueryDto, @Req() request: AuthenticatedRequest) {
+    return this.service.driverTerritory(query.dateFrom, query.dateTo, actor(request));
   }
 
   @Post("jobs")

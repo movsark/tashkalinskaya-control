@@ -21,6 +21,9 @@ const deviceId = randomUUID();
 const subscriptionId = randomUUID();
 const outboxId = randomUUID();
 const unknownOutboxId = randomUUID();
+const driverEmployeeId = randomUUID();
+const routeShiftId = randomUUID();
+const routeOutboxId = randomUUID();
 const encryptionSecret = "worker-test-subscription-secret-at-least-32-characters";
 const sentPayloads: string[] = [];
 const sender: PushSender = {
@@ -57,6 +60,30 @@ describe.runIf(hasDatabase)("NotificationProcessor with PostgreSQL", () => {
       `insert into identity.role_assignment(id,employee_id,role_code,scope_type)
        values($1,$2,'ADMIN','FACTORY')`,
       [randomUUID(), employeeId],
+    );
+    await database!.query(
+      `insert into identity.employee(id,personnel_number,personnel_number_normalized,full_name,department_id)
+       values($1,$2,$2,'Водитель worker B17',$3)`,
+      [driverEmployeeId, `B17WD-${seed.slice(0, 17)}`, departmentId],
+    );
+    await database!.query(
+      `insert into identity.user_account(id,employee_id,login_normalized,status,password_hash)
+       values($1,$2,$3,'ACTIVE','test-hash')`,
+      [randomUUID(), driverEmployeeId, `b17-driver-${seed.slice(0, 12)}`],
+    );
+    await database!.query(
+      `insert into identity.role_assignment(id,employee_id,role_code,scope_type)
+       values($1,$2,'DRIVER','FACTORY')`,
+      [randomUUID(), driverEmployeeId],
+    );
+    await database!.query(`insert into logistics.driver_profile(employee_id) values($1)`, [
+      driverEmployeeId,
+    ]);
+    await database!.query(
+      `insert into logistics.driver_route_shift(
+         id,dispatch_date,territory_id,driver_employee_id,created_by,correlation_id
+       ) values($1,current_date,'12000000-0000-4000-8000-000000000001',$2,$2,$3)`,
+      [routeShiftId, driverEmployeeId, randomUUID()],
     );
     await database!.query(
       `insert into identity.personal_device(
@@ -99,6 +126,12 @@ describe.runIf(hasDatabase)("NotificationProcessor with PostgreSQL", () => {
         randomUUID(),
       ],
     );
+    await database!.query(
+      `insert into system.outbox_message(
+         id,event_name,aggregate_type,aggregate_id,payload,occurred_at)
+       values($1,'logistics.driver-route.started','DRIVER_ROUTE_SHIFT',$2,'{}',now())`,
+      [routeOutboxId, routeShiftId],
+    );
   });
 
   afterAll(async () => database?.end());
@@ -119,6 +152,15 @@ describe.runIf(hasDatabase)("NotificationProcessor with PostgreSQL", () => {
       [unknownOutboxId],
     );
     expect(unknown.rows[0]?.processed_at).toBeNull();
+  });
+
+  it("does not add an aggregate participant to a role-only notification", async () => {
+    await expect(processor.processOutbox(1, routeOutboxId)).resolves.toBe(1);
+    const recipients = await database!.query<{ employee_id: string }>(
+      `select employee_id from notification.feed_item where source_outbox_id=$1`,
+      [routeOutboxId],
+    );
+    expect(recipients.rows.map((item) => item.employee_id)).toEqual([employeeId]);
   });
 
   it("delivers only safe text and records an immutable attempt", async () => {

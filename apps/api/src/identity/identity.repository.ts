@@ -65,6 +65,13 @@ export interface AccountProfileRecord {
   readonly phoneVerified: boolean;
 }
 
+export interface LocalUatProfileRecord {
+  readonly accountId: string;
+  readonly authorizationVersion: number;
+  readonly deviceId: string;
+  readonly employeeId: string;
+}
+
 interface DeviceRow {
   readonly employee_id: string;
   readonly id: string;
@@ -158,6 +165,110 @@ const employeeSelect = `
 @Injectable()
 export class IdentityRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async ensureLocalUatProfile(input: {
+    departmentId: string | null;
+    displayName: string;
+    login: string;
+    passwordHash: string;
+    roleCode: RoleCode;
+    scopeId: string | null;
+    scopeType: ScopeType;
+  }): Promise<LocalUatProfileRecord> {
+    return this.database.transaction(async (client) => {
+      if (input.departmentId !== null) {
+        await client.query(
+          `
+            insert into identity.department (id, code, name)
+            values ($1, 'LOCAL_UAT_WORKSHOP', 'Локальный тестовый цех')
+            on conflict (id) do nothing
+          `,
+          [input.departmentId],
+        );
+      }
+
+      const existing = await client.query<{
+        account_id: string;
+        authorization_version: number;
+        employee_id: string;
+      }>(
+        `
+          select ua.id as account_id, ua.authorization_version, ua.employee_id
+          from identity.user_account ua
+          join identity.employee e on e.id = ua.employee_id
+          where ua.login_normalized = $1
+            and ua.status = 'ACTIVE'
+            and e.employment_status = 'ACTIVE'
+          for update
+        `,
+        [input.login],
+      );
+
+      let accountId = existing.rows[0]?.account_id;
+      let authorizationVersion = existing.rows[0]?.authorization_version;
+      let employeeId = existing.rows[0]?.employee_id;
+      if (
+        accountId === undefined ||
+        authorizationVersion === undefined ||
+        employeeId === undefined
+      ) {
+        employeeId = randomUUID();
+        accountId = randomUUID();
+        authorizationVersion = 1;
+        const personnelNumber = `LOCAL-UAT-${input.roleCode}`;
+        await client.query(
+          `
+            insert into identity.employee (
+              id, personnel_number, personnel_number_normalized, full_name, department_id
+            ) values ($1, $2, $2, $3, $4)
+          `,
+          [employeeId, personnelNumber, input.displayName, input.departmentId],
+        );
+        await client.query(
+          `
+            insert into identity.user_account (
+              id, employee_id, login_normalized, status, password_hash, password_changed_at
+            ) values ($1, $2, $3, 'ACTIVE', $4, now())
+          `,
+          [accountId, employeeId, input.login, input.passwordHash],
+        );
+        await client.query(
+          `
+            insert into identity.role_assignment (
+              id, employee_id, role_code, scope_type, scope_id
+            ) values ($1, $2, $3, $4, $5)
+          `,
+          [randomUUID(), employeeId, input.roleCode, input.scopeType, input.scopeId],
+        );
+        if (input.roleCode === "DRIVER") {
+          await client.query(
+            `insert into logistics.driver_profile (employee_id, status) values ($1, 'ACTIVE')`,
+            [employeeId],
+          );
+        }
+      }
+
+      const activeDevice = await client.query<{ id: string }>(
+        `select id from identity.personal_device where employee_id = $1 and status = 'ACTIVE'`,
+        [employeeId],
+      );
+      let deviceId = activeDevice.rows[0]?.id;
+      if (deviceId === undefined) {
+        deviceId = randomUUID();
+        await client.query(
+          `
+            insert into identity.personal_device (
+              id, employee_id, public_key, device_label, platform_family,
+              status, paired_at, last_seen_at
+            ) values ($1, $2, $3, 'Локальный UAT на Mac', 'OTHER', 'ACTIVE', now(), now())
+          `,
+          [deviceId, employeeId, `device-id:${deviceId}`],
+        );
+      }
+
+      return { accountId, authorizationVersion, deviceId, employeeId };
+    });
+  }
 
   async listEmployees(): Promise<EmployeeSummary[]> {
     const result = await this.database.query<EmployeeRow>(`

@@ -13,6 +13,7 @@ const repository = new PlanningRepository(database);
 const inventoryRepository = new InventoryRepository(database);
 const adminId = randomUUID();
 const driverId = randomUUID();
+const homeDriverId = randomUUID();
 const otherDriverId = randomUUID();
 const productId = randomUUID();
 const workshopId = randomUUID();
@@ -20,6 +21,7 @@ const vehicleId = randomUUID();
 const correlationId = randomUUID();
 const territoryOneId = "12000000-0000-4000-8000-000000000001";
 const territoryNineId = "12000000-0000-4000-8000-000000000009";
+let homeTerritoryId = "";
 const uniqueOffset = Number.parseInt(adminId.slice(0, 8), 16) % 50_000;
 const weekStart = nextMonday(new Date(Date.UTC(2100, 0, 1 + uniqueOffset)));
 const friday = addDays(weekStart, 4);
@@ -27,16 +29,36 @@ const wednesday = addDays(weekStart, 2);
 const tuesday = addDays(weekStart, 1);
 const dailyNormDate = addDays(weekStart, 21);
 const monthlyImportDate = addDays(weekStart, 22);
+const homeRequestDate = addDays(weekStart, 35);
+const recurringHomeRequestDate = addDays(weekStart, 42);
 
 describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
   beforeAll(async () => {
+    const availableHomeTerritory = await database.query<{ id: string }>(
+      `select t.id
+       from logistics.territory t
+       where t.territory_number between 2 and 8
+         and not exists (
+           select 1 from logistics.driver_profile p
+           where p.home_territory_id = t.id and p.status = 'ACTIVE'
+         )
+         and not exists (
+           select 1 from logistics.territory_default_assignment a
+           where a.territory_id = t.id
+         )
+       order by t.territory_number
+       limit 1`,
+    );
+    homeTerritoryId = availableHomeTerritory.rows[0]?.id ?? "";
+    if (homeTerritoryId === "") throw new Error("Нет свободной тестовой территории");
     await database.query(
       `insert into identity.employee (
          id, personnel_number, personnel_number_normalized, full_name
        ) values
          ($1, $2, $2, 'Администратор B09'),
          ($3, $4, $4, 'Основной водитель B09'),
-         ($5, $6, $6, 'Чужой водитель B09')`,
+         ($5, $6, $6, 'Чужой водитель B09'),
+         ($7, $8, $8, 'Водитель домашней территории B09')`,
       [
         adminId,
         `B09-A-${adminId.slice(0, 12)}`,
@@ -44,6 +66,8 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         `B09-D-${driverId.slice(0, 12)}`,
         otherDriverId,
         `B09-X-${otherDriverId.slice(0, 12)}`,
+        homeDriverId,
+        `B09-H-${homeDriverId.slice(0, 12)}`,
       ],
     );
     await database.query(
@@ -52,7 +76,8 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
        ) values
          ($1, $2, 'DRIVER', 'TERRITORY', $3, $4),
          ($5, $2, 'DRIVER', 'TERRITORY', $6, $4),
-         ($7, $8, 'DRIVER', 'TERRITORY', $3, $4)`,
+         ($7, $8, 'DRIVER', 'TERRITORY', $3, $4),
+         ($9, $10, 'DRIVER', 'TERRITORY', $11, $4)`,
       [
         randomUUID(),
         driverId,
@@ -62,12 +87,16 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         territoryNineId,
         randomUUID(),
         otherDriverId,
+        randomUUID(),
+        homeDriverId,
+        homeTerritoryId,
       ],
     );
-    await database.query(`insert into logistics.driver_profile (employee_id) values ($1), ($2)`, [
-      driverId,
-      otherDriverId,
-    ]);
+    await database.query(
+      `insert into logistics.driver_profile (employee_id, home_territory_id)
+       values ($1, null), ($2, null), ($3, $4)`,
+      [driverId, otherDriverId, homeDriverId, homeTerritoryId],
+    );
     await database.query(
       `insert into logistics.vehicle (
          id, registration_number, registration_number_normalized, display_name
@@ -223,6 +252,42 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     );
   });
 
+  it("replaces an earlier pending request for the same product", async () => {
+    const first = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Первый вариант",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: weekStart,
+      effectiveUntil: null,
+      kind: "PERMANENT",
+      lines: [{ productId, quantity: 11 }],
+      territoryId: territoryOneId,
+    });
+    const replacement = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Исправленный вариант",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: weekStart,
+      effectiveUntil: null,
+      kind: "PERMANENT",
+      lines: [{ productId, quantity: 12 }],
+      territoryId: territoryOneId,
+    });
+
+    const requests = await repository.listRequests(territoryOneId);
+    expect(requests.find((request) => request.id === first.id)?.status).toBe("STALE");
+    expect(requests.find((request) => request.id === replacement.id)).toMatchObject({
+      status: "SUBMITTED",
+      lines: [expect.objectContaining({ proposedQuantity: 12 })],
+    });
+  });
+
   it("applies one approved weekday request only through the selected month", async () => {
     const effectiveUntil = monthEnd(weekStart);
     const request = await repository.createRequest({
@@ -259,9 +324,99 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         quantity: 14,
       })),
     );
+    for (const dispatchDate of sameWeekdayDates(weekStart, effectiveUntil, 1)) {
+      expect(
+        (await repository.getTerritoryDailyNorm(territoryOneId, dispatchDate)).lines,
+      ).toContainEqual(expect.objectContaining({ productId, quantity: 14 }));
+    }
   });
 
-  it("marks an older request stale after the base norm changes", async () => {
+  it("approves one-off and monthly requests for a driver's home territory", async () => {
+    await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      dispatchDate: homeRequestDate,
+      lines: [{ productId, quantity: 7 }],
+      reason: "Дневная норма домашней территории",
+      territoryId: homeTerritoryId,
+    });
+    const oneOff = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: homeDriverId,
+      comment: "Разово увеличить домашнюю норму",
+      correlationId: randomUUID(),
+      dispatchDate: homeRequestDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId, quantity: 9 }],
+      territoryId: homeTerritoryId,
+    });
+    const approvedOneOff = await repository.decideRequest({
+      actorEmployeeId: adminId,
+      comment: "Утверждено администратором",
+      correlationId: randomUUID(),
+      decision: "APPROVE",
+      requestId: oneOff.id,
+      version: oneOff.version,
+    });
+    expect(approvedOneOff.status).toBe("APPROVED");
+    expect((await repository.getWeek(homeTerritoryId, homeRequestDate)).norms).toContainEqual(
+      expect.objectContaining({ productId, quantity: 9, validFrom: homeRequestDate }),
+    );
+
+    await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      dispatchDate: recurringHomeRequestDate,
+      lines: [{ productId, quantity: 4 }],
+      reason: "Норма понедельника домашней территории",
+      territoryId: homeTerritoryId,
+    });
+    const recurring = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: homeDriverId,
+      comment: "Изменить понедельники до конца месяца",
+      correlationId: randomUUID(),
+      dispatchDate: null,
+      dispatchWeekday: 1,
+      effectiveFrom: recurringHomeRequestDate,
+      effectiveUntil: monthEnd(recurringHomeRequestDate),
+      kind: "MONTH_WEEKDAY",
+      lines: [{ productId, quantity: 3 }],
+      territoryId: homeTerritoryId,
+    });
+    const approvedRecurring = await repository.decideRequest({
+      actorEmployeeId: adminId,
+      comment: "Утверждено администратором",
+      correlationId: randomUUID(),
+      decision: "APPROVE",
+      requestId: recurring.id,
+      version: recurring.version,
+    });
+    expect(approvedRecurring.status).toBe("APPROVED");
+    expect(
+      (await repository.getWeek(homeTerritoryId, recurringHomeRequestDate)).norms,
+    ).toContainEqual(
+      expect.objectContaining({
+        productId,
+        quantity: 3,
+        validFrom: recurringHomeRequestDate,
+      }),
+    );
+    for (const dispatchDate of sameWeekdayDates(
+      recurringHomeRequestDate,
+      monthEnd(recurringHomeRequestDate),
+      1,
+    )) {
+      expect(
+        (await repository.getTerritoryDailyNorm(homeTerritoryId, dispatchDate)).lines,
+      ).toContainEqual(expect.objectContaining({ productId, quantity: 3 }));
+    }
+  });
+
+  it("prevents approval of a request that the driver has replaced", async () => {
     const first = await repository.createRequest({
       activeRole: "DRIVER",
       actorEmployeeId: driverId,
@@ -296,15 +451,19 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       requestId: newer.id,
       version: newer.version,
     });
-    const stale = await repository.decideRequest({
-      actorEmployeeId: adminId,
-      comment: "База уже изменилась",
-      correlationId: randomUUID(),
-      decision: "APPROVE",
-      requestId: first.id,
-      version: first.version,
-    });
-    expect(stale.status).toBe("STALE");
+    expect(
+      (await repository.listRequests(territoryOneId)).find((item) => item.id === first.id),
+    ).toMatchObject({ status: "STALE" });
+    await expect(
+      repository.decideRequest({
+        actorEmployeeId: adminId,
+        comment: "База уже изменилась",
+        correlationId: randomUUID(),
+        decision: "APPROVE",
+        requestId: first.id,
+        version: first.version,
+      }),
+    ).rejects.toThrow("Запрос уже обработан или изменен");
   });
 
   it("allows a one-off request only for the assigned driver's calendar date", async () => {
@@ -375,6 +534,25 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
         territoryId: territoryNineId,
       }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("allows the home driver to request one date from a monthly plan without a calendar link", async () => {
+    const requestDate = addDays(dailyNormDate, 7);
+    const request = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: "Разовая корректировка месячного плана",
+      correlationId: randomUUID(),
+      dispatchDate: requestDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId, quantity: 8 }],
+      territoryId: territoryOneId,
+    });
+
+    expect(request).toMatchObject({ dispatchDate: requestDate, status: "SUBMITTED" });
   });
 
   it("records a late request as MISSED_CUTOFF without changing norms", async () => {

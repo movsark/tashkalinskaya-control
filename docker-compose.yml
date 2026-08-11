@@ -69,6 +69,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      seed-pilot-catalog:
+        condition: service_completed_successfully
     environment:
       AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER}
       BREAK_GLASS_ADMIN_RECOVERY_CODE: ${BREAK_GLASS_ADMIN_RECOVERY_CODE:-}
@@ -80,6 +82,20 @@ services:
       BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
       BOOTSTRAP_ADMIN_LOGIN: ${BOOTSTRAP_ADMIN_LOGIN:-}
       BOOTSTRAP_ADMIN_PERSONNEL_NUMBER: ${BOOTSTRAP_ADMIN_PERSONNEL_NUMBER:-}
+      DATABASE_SSL: require
+      DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+
+  seed-pilot-catalog:
+    build: *app-build
+    command:
+      - node
+      - packages/database/dist/seed-pilot-catalog.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
       DATABASE_URL: ${DATABASE_URL}
@@ -140,6 +156,8 @@ services:
       - apps/worker/dist/main.js
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      seed-pilot-catalog:
         condition: service_completed_successfully
     environment:
       APP_VERSION: ${APP_VERSION}

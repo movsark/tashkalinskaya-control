@@ -24,6 +24,7 @@ const businessDate = new Date(
 )
   .toISOString()
   .slice(0, 10);
+const summaryTerritoryNumber = 1 + (Number.parseInt(seed.slice(0, 2), 16) % 9);
 const admin = actor(adminId, "ADMIN", "FACTORY", null);
 const keeper = actor(keeperId, "WAREHOUSE_KEEPER", "WAREHOUSE", null);
 
@@ -256,6 +257,73 @@ describe.runIf(hasDatabase)("SpoilageRepository with PostgreSQL", () => {
         [requestId],
       ),
     ).rejects.toThrow();
+  });
+
+  it("summarizes driver spoilage by period and territory without mixing ordinary returns", async () => {
+    const movementDocumentId = randomUUID();
+    const pendingRequestId = randomUUID();
+    const receivedRequestId = randomUUID();
+    await database.query(
+      `insert into warehouse.movement_document(id,warehouse_id,document_type,business_date,source_type,
+         source_id,actor_id,actor_role,correlation_id,idempotency_key)
+       values($1,$2,'CORRECTION',$3,'B16_SUMMARY_TEST',$4,$5,'ADMIN',$6,$7)`,
+      [
+        movementDocumentId,
+        warehouseId,
+        businessDate,
+        seed,
+        adminId,
+        randomUUID(),
+        `summary-movement-${seed}`,
+      ],
+    );
+    await database.query(
+      `insert into spoilage.writeoff_request(
+         id,warehouse_id,source_kind,physical_source_kind,source_driver_id,
+         source_driver_name_snapshot,source_territory_number_snapshot,source_dispatch_date,
+         product_id,product_code_snapshot,product_name_snapshot,quantity,reason_id,reason_snapshot,
+         comment,request_movement_document_id,status,created_by,actor_role,idempotency_key,
+         correlation_id,business_date
+       ) values
+       ($1,$3,'PHYSICAL_SPOILAGE','DRIVER',$4,'Водитель B16',$5,$6,$7,'B16-SUMMARY',
+        'Торт для сводки B16',2,$8,$9,'Ожидает приёмки',null,'SUBMITTED',$4,'DRIVER',$10,$11,$6),
+       ($2,$3,'PHYSICAL_SPOILAGE','DRIVER',$4,'Водитель B16',$5,$6,$7,'B16-SUMMARY',
+        'Торт для сводки B16',3,$8,$9,'Уже принято',$12,'SUBMITTED',$4,'DRIVER',$13,$14,$6)`,
+      [
+        pendingRequestId,
+        receivedRequestId,
+        warehouseId,
+        driverId,
+        summaryTerritoryNumber,
+        businessDate,
+        productId,
+        reasonPackaging,
+        JSON.stringify({ code: "PACKAGING", displayName: "Повреждение упаковки" }),
+        `summary-pending-${seed}`,
+        randomUUID(),
+        movementDocumentId,
+        `summary-received-${seed}`,
+        randomUUID(),
+      ],
+    );
+
+    const summary = await repository.summary(businessDate, businessDate, admin);
+    expect(summary.territories).toContainEqual({
+      products: [
+        {
+          productCode: "B16-SUMMARY",
+          productId,
+          productName: "Торт для сводки B16",
+          quantity: 3,
+        },
+      ],
+      quantity: 3,
+      territoryNumber: summaryTerritoryNumber,
+    });
+    expect(summary.totalQuantity).toBe(3);
+    expect(() => repository.summary(businessDate, null, admin)).toThrow(
+      "Укажите начало и конец периода",
+    );
   });
 });
 
