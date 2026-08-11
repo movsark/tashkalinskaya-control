@@ -170,7 +170,9 @@ export class NotificationProcessor {
     }
     for (const key of rule.payload_employee_keys)
       findUuidValues(message.payload, key).forEach((id) => recipientIds.add(id));
-    (await this.aggregateEmployees(client, message)).forEach((id) => recipientIds.add(id));
+    if (rule.recipient_roles.length === 0 && rule.payload_employee_keys.length === 0) {
+      (await this.aggregateEmployees(client, message)).forEach((id) => recipientIds.add(id));
+    }
     if (recipientIds.size) {
       const active = await client.query<{ id: string }>(
         `select e.id from identity.employee e join identity.user_account a on a.employee_id=e.id
