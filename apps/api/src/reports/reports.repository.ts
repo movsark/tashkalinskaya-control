@@ -547,16 +547,30 @@ const productionOutboundQuery = `with produced as (
   from warehouse.movement m
   where m.business_date <= $2
   group by m.product_id
+), unposted_dispatch as (
+  select l.product_id,sum(r.quantity)::int quantity
+  from loading.loading_session s
+  join loading.loading_line l on l.loading_session_id=s.id and l.status='CONFIRMED'
+  join loading.loading_line_revision r
+    on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+  where s.dispatch_date <= $2
+    and s.status<>'CANCELLED'
+    and not exists (
+      select 1 from warehouse.movement_document d
+      where d.document_type='LOADING_COMPLETION' and d.source_id=s.id
+    )
+  group by l.product_id
 )
 select p.id "productId",p.product_code "productCode",p.name "productName",
   coalesce(pr.produced_quantity,0)::int "producedQuantity",
   greatest(coalesce(di.dispatched_quantity,0)-coalesce(rt.returned_quantity,0),0)::int "outboundQuantity",
-  coalesce(wh.on_hand_quantity,0)::int "onHandQuantity"
+  (coalesce(wh.on_hand_quantity,0)-coalesce(ud.quantity,0))::int "onHandQuantity"
 from catalog.product p
 left join produced pr on pr.product_id=p.id
 left join dispatched di on di.product_id=p.id
 left join returned rt on rt.product_id=p.id
 left join warehouse wh on wh.product_id=p.id
+left join unposted_dispatch ud on ud.product_id=p.id
 join catalog.category c on c.id=p.category_id
 where (
   coalesce(pr.produced_quantity,0)<>0
