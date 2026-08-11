@@ -2591,6 +2591,17 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(ryzhik).toContainText("12 шт.");
     await expect(ryzhik).toContainText("8 шт.");
     await expect(ryzhik).toContainText("4 шт.");
+    expect(
+      await page.getByRole("button", { name: "Показать" }).evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.left >= 0 && bounds.right <= document.documentElement.clientWidth;
+      }),
+    ).toBe(true);
+    expect(
+      await page
+        .locator(".production-outbound-table-wrap")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
     await page.getByLabel("Территория").selectOption("20000000-0000-4000-8000-000000000099");
     await page.getByRole("button", { name: "Показать" }).click();
     await expect(page.locator(".production-outbound-caption strong")).toHaveText("Территория 2");
