@@ -14,6 +14,7 @@ const securityRepository = new DeviceSecurityRepository(database);
 const employeeId = randomUUID();
 const accountId = randomUUID();
 const deviceId = randomUUID();
+const secondDeviceId = randomUUID();
 const credentialId = `credential-${employeeId}`;
 const login = `integration-${employeeId}`;
 const invitedEmployeeId = randomUUID();
@@ -88,7 +89,7 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
     });
   });
 
-  it("enforces one active personal device in PostgreSQL", async () => {
+  it("allows separate active sessions on multiple personal devices", async () => {
     await database.query(
       `
         insert into identity.personal_device (
@@ -101,16 +102,20 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
       `,
       [deviceId, employeeId, credentialId],
     );
-    await expect(
-      database.query(
-        `
+    await database.query(
+      `
           insert into identity.personal_device (
             id, employee_id, public_key, device_label, platform_family, status, paired_at
           ) values ($1, $2, 'other-public-key', 'Второе устройство', 'ANDROID', 'ACTIVE', now())
-        `,
-        [randomUUID(), employeeId],
+      `,
+      [secondDeviceId, employeeId],
+    );
+    await expect(
+      database.query<{ count: number }>(
+        "select count(*)::int as count from identity.personal_device where employee_id = $1 and status = 'ACTIVE'",
+        [employeeId],
       ),
-    ).rejects.toMatchObject({ code: "23505" });
+    ).resolves.toMatchObject({ rows: [{ count: 2 }] });
   });
 
   it("finds the active device by employee and WebAuthn credential", async () => {
@@ -126,17 +131,24 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
   });
 
   it("returns the employee access card with device history", async () => {
-    await expect(repository.getEmployeeAccess(employeeId)).resolves.toMatchObject({
-      devices: [
-        {
+    const access = await repository.getEmployeeAccess(employeeId);
+    expect(access.employee).toMatchObject({ id: employeeId, login });
+    expect(access.devices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           deviceLabel: "Первое устройство",
           id: deviceId,
           platformFamily: "IOS",
           status: "ACTIVE",
-        },
-      ],
-      employee: { id: employeeId, login },
-    });
+        }),
+        expect.objectContaining({
+          deviceLabel: "Второе устройство",
+          id: secondDeviceId,
+          platformFamily: "ANDROID",
+          status: "ACTIVE",
+        }),
+      ]),
+    );
   });
 
   it("edits, reissues activation and safely deletes an unactivated employee", async () => {

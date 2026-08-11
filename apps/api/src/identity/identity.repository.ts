@@ -733,7 +733,9 @@ export class IdentityRepository {
           webauthn_public_key, webauthn_counter::text, webauthn_transports,
           webauthn_device_type, webauthn_backed_up
         from identity.personal_device
-        where employee_id = $1 and status = 'ACTIVE'
+        where employee_id = $1 and status = 'ACTIVE' and webauthn_credential_id is not null
+        order by paired_at desc
+        limit 1
       `,
       [employeeId],
     );
