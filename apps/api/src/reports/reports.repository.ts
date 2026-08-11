@@ -518,15 +518,15 @@ const productionOutboundQuery = `with produced as (
     and b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE')
   group by t.product_id
 ), dispatched as (
-  select m.product_id,sum(m.quantity)::int dispatched_quantity
-  from warehouse.movement m
-  join warehouse.movement_document d on d.id=m.document_id
-  join loading.loading_session s on s.id=d.source_id
-  where d.document_type='LOADING_COMPLETION'
-    and m.target_bucket='DISPATCHED'
-    and s.dispatch_date between $1 and $2
+  select l.product_id,sum(r.quantity)::int dispatched_quantity
+  from loading.loading_session s
+  join loading.loading_line l on l.loading_session_id=s.id and l.status='CONFIRMED'
+  join loading.loading_line_revision r
+    on r.loading_line_id=l.id and r.revision_no=l.current_revision_no
+  where s.dispatch_date between $1 and $2
+    and s.status<>'CANCELLED'
     and ($3::uuid is null or s.territory_id=$3)
-  group by m.product_id
+  group by l.product_id
 ), returned as (
   select l.product_id,sum(l.quantity)::int returned_quantity
   from returns.good_return_receipt r
@@ -550,7 +550,7 @@ const productionOutboundQuery = `with produced as (
 )
 select p.id "productId",p.product_code "productCode",p.name "productName",
   coalesce(pr.produced_quantity,0)::int "producedQuantity",
-  (coalesce(di.dispatched_quantity,0)-coalesce(rt.returned_quantity,0))::int "outboundQuantity",
+  greatest(coalesce(di.dispatched_quantity,0)-coalesce(rt.returned_quantity,0),0)::int "outboundQuantity",
   coalesce(wh.on_hand_quantity,0)::int "onHandQuantity"
 from catalog.product p
 left join produced pr on pr.product_id=p.id
