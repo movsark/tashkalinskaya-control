@@ -208,7 +208,7 @@ export default function EmployeesPage() {
           <p>
             {accessDetail
               ? "Отдельное меню сотрудника. Изменения сохраняются одной кнопкой."
-              : "Персональные аккаунты, роли, состояния и единственное личное устройство."}
+              : "Персональные аккаунты, роли, состояния и активные сессии."}
           </p>
         </div>
         <div className="form-actions">
@@ -352,6 +352,8 @@ function CreateInvitationPanel({
   const [roleCode, setRoleCode] = useState<RoleCode>(initialRole.roleCode);
   const selectedRole = options.roles.find((role) => role.roleCode === roleCode) ?? initialRole;
   const [scopeId, setScopeId] = useState(selectedRole.scopes[0]?.id ?? "");
+  const showScopeSelection =
+    selectedRole.scopeType !== "FACTORY" && selectedRole.roleCode !== "CONFECTIONER";
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -397,9 +399,9 @@ function CreateInvitationPanel({
               </option>
             ))}
           </select>
-          <small>Сотрудник увидит эту должность сразу после сканирования QR.</small>
+          <small>Сотрудник увидит эту должность после ввода одноразового кода.</small>
         </label>
-        {selectedRole.scopeType !== "FACTORY" ? (
+        {showScopeSelection ? (
           <label>
             {selectedRole.scopeType === "WORKSHOP"
               ? "Цех"
@@ -431,7 +433,7 @@ function CreateInvitationPanel({
             disabled={submitting || (selectedRole.scopeType !== "FACTORY" && scopeId.length === 0)}
             type="submit"
           >
-            {submitting ? "Создаем QR…" : "Показать QR для регистрации"}
+            {submitting ? "Создаём код…" : "Создать одноразовый код"}
           </button>
         </div>
       </form>
@@ -446,40 +448,25 @@ function InvitationResult({
   readonly invitation: EmployeeInvitationResult;
   readonly onClose: () => void;
 }) {
-  const [qrImage, setQrImage] = useState("");
-  const [registrationUrl, setRegistrationUrl] = useState("");
-
-  useEffect(() => {
-    const url = `${window.location.origin}/register#code=${encodeURIComponent(invitation.invitationCode)}`;
-    setRegistrationUrl(url);
-    void QRCode.toDataURL(url, {
-      color: { dark: "#173c34", light: "#fffdf8" },
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 320,
-    }).then(setQrImage);
-  }, [invitation.invitationCode]);
-
   return (
     <section className="invitation-result" aria-live="polite">
       <div className="invitation-result__copy">
         <p className="eyebrow">Одноразовое приглашение</p>
         <h2>{invitation.roleDisplayName}</h2>
-        {invitation.scopeDisplayName ? <strong>{invitation.scopeDisplayName}</strong> : null}
+        {invitation.scopeDisplayName && invitation.roleCode !== "CONFECTIONER" ? (
+          <strong>{invitation.scopeDisplayName}</strong>
+        ) : null}
         <p>
-          Сотрудник сканирует QR своим телефоном, вводит ФИО, логин и пароль — и сразу входит в
-          приложение. QR действует до {new Date(invitation.expiresAt).toLocaleString("ru-RU")}.
+          Передайте этот код сотруднику лично. На странице регистрации он введёт код, ФИО, логин и
+          пароль — и сразу войдёт в приложение. Код действует до{" "}
+          {new Date(invitation.expiresAt).toLocaleString("ru-RU")}.
         </p>
-        <small>Не отправляйте QR в общие чаты: использовать его можно только один раз.</small>
+        <small>Не отправляйте код в общие чаты: использовать его можно только один раз.</small>
       </div>
-      <div className="invitation-result__qr">
-        {qrImage ? <img alt="QR для регистрации сотрудника" src={qrImage} /> : <span>QR…</span>}
+      <div className="invitation-result__code">
+        <small>Одноразовый код</small>
+        <strong>{invitation.invitationCode}</strong>
       </div>
-      {registrationUrl ? (
-        <Link className="secondary-button" href={registrationUrl}>
-          Открыть регистрацию на этом телефоне для теста
-        </Link>
-      ) : null}
       <button className="secondary-button" onClick={onClose}>
         Закрыть
       </button>

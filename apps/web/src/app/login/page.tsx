@@ -7,7 +7,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { AppBrand } from "../../components/app-brand";
 import { LocalUatLogin } from "../../components/local-uat-login";
 import { ApiRequestError, login } from "../../lib/api";
-import { readDeviceId, saveDeviceId } from "../../lib/device-identity";
+import { ensureDeviceId, saveDeviceId } from "../../lib/device-identity";
 import { homeRouteFor } from "../../lib/home-route";
 
 export default function LoginPage() {
@@ -22,7 +22,7 @@ export default function LoginPage() {
     const parameters = new URLSearchParams(window.location.search);
     setLoginValue(parameters.get("login") ?? "");
     if (parameters.get("recovered") === "1") {
-      setNotice("Пароль изменён, устройство привязано. Войдите с новым паролем.");
+      setNotice("Пароль изменён. Войдите с новым паролем.");
     }
   }, []);
 
@@ -31,11 +31,7 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const deviceId = readDeviceId(loginValue);
-      if (deviceId === null) {
-        setError("Это устройство ещё не привязано. Используйте первичную активацию доступа.");
-        return;
-      }
+      const deviceId = ensureDeviceId(loginValue);
       const session = await login({
         deviceId,
         login: loginValue,
@@ -72,7 +68,7 @@ export default function LoginPage() {
           </p>
           <div className="security-note">
             <strong>Общий аккаунт цеха не используется.</strong>
-            <span>Каждое подтверждение сохраняет конкретного сотрудника и устройство.</span>
+            <span>Каждое подтверждение сохраняет конкретного сотрудника.</span>
           </div>
         </div>
         <div className="auth-card">

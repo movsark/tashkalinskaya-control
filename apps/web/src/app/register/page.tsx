@@ -20,26 +20,35 @@ export default function RegisterPage() {
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.replace(/^#/u, ""));
     const code = params.get("code")?.trim() ?? "";
-    if (code === "") {
-      setError("В QR-коде нет приглашения. Попросите администратора показать новый QR");
-      setLoading(false);
-      return;
-    }
+    if (code === "") return;
     setInvitationCode(code);
-    void previewEmployeeRegistration(code)
-      .then(setInvitation)
-      .catch((caught: unknown) =>
-        setError(caught instanceof Error ? caught.message : "Приглашение недействительно"),
-      )
-      .finally(() => setLoading(false));
+    void checkInvitation(code);
   }, []);
+
+  async function checkInvitation(code: string) {
+    setError("");
+    setLoading(true);
+    try {
+      setInvitation(await previewEmployeeRegistration(code.trim()));
+    } catch (caught) {
+      setInvitation(null);
+      setError(caught instanceof Error ? caught.message : "Одноразовый код недействителен");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function submitInvitationCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void checkInvitation(invitationCode);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -79,19 +88,38 @@ export default function RegisterPage() {
         <div className="auth-intro">
           <p className="eyebrow">Приглашение от администратора</p>
           <h1>Создайте свой вход</h1>
-          <p>
-            Заполните короткую форму один раз. После регистрации приложение запомнит этот телефон.
-          </p>
+          <p>Введите одноразовый код администратора и заполните короткую форму.</p>
           {invitation ? (
             <div className="registration-role">
               <span>Ваша должность</span>
               <strong>{invitation.roleDisplayName}</strong>
-              {invitation.scopeDisplayName ? <small>{invitation.scopeDisplayName}</small> : null}
+              {invitation.scopeDisplayName && invitation.roleCode !== "CONFECTIONER" ? (
+                <small>{invitation.scopeDisplayName}</small>
+              ) : null}
             </div>
           ) : null}
         </div>
         <div className="auth-card auth-card--wide">
           {loading ? <p>Проверяем приглашение…</p> : null}
+          {!loading && !invitation ? (
+            <form onSubmit={submitInvitationCode}>
+              <label>
+                Одноразовый код
+                <input
+                  autoCapitalize="none"
+                  autoComplete="one-time-code"
+                  onChange={(event) => setInvitationCode(event.target.value)}
+                  required
+                  value={invitationCode}
+                />
+              </label>
+              {error ? <p className="form-error">{error}</p> : null}
+              <button className="primary-button" type="submit">
+                Продолжить регистрацию
+              </button>
+              <Link href="/login">Вернуться ко входу</Link>
+            </form>
+          ) : null}
           {!loading && invitation ? (
             <form onSubmit={submit}>
               <div className="form-row">
@@ -163,13 +191,6 @@ export default function RegisterPage() {
                 {submitting ? "Создаём доступ…" : "Зарегистрироваться и войти"}
               </button>
             </form>
-          ) : null}
-          {!loading && !invitation ? (
-            <div className="registration-invalid">
-              {error ? <p className="form-error">{error}</p> : null}
-              <p>Администратор может сразу создать новый QR.</p>
-              <Link href="/login">Вернуться ко входу</Link>
-            </div>
           ) : null}
         </div>
       </section>

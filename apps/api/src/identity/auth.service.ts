@@ -511,21 +511,23 @@ export class AuthService {
       account?.passwordHash ?? null,
       dto.password,
     );
-    const device = await this.repository.findActiveDevice(dto.deviceId);
     const accessAllowed =
       account !== null &&
       account.accountStatus === "ACTIVE" &&
       account.employeeStatus === "ACTIVE" &&
       (account.lockedUntil === null || account.lockedUntil <= new Date()) &&
-      passwordValid &&
-      device !== null &&
-      device.employeeId === account.employeeId;
+      passwordValid;
 
-    if (!accessAllowed || account === null || device === null) {
+    if (!accessAllowed || account === null) {
       await this.repository.recordLoginBucketFailure(rateLimitBucket);
       await this.repository.recordLoginFailure(account?.accountId ?? null, correlationId);
       throw genericAuthenticationError();
     }
+
+    const device = await this.repository.ensurePasswordLoginDevice({
+      deviceId: dto.deviceId,
+      employeeId: account.employeeId,
+    });
 
     const sessionToken = this.crypto.generateSessionToken();
     const employee = await this.repository.getEmployee(account.employeeId);
