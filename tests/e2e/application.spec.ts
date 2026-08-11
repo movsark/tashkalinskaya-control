@@ -2731,6 +2731,7 @@ test.describe("B20 browser and HTTP regression", () => {
   });
 
   test("support workspaces keep rare actions collapsed on a phone", async ({ page }) => {
+    const currentDate = moscowToday();
     const employeeId = "20000000-0000-4000-8000-000000000110";
     const productId = "20000000-0000-4000-8000-000000000111";
     const acceptedReturnIds = new Set<string>();
@@ -3057,7 +3058,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await territoryOne.locator("summary").click();
     await expect(territoryOne).toContainText("Торт тестовый");
     await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-01");
-    await expect.poll(() => summaryQueries.at(-1)).toContain("toDate=2026-08-10");
+    await expect.poll(() => summaryQueries.at(-1)).toContain(`toDate=${currentDate}`);
     await periodPanel.getByLabel("С", { exact: true }).fill("2026-08-05");
     await expect.poll(() => summaryQueries.at(-1)).toContain("fromDate=2026-08-05");
     await periodPanel.getByLabel("По", { exact: true }).fill("2026-08-06");
@@ -3105,6 +3106,7 @@ test.describe("B20 browser and HTTP regression", () => {
   test("driver returns distinguish a route that has not started from a completed route", async ({
     page,
   }) => {
+    const currentDate = moscowToday();
     const driverId = "20000000-0000-4000-8000-000000000117";
     const territoryId = "20000000-0000-4000-8000-000000000118";
     let routeCompleted = false;
@@ -3138,7 +3140,7 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/returns/me/workspace")) {
         return json(route, {
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           requests: [],
           serverTime: "2026-08-10T13:00:00.000Z",
           territories: [],
@@ -3146,25 +3148,25 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/spoilage/me/workspace")) {
         return json(route, {
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           reasons: [],
           requests: [],
           serverTime: "2026-08-10T13:00:00.000Z",
           territories: [],
         });
       }
-      if (path.endsWith("/logistics/me/days/2026-08-10")) {
+      if (path.endsWith(`/logistics/me/days/${currentDate}`)) {
         return json(route, {
           activeRoutes: [],
           availableTerritoryIds: [territoryId],
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           driverProfileVersion: 1,
           homeTerritoryId: territoryId,
           requests: [],
           routeHistory: routeCompleted
             ? [
                 {
-                  dispatchDate: "2026-08-10",
+                  dispatchDate: currentDate,
                   driverEmployeeId: driverId,
                   driverName: "Водитель без рейса",
                   endedAt: "2026-08-10T12:30:00.000Z",
@@ -3224,6 +3226,7 @@ test.describe("B20 browser and HTTP regression", () => {
   test("a driver sends a partial good return from the grouped received assortment", async ({
     page,
   }) => {
+    const currentDate = moscowToday();
     const driverId = "20000000-0000-4000-8000-000000000120";
     const territoryId = "20000000-0000-4000-8000-000000000121";
     const productId = "20000000-0000-4000-8000-000000000122";
@@ -3318,14 +3321,14 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/returns/me/workspace")) {
         return json(route, {
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           requests: requestCreated
             ? [
                 {
                   acceptedAt: null,
                   acceptedByName: null,
                   comment: "Не продано",
-                  dispatchDate: "2026-08-10",
+                  dispatchDate: currentDate,
                   id: "20000000-0000-4000-8000-000000000125",
                   lines: [
                     {
@@ -3375,7 +3378,7 @@ test.describe("B20 browser and HTTP regression", () => {
       }
       if (path.endsWith("/spoilage/me/workspace")) {
         return json(route, {
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           reasons: [
             {
               code: "OTHER",
@@ -3421,11 +3424,11 @@ test.describe("B20 browser and HTTP regression", () => {
         submittedSpoilage.push(request.postDataJSON() as Record<string, unknown>);
         return json(route, { requestId: "20000000-0000-4000-8000-000000000128" });
       }
-      if (path.endsWith("/logistics/me/days/2026-08-10")) {
+      if (path.endsWith(`/logistics/me/days/${currentDate}`)) {
         return json(route, {
           activeRoutes: [
             {
-              dispatchDate: "2026-08-10",
+              dispatchDate: currentDate,
               driverEmployeeId: driverId,
               driverName: "Водитель возврата",
               endedAt: null,
@@ -3440,7 +3443,7 @@ test.describe("B20 browser and HTTP regression", () => {
             },
           ],
           availableTerritoryIds: [],
-          dispatchDate: "2026-08-10",
+          dispatchDate: currentDate,
           driverProfileVersion: 1,
           homeTerritoryId: territoryId,
           requests: [],
