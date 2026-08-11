@@ -55,6 +55,7 @@ import type {
   ReportCode,
   ReportExportFormat,
   ReportJobView,
+  ProductionOutboundReportView,
   ReportsWorkspaceView,
   RoleCode,
   RoleAssignmentView,
@@ -1846,12 +1847,24 @@ export async function getReportsWorkspace(): Promise<ReportsWorkspaceView> {
   return request("/reports/workspace");
 }
 
+export async function getProductionOutboundReport(input: {
+  dateFrom: string;
+  dateTo: string;
+  territoryId?: string;
+}): Promise<ProductionOutboundReportView> {
+  const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
+  if (input.territoryId) query.set("territoryId", input.territoryId);
+  return request(`/reports/production-outbound?${query.toString()}`);
+}
+
 export async function createReportJob(
   input: {
     dateFrom: string;
     dateTo: string;
     format: ReportExportFormat;
     reportCode: ReportCode;
+    scopeId?: string;
+    scopeLabel?: string;
   },
   csrfToken: string,
 ): Promise<ReportJobView> {

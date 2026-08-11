@@ -3,6 +3,7 @@
 import type {
   AuthenticatedUser,
   ControlCenterView,
+  ProductionOutboundReportView,
   ReportExportFormat,
   ReportJobView,
   ReportsWorkspaceView,
@@ -16,6 +17,7 @@ import {
   createReportJob,
   downloadReport,
   getControlCenter,
+  getProductionOutboundReport,
   getReportsWorkspace,
   getSession,
 } from "../../lib/api";
@@ -26,23 +28,43 @@ export default function ReportsPage() {
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [workspace, setWorkspace] = useState<ReportsWorkspaceView | null>(null);
   const [control, setControl] = useState<ControlCenterView | null>(null);
+  const [productionOutbound, setProductionOutbound] = useState<ProductionOutboundReportView | null>(
+    null,
+  );
+  const [activeTab, setActiveTab] = useState<"main" | "other">("main");
   const [selectedDate, setSelectedDate] = useState(today);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [format, setFormat] = useState<ReportExportFormat>("XLSX");
   const [selectedReport, setSelectedReport] = useState("");
+  const [territoryId, setTerritoryId] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   async function load(showControl = true) {
-    const [reports, center] = await Promise.all([
-      getReportsWorkspace(),
+    const reports = await getReportsWorkspace();
+    const canReadProductionOutbound = reports.catalog.some(
+      (item) => item.code === "PRODUCTION_OUTBOUND",
+    );
+    if (!canReadProductionOutbound) setActiveTab("other");
+    const [center, operational] = await Promise.all([
       showControl ? getControlCenter(selectedDate) : Promise.resolve(control),
+      canReadProductionOutbound
+        ? getProductionOutboundReport({
+            dateFrom,
+            dateTo,
+            ...(territoryId ? { territoryId } : {}),
+          })
+        : Promise.resolve(null),
     ]);
     setWorkspace(reports);
     if (center) setControl(center);
-    setSelectedReport((current) => current || reports.catalog[0]?.code || "");
+    if (operational) setProductionOutbound(operational);
+    setSelectedReport(
+      (current) =>
+        current || reports.catalog.find((item) => item.code !== "PRODUCTION_OUTBOUND")?.code || "",
+    );
   }
 
   useEffect(() => {
@@ -103,6 +125,56 @@ export default function ReportsPage() {
     }
   }
 
+  async function refreshProductionOutbound() {
+    setBusy("production-outbound");
+    setError("");
+    setSuccess("");
+    try {
+      setProductionOutbound(
+        await getProductionOutboundReport({
+          dateFrom,
+          dateTo,
+          ...(territoryId ? { territoryId } : {}),
+        }),
+      );
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function exportProductionOutbound() {
+    if (!session || !productionOutbound) return;
+    setBusy("production-outbound-export");
+    setError("");
+    setSuccess("");
+    try {
+      const territory = productionOutbound.territories.find(
+        (item) => item.id === productionOutbound.selectedTerritoryId,
+      );
+      await createReportJob(
+        {
+          dateFrom: productionOutbound.dateFrom,
+          dateTo: productionOutbound.dateTo,
+          format: "XLSX",
+          reportCode: "PRODUCTION_OUTBOUND",
+          ...(productionOutbound.selectedTerritoryId
+            ? { scopeId: productionOutbound.selectedTerritoryId }
+            : {}),
+          scopeLabel: territory ? `Территория ${territory.number}` : "Все территории",
+        },
+        session.csrfToken,
+      );
+      setWorkspace(await getReportsWorkspace());
+      setSuccess("Excel формируется. Готовый файл появится ниже в разделе «Готовые файлы». ");
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (!workspace || !session || !control)
     return (
       <main className="workspace-layout reports-page simple-workspace">
@@ -128,77 +200,61 @@ export default function ReportsPage() {
       <section className="reports-hero">
         <div>
           <p className="eyebrow">Руководитель</p>
-          <h1>Контроль и отчёты</h1>
-          <p>
-            Показатели собраны из подтверждённых операций. Выберите дату для оперативного среза.
-          </p>
+          <h1>Отчёты</h1>
+          <p>Проверка производства, вывоза и склада по подтверждённым операциям.</p>
         </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void refreshControl();
-          }}
-        >
-          <label>
-            Контрольная дата
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-            />
-          </label>
-          <button className="primary-button" disabled={busy === "control"}>
-            Обновить
-          </button>
-        </form>
       </section>
+
+      {workspace.catalog.some((item) => item.code === "PRODUCTION_OUTBOUND") ? (
+        <nav aria-label="Вкладки отчётов" className="reports-tabs">
+          <button
+            className={activeTab === "main" ? "is-active" : ""}
+            onClick={() => setActiveTab("main")}
+            type="button"
+          >
+            Производство и вывоз
+          </button>
+          <button
+            className={activeTab === "other" ? "is-active" : ""}
+            onClick={() => setActiveTab("other")}
+            type="button"
+          >
+            Другие отчёты
+          </button>
+        </nav>
+      ) : null}
 
       {error ? <p className="form-error reports-notice">{error}</p> : null}
       {success ? <p className="logistics-success reports-notice">{success}</p> : null}
 
-      <section className="reports-metrics" aria-label="Показатели контроля">
-        {control.metrics.map((metric) => (
-          <Link
-            className={`report-metric is-${metric.status.toLowerCase()}`}
-            href={metric.href}
-            key={metric.code}
-          >
-            <span>{metric.label}</span>
-            <b>{metric.value.toLocaleString("ru-RU")}</b>
-            <small>{unitLabel(metric.unit)}</small>
-          </Link>
-        ))}
-      </section>
-
-      <section className="reports-layout">
-        <div className="reports-catalog">
-          <div className="reports-heading">
+      {activeTab === "main" ? (
+        <section className="production-outbound-report">
+          <header>
             <div>
-              <p className="eyebrow">Каталог</p>
-              <h2>Сформировать файл</h2>
+              <p className="eyebrow">Первый отчёт</p>
+              <h2>Производство и вывоз</h2>
+              <p>
+                Вывезено — это подтверждённая погрузка за период минус принятый складом годный
+                возврат.
+              </p>
             </div>
-            <span>{workspace.catalog.length} форм</span>
-          </div>
-          <div className="report-picker">
-            {workspace.catalog.map((item) => (
-              <button
-                className={selectedReport === item.code ? "is-active" : ""}
-                key={item.code}
-                onClick={() => setSelectedReport(item.code)}
-              >
-                <strong>{item.title}</strong>
-                <small>{item.description}</small>
-                {item.personalData ? <em>Персональные данные</em> : null}
-              </button>
-            ))}
-          </div>
-        </div>
+            <button
+              className="secondary-button"
+              disabled={busy === "production-outbound-export" || !productionOutbound}
+              onClick={() => void exportProductionOutbound()}
+              type="button"
+            >
+              Выгрузить в Excel
+            </button>
+          </header>
 
-        <aside className="report-request">
-          <p className="eyebrow">Параметры</p>
-          <h2>{selected?.title}</h2>
-          <p>{selected?.description}</p>
-          <div className="report-dates">
+          <form
+            className="production-outbound-filters"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshProductionOutbound();
+            }}
+          >
             <label>
               С
               <input
@@ -215,34 +271,199 @@ export default function ReportsPage() {
                 onChange={(event) => setDateTo(event.target.value)}
               />
             </label>
-          </div>
-          <fieldset>
-            <legend>Формат</legend>
-            {selected?.formats.map((item) => (
-              <label key={item}>
-                <input
-                  checked={format === item}
-                  name="format"
-                  type="radio"
-                  onChange={() => setFormat(item)}
-                />
-                {item === "XLSX" ? "Excel" : "PDF · A4"}
-              </label>
-            ))}
-          </fieldset>
-          <button
-            className="primary-button"
-            disabled={busy === "report" || !selected}
-            onClick={() => void requestReport()}
+            <label>
+              Территория
+              <select value={territoryId} onChange={(event) => setTerritoryId(event.target.value)}>
+                <option value="">Все территории</option>
+                {productionOutbound?.territories.map((territory) => (
+                  <option key={territory.id} value={territory.id}>
+                    Территория {territory.number}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="primary-button" disabled={busy === "production-outbound"}>
+              {busy === "production-outbound" ? "Считаем…" : "Показать"}
+            </button>
+          </form>
+
+          {productionOutbound ? (
+            <>
+              <div className="production-outbound-caption">
+                <strong>
+                  {productionOutbound.selectedTerritoryNumber
+                    ? `Территория ${productionOutbound.selectedTerritoryNumber}`
+                    : "Все территории"}
+                </strong>
+                <span>
+                  {formatDate(productionOutbound.dateFrom)} —{" "}
+                  {formatDate(productionOutbound.dateTo)}
+                </span>
+                <small>Склад — остаток на {formatDate(productionOutbound.warehouseAsOf)}</small>
+              </div>
+              <div className="production-outbound-table-wrap">
+                <table className="production-outbound-table">
+                  <thead>
+                    <tr>
+                      <th>Код</th>
+                      <th>Наименование</th>
+                      <th>Произведено</th>
+                      <th>Вывезено</th>
+                      <th>На складе</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productionOutbound.rows.map((row) => (
+                      <tr key={row.productId}>
+                        <td>{row.productCode}</td>
+                        <th scope="row">{row.productName}</th>
+                        <td>{quantity(row.producedQuantity)}</td>
+                        <td>{quantity(row.outboundQuantity)}</td>
+                        <td>{quantity(row.onHandQuantity)}</td>
+                      </tr>
+                    ))}
+                    {!productionOutbound.rows.length ? (
+                      <tr>
+                        <td className="production-outbound-empty" colSpan={5}>
+                          За выбранный период операций нет.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th colSpan={2}>Итого</th>
+                      <td>{quantity(productionOutbound.totals.producedQuantity)}</td>
+                      <td>{quantity(productionOutbound.totals.outboundQuantity)}</td>
+                      <td>{quantity(productionOutbound.totals.onHandQuantity)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              {productionOutbound.selectedTerritoryId ? (
+                <p className="production-outbound-note">
+                  «Произведено» и «На складе» относятся ко всей фабрике. По выбранной территории
+                  меняется только «Вывезено».
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="warehouse-loading">Загружаем отчёт…</p>
+          )}
+        </section>
+      ) : (
+        <>
+          <form
+            className="reports-control-date"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshControl();
+            }}
           >
-            Сформировать в фоне
-          </button>
-          <small>
-            Файл хранится 365 дней. В нём фиксируются период, автор, время снимка и контрольная
-            сумма.
-          </small>
-        </aside>
-      </section>
+            <label>
+              Контрольная дата
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+              />
+            </label>
+            <button className="primary-button" disabled={busy === "control"}>
+              Обновить
+            </button>
+          </form>
+
+          <section className="reports-metrics" aria-label="Показатели контроля">
+            {control.metrics.map((metric) => (
+              <Link
+                className={`report-metric is-${metric.status.toLowerCase()}`}
+                href={metric.href}
+                key={metric.code}
+              >
+                <span>{metric.label}</span>
+                <b>{metric.value.toLocaleString("ru-RU")}</b>
+                <small>{unitLabel(metric.unit)}</small>
+              </Link>
+            ))}
+          </section>
+
+          <section className="reports-layout">
+            <div className="reports-catalog">
+              <div className="reports-heading">
+                <div>
+                  <p className="eyebrow">Каталог</p>
+                  <h2>Сформировать файл</h2>
+                </div>
+                <span>{workspace.catalog.length} форм</span>
+              </div>
+              <div className="report-picker">
+                {workspace.catalog
+                  .filter((item) => item.code !== "PRODUCTION_OUTBOUND")
+                  .map((item) => (
+                    <button
+                      className={selectedReport === item.code ? "is-active" : ""}
+                      key={item.code}
+                      onClick={() => setSelectedReport(item.code)}
+                    >
+                      <strong>{item.title}</strong>
+                      <small>{item.description}</small>
+                      {item.personalData ? <em>Персональные данные</em> : null}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            <aside className="report-request">
+              <p className="eyebrow">Параметры</p>
+              <h2>{selected?.title}</h2>
+              <p>{selected?.description}</p>
+              <div className="report-dates">
+                <label>
+                  С
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(event) => setDateFrom(event.target.value)}
+                  />
+                </label>
+                <label>
+                  По
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(event) => setDateTo(event.target.value)}
+                  />
+                </label>
+              </div>
+              <fieldset>
+                <legend>Формат</legend>
+                {selected?.formats.map((item) => (
+                  <label key={item}>
+                    <input
+                      checked={format === item}
+                      name="format"
+                      type="radio"
+                      onChange={() => setFormat(item)}
+                    />
+                    {item === "XLSX" ? "Excel" : "PDF · A4"}
+                  </label>
+                ))}
+              </fieldset>
+              <button
+                className="primary-button"
+                disabled={busy === "report" || !selected}
+                onClick={() => void requestReport()}
+              >
+                Сформировать в фоне
+              </button>
+              <small>
+                Файл хранится 365 дней. В нём фиксируются период, автор, время снимка и контрольная
+                сумма.
+              </small>
+            </aside>
+          </section>
+        </>
+      )}
 
       <details className="report-registry workspace-more">
         <summary>
@@ -298,6 +519,12 @@ function JobCard({ job, onDownload }: { job: ReportJobView; onDownload: () => vo
 
 function unitLabel(unit: ControlCenterView["metrics"][number]["unit"]) {
   return unit === "PEOPLE" ? "сотрудников" : unit === "PIECES" ? "штук" : "операций";
+}
+function quantity(value: number) {
+  return `${value.toLocaleString("ru-RU")} шт.`;
+}
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("ru-RU").format(new Date(`${value}T12:00:00`));
 }
 function statusLabel(status: ReportJobView["status"]) {
   return (

@@ -9464,6 +9464,183 @@ select:focus {
   padding: 12px 15px;
 }
 
+.reports-tabs {
+  background: #e8ece8;
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 22px;
+  padding: 7px;
+}
+
+.reports-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 13px;
+  color: #68706b;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+  min-height: 58px;
+  padding: 10px 18px;
+}
+
+.reports-tabs button.is-active {
+  background: #175448;
+  color: white;
+}
+
+.production-outbound-report {
+  background: white;
+  border: 1px solid #ded9cf;
+  border-radius: 22px;
+  box-shadow: 0 12px 38px rgb(40 36 28 / 5%);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 24px;
+}
+
+.production-outbound-report > header {
+  align-items: start;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+}
+
+.production-outbound-report h2 {
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  margin: 0;
+}
+
+.production-outbound-report header p:last-child,
+.production-outbound-note {
+  color: #69716c;
+  line-height: 1.5;
+  margin: 9px 0 0;
+}
+
+.production-outbound-filters,
+.reports-control-date {
+  align-items: end;
+  background: #f4f6f3;
+  border: 1px solid #dde3de;
+  border-radius: 18px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(210px, 1.25fr) auto;
+  margin: 22px 0;
+  padding: 16px;
+}
+
+.reports-control-date {
+  grid-template-columns: minmax(220px, 360px) auto;
+  margin-left: auto;
+  max-width: 560px;
+}
+
+.production-outbound-filters label,
+.reports-control-date label {
+  color: #505954;
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.production-outbound-filters input,
+.production-outbound-filters select,
+.reports-control-date input {
+  background: white;
+  border: 1px solid #bdc9c1;
+  border-radius: 12px;
+  color: #202522;
+  font: inherit;
+  min-height: 58px;
+  padding: 10px 14px;
+}
+
+.production-outbound-caption {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 4px 0 12px;
+}
+
+.production-outbound-caption strong {
+  color: #174f43;
+  font-size: 1.15rem;
+}
+
+.production-outbound-caption span,
+.production-outbound-caption small {
+  color: #6d746f;
+}
+
+.production-outbound-table-wrap {
+  border: 1px solid #dce2dd;
+  border-radius: 16px;
+  max-width: 100%;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.production-outbound-table {
+  border-collapse: collapse;
+  min-width: 700px;
+  width: 100%;
+}
+
+.production-outbound-table th,
+.production-outbound-table td {
+  border-bottom: 1px solid #e1e5e2;
+  padding: 15px 16px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.production-outbound-table th:first-child,
+.production-outbound-table td:first-child,
+.production-outbound-table th:nth-child(2),
+.production-outbound-table td:nth-child(2) {
+  text-align: left;
+}
+
+.production-outbound-table thead th {
+  background: #eef2ef;
+  color: #5a645e;
+  font-size: 0.78rem;
+  position: sticky;
+  top: 0;
+}
+
+.production-outbound-table tbody th {
+  font-size: 0.94rem;
+}
+
+.production-outbound-table tbody td {
+  font-variant-numeric: tabular-nums;
+}
+
+.production-outbound-table tfoot th,
+.production-outbound-table tfoot td {
+  background: #175448;
+  border: 0;
+  color: white;
+  font-weight: 850;
+}
+
+.production-outbound-empty {
+  color: #737b76;
+  padding: 34px !important;
+  text-align: center !important;
+}
+
+.production-outbound-note {
+  font-size: 0.86rem;
+}
+
 .reports-metrics {
   display: grid;
   gap: 12px;
@@ -9731,6 +9908,25 @@ select:focus {
   }
   .report-job .primary-button {
     width: 100%;
+  }
+  .reports-tabs {
+    grid-template-columns: 1fr;
+  }
+  .production-outbound-report {
+    padding: 15px;
+  }
+  .production-outbound-report > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .production-outbound-report > header button {
+    width: 100%;
+  }
+  .production-outbound-filters,
+  .reports-control-date {
+    grid-template-columns: 1fr;
+    margin-left: 0;
+    max-width: none;
   }
 }
 

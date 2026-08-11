@@ -7,6 +7,18 @@ export class ControlCenterQueryDto {
   date!: string;
 }
 
+export class ProductionOutboundQueryDto {
+  @IsDateString({ strict: true })
+  dateFrom!: string;
+
+  @IsDateString({ strict: true })
+  dateTo!: string;
+
+  @IsOptional()
+  @IsUUID()
+  territoryId?: string;
+}
+
 export class ReportJobQueryDto {
   @IsOptional()
   @IsDateString({ strict: true })

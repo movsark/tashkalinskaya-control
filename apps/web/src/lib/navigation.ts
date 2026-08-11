@@ -113,6 +113,13 @@ export const appDestinations: readonly AppDestination[] = [
     symbol: "Н",
   },
   {
+    href: "/reports",
+    label: "Отчёты",
+    roles: ["ACCOUNTANT", "ADMIN", "MANAGER"],
+    shortLabel: "Отчёты",
+    symbol: "О",
+  },
+  {
     href: "/store",
     label: "Фирменный магазин",
     roles: ["ADMIN", "MANAGER", "STORE_SELLER", "WAREHOUSE_KEEPER"],
@@ -132,13 +139,6 @@ export const appDestinations: readonly AppDestination[] = [
     roles: ["ADMIN", "MANAGER"],
     shortLabel: "Товары",
     symbol: "Т",
-  },
-  {
-    href: "/reports",
-    label: "Контроль и отчёты",
-    roles: ["ACCOUNTANT", "ADMIN", "MANAGER"],
-    shortLabel: "Отчёты",
-    symbol: "О",
   },
   {
     href: "/terminals",

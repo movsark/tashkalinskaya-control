@@ -2554,7 +2554,7 @@ test.describe("B20 browser and HTTP regression", () => {
     );
 
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "Контроль и отчёты" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Отчёты", exact: true })).toBeVisible();
     await expect(page.getByText("Свободный склад")).toBeVisible();
     await expect(page.locator(".report-registry")).not.toHaveAttribute("open");
     await page.getByRole("button", { name: "Сформировать в фоне" }).click();
@@ -2564,6 +2564,45 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(createRequest).not.toBeNull();
     expect(createRequest?.csrf).toBe("csrf-e2e-token");
     expect(createRequest?.body).toMatchObject({ format: "XLSX", reportCode: "MOVEMENTS" });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("manager sees production, net outbound and warehouse stock and exports the selected territory", async ({
+    page,
+  }) => {
+    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await mockReportsApi(
+      page,
+      () => [],
+      (request) => {
+        createRequest = request;
+      },
+      true,
+    );
+
+    await page.goto("/reports");
+    await expect(page.getByRole("heading", { name: "Производство и вывоз" })).toBeVisible();
+    const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("12 шт.");
+    await expect(ryzhik).toContainText("8 шт.");
+    await expect(ryzhik).toContainText("4 шт.");
+    await page.getByLabel("Территория").selectOption("20000000-0000-4000-8000-000000000099");
+    await page.getByRole("button", { name: "Показать" }).click();
+    await expect(page.locator(".production-outbound-caption strong")).toHaveText("Территория 2");
+    await page.getByRole("button", { name: "Выгрузить в Excel" }).click();
+    expect(createRequest).not.toBeNull();
+    expect(createRequest?.csrf).toBe("csrf-e2e-token");
+    expect(createRequest?.body).toMatchObject({
+      format: "XLSX",
+      reportCode: "PRODUCTION_OUTBOUND",
+      scopeId: "20000000-0000-4000-8000-000000000099",
+      scopeLabel: "Территория 2",
+    });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -3426,6 +3465,7 @@ async function mockReportsApi(
   page: Page,
   currentJobs: () => readonly Record<string, unknown>[],
   onCreate: (request: { body: unknown; csrf: string | undefined }) => void,
+  includeProductionOutbound = false,
 ) {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -3459,6 +3499,17 @@ async function mockReportsApi(
     if (path.endsWith("/reports/workspace")) {
       return json(route, {
         catalog: [
+          ...(includeProductionOutbound
+            ? [
+                {
+                  code: "PRODUCTION_OUTBOUND",
+                  description: "Производство, чистый вывоз и склад",
+                  formats: ["XLSX"],
+                  personalData: false,
+                  title: "Производство и вывоз",
+                },
+              ]
+            : []),
           {
             code: "MOVEMENTS",
             description: "Подтверждённые складские движения",
@@ -3469,6 +3520,33 @@ async function mockReportsApi(
         ],
         jobs: currentJobs(),
         serverTime: "2026-08-01T10:00:00.000Z",
+      });
+    }
+    if (path.endsWith("/reports/production-outbound")) {
+      const territoryId = url.searchParams.get("territoryId");
+      return json(route, {
+        dateFrom: url.searchParams.get("dateFrom"),
+        dateTo: url.searchParams.get("dateTo"),
+        generatedAt: "2026-08-11T10:00:00.000Z",
+        rows: [
+          {
+            onHandQuantity: 4,
+            outboundQuantity: territoryId ? 3 : 8,
+            producedQuantity: 12,
+            productCode: "TB-001",
+            productId: "20000000-0000-4000-8000-000000000098",
+            productName: "ТБ Рыжик",
+          },
+        ],
+        selectedTerritoryId: territoryId,
+        selectedTerritoryNumber: territoryId ? 2 : null,
+        territories: [{ id: "20000000-0000-4000-8000-000000000099", number: 2 }],
+        totals: {
+          onHandQuantity: 4,
+          outboundQuantity: territoryId ? 3 : 8,
+          producedQuantity: 12,
+        },
+        warehouseAsOf: url.searchParams.get("dateTo"),
       });
     }
     if (path.endsWith("/reports/control")) {

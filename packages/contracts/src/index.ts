@@ -1465,6 +1465,7 @@ export interface NotificationsWorkspaceView {
 }
 
 export const REPORT_CODES = [
+  "PRODUCTION_OUTBOUND",
   "MOVEMENTS",
   "PLAN_FACT",
   "DEFECTS",
@@ -1544,6 +1545,34 @@ export interface ReportsWorkspaceView {
   readonly catalog: readonly ReportCatalogItemView[];
   readonly jobs: readonly ReportJobView[];
   readonly serverTime: string;
+}
+
+export interface ProductionOutboundReportRowView {
+  readonly onHandQuantity: number;
+  readonly outboundQuantity: number;
+  readonly producedQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+}
+
+export interface ProductionOutboundReportView {
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly generatedAt: string;
+  readonly rows: readonly ProductionOutboundReportRowView[];
+  readonly selectedTerritoryId: string | null;
+  readonly selectedTerritoryNumber: number | null;
+  readonly territories: readonly {
+    readonly id: string;
+    readonly number: number;
+  }[];
+  readonly totals: {
+    readonly onHandQuantity: number;
+    readonly outboundQuantity: number;
+    readonly producedQuantity: number;
+  };
+  readonly warehouseAsOf: string;
 }
 
 export interface ReportSnapshotColumn {

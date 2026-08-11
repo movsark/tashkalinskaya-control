@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import type {
   ControlCenterView,
+  ProductionOutboundReportView,
   ReportCode,
   ReportExportFormat,
   ReportJobView,
@@ -204,6 +205,50 @@ export class ReportsRepository {
     };
   }
 
+  async productionOutbound(
+    dateFrom: string,
+    dateTo: string,
+    territoryId: string | undefined,
+    actor: ReportsActor,
+  ): Promise<ProductionOutboundReportView> {
+    assertReportAccess(actor, "PRODUCTION_OUTBOUND");
+    requireRange(dateFrom, dateTo);
+    const territories = await this.database.query<{ id: string; territory_number: number }>(
+      `select id,territory_number from logistics.territory
+       where status='ACTIVE' order by territory_number`,
+    );
+    const selectedTerritory = territoryId
+      ? territories.rows.find((item) => item.id === territoryId)
+      : undefined;
+    if (territoryId && !selectedTerritory) throw new BadRequestException("Территория не найдена");
+    const rows = await this.database.transaction((client) =>
+      queryRows(client, "PRODUCTION_OUTBOUND", dateFrom, dateTo, territoryId),
+    );
+    const mappedRows = rows.map((row) => ({
+      onHandQuantity: Number(row.onHandQuantity ?? 0),
+      outboundQuantity: Number(row.outboundQuantity ?? 0),
+      producedQuantity: Number(row.producedQuantity ?? 0),
+      productCode: String(row.productCode ?? ""),
+      productId: String(row.productId ?? ""),
+      productName: String(row.productName ?? ""),
+    }));
+    return {
+      dateFrom,
+      dateTo,
+      generatedAt: new Date().toISOString(),
+      rows: mappedRows,
+      selectedTerritoryId: territoryId ?? null,
+      selectedTerritoryNumber: selectedTerritory?.territory_number ?? null,
+      territories: territories.rows.map((item) => ({ id: item.id, number: item.territory_number })),
+      totals: {
+        onHandQuantity: mappedRows.reduce((sum, row) => sum + row.onHandQuantity, 0),
+        outboundQuantity: mappedRows.reduce((sum, row) => sum + row.outboundQuantity, 0),
+        producedQuantity: mappedRows.reduce((sum, row) => sum + row.producedQuantity, 0),
+      },
+      warehouseAsOf: dateTo,
+    };
+  }
+
   async createJob(input: {
     actor: ReportsActor;
     correlationId: string;
@@ -249,7 +294,7 @@ export class ReportsRepository {
         requesterName: input.actor.employeeName,
         rows,
         templateVersion: REPORT_TEMPLATE_VERSION,
-        title: definition.title,
+        title: input.scopeLabel ? `${definition.title} · ${input.scopeLabel}` : definition.title,
         totals,
       };
       const id = randomUUID();
@@ -330,6 +375,11 @@ async function queryRows(
 function reportQuery(code: ReportCode, from: string, to: string, scopeId?: string) {
   const scopedValues = [from, to, scopeId ?? null];
   switch (code) {
+    case "PRODUCTION_OUTBOUND":
+      return {
+        sql: productionOutboundQuery,
+        values: scopedValues,
+      };
     case "MOVEMENTS":
       return {
         sql: `select md.business_date::text date,md.document_type "documentType",
@@ -459,6 +509,68 @@ function reportQuery(code: ReportCode, from: string, to: string, scopeId?: strin
       };
   }
 }
+
+const productionOutboundQuery = `with produced as (
+  select t.product_id,sum(b.quantity)::int produced_quantity
+  from production.batch b
+  join production.task t on t.id=b.task_id
+  where b.production_date between $1 and $2
+    and b.status in ('AWAITING_WAREHOUSE','WAREHOUSE_REVIEW','ACCEPTED_BY_WAREHOUSE')
+  group by t.product_id
+), dispatched as (
+  select m.product_id,sum(m.quantity)::int dispatched_quantity
+  from warehouse.movement m
+  join warehouse.movement_document d on d.id=m.document_id
+  join loading.loading_session s on s.id=d.source_id
+  where d.document_type='LOADING_COMPLETION'
+    and m.target_bucket='DISPATCHED'
+    and s.dispatch_date between $1 and $2
+    and ($3::uuid is null or s.territory_id=$3)
+  group by m.product_id
+), returned as (
+  select l.product_id,sum(l.quantity)::int returned_quantity
+  from returns.good_return_receipt r
+  join returns.good_return_line l on l.receipt_id=r.id
+  where r.source_dispatch_date between $1 and $2
+    and ($3::uuid is null or r.source_territory_id=$3)
+  group by l.product_id
+), warehouse as (
+  select m.product_id,
+    sum(case when m.target_bucket in (
+      'FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL',
+      'RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING'
+    ) then m.quantity else 0 end
+    - case when m.source_bucket in (
+      'FREE_STOCK','RESERVED_FOR_LOADING','RESERVED_FOR_STORE','RETURN_POOL',
+      'RETURN_ALLOCATED','RETURN_RESERVED_FOR_LOADING'
+    ) then m.quantity else 0 end)::int on_hand_quantity
+  from warehouse.movement m
+  where m.business_date <= $2
+  group by m.product_id
+)
+select p.id "productId",p.product_code "productCode",p.name "productName",
+  coalesce(pr.produced_quantity,0)::int "producedQuantity",
+  (coalesce(di.dispatched_quantity,0)-coalesce(rt.returned_quantity,0))::int "outboundQuantity",
+  coalesce(wh.on_hand_quantity,0)::int "onHandQuantity"
+from catalog.product p
+left join produced pr on pr.product_id=p.id
+left join dispatched di on di.product_id=p.id
+left join returned rt on rt.product_id=p.id
+left join warehouse wh on wh.product_id=p.id
+join catalog.category c on c.id=p.category_id
+where (
+  coalesce(pr.produced_quantity,0)<>0
+  or coalesce(di.dispatched_quantity,0)<>0
+  or coalesce(rt.returned_quantity,0)<>0
+  or coalesce(wh.on_hand_quantity,0)<>0
+)
+order by case c.code
+  when 'BASIC_CAKES' then 1
+  when 'PREMIUM_CAKES' then 2
+  when 'PIES_AND_PASTRIES' then 3
+  when 'DESSERTS' then 4
+  when 'DRY_BAKERY' then 5
+  else 6 end,p.name`;
 
 function assertFactoryReader(actor: ReportsActor): void {
   if (factoryReportRoles(actor).length === 0) {
