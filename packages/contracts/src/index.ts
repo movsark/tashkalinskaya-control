@@ -1561,12 +1561,6 @@ export interface ProductionOutboundReportView {
   readonly dateTo: string;
   readonly generatedAt: string;
   readonly rows: readonly ProductionOutboundReportRowView[];
-  readonly selectedTerritoryId: string | null;
-  readonly selectedTerritoryNumber: number | null;
-  readonly territories: readonly {
-    readonly id: string;
-    readonly number: number;
-  }[];
   readonly totals: {
     readonly onHandQuantity: number;
     readonly outboundQuantity: number;

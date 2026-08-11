@@ -2550,7 +2550,7 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
-  test("manager sees production, net outbound and warehouse stock and exports the selected territory", async ({
+  test("manager sees factory production, net outbound and warehouse stock and exports all territories", async ({
     page,
   }) => {
     let createRequest: { body: unknown; csrf: string | undefined } | null = null;
@@ -2571,6 +2571,8 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(ryzhik).toContainText("12 шт.");
     await expect(ryzhik).toContainText("8 шт.");
     await expect(ryzhik).toContainText("4 шт.");
+    await expect(page.getByLabel("Территория")).toHaveCount(0);
+    await expect(page.locator(".production-outbound-caption strong")).toHaveText("Вся фабрика");
     expect(
       await page.getByRole("button", { name: "Показать" }).evaluate((element) => {
         const bounds = element.getBoundingClientRect();
@@ -2582,18 +2584,15 @@ test.describe("B20 browser and HTTP regression", () => {
         .locator(".production-outbound-table-wrap")
         .evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.getByLabel("Территория").selectOption("20000000-0000-4000-8000-000000000099");
-    await page.getByRole("button", { name: "Показать" }).click();
-    await expect(page.locator(".production-outbound-caption strong")).toHaveText("Территория 2");
     await page.getByRole("button", { name: "Выгрузить в Excel" }).click();
     expect(createRequest).not.toBeNull();
     expect(createRequest?.csrf).toBe("csrf-e2e-token");
     expect(createRequest?.body).toMatchObject({
       format: "XLSX",
       reportCode: "PRODUCTION_OUTBOUND",
-      scopeId: "20000000-0000-4000-8000-000000000099",
-      scopeLabel: "Территория 2",
     });
+    expect(createRequest?.body).not.toHaveProperty("scopeId");
+    expect(createRequest?.body).not.toHaveProperty("scopeLabel");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -3514,7 +3513,6 @@ async function mockReportsApi(
       });
     }
     if (path.endsWith("/reports/production-outbound")) {
-      const territoryId = url.searchParams.get("territoryId");
       return json(route, {
         dateFrom: url.searchParams.get("dateFrom"),
         dateTo: url.searchParams.get("dateTo"),
@@ -3522,19 +3520,16 @@ async function mockReportsApi(
         rows: [
           {
             onHandQuantity: 4,
-            outboundQuantity: territoryId ? 3 : 8,
+            outboundQuantity: 8,
             producedQuantity: 12,
             productCode: "TB-001",
             productId: "20000000-0000-4000-8000-000000000098",
             productName: "ТБ Рыжик",
           },
         ],
-        selectedTerritoryId: territoryId,
-        selectedTerritoryNumber: territoryId ? 2 : null,
-        territories: [{ id: "20000000-0000-4000-8000-000000000099", number: 2 }],
         totals: {
           onHandQuantity: 4,
-          outboundQuantity: territoryId ? 3 : 8,
+          outboundQuantity: 8,
           producedQuantity: 12,
         },
         warehouseAsOf: url.searchParams.get("dateTo"),

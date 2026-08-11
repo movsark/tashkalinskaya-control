@@ -1850,10 +1850,8 @@ export async function getReportsWorkspace(): Promise<ReportsWorkspaceView> {
 export async function getProductionOutboundReport(input: {
   dateFrom: string;
   dateTo: string;
-  territoryId?: string;
 }): Promise<ProductionOutboundReportView> {
   const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
-  if (input.territoryId) query.set("territoryId", input.territoryId);
   return request(`/reports/production-outbound?${query.toString()}`);
 }
 

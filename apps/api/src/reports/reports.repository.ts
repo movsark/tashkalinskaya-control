@@ -208,21 +208,12 @@ export class ReportsRepository {
   async productionOutbound(
     dateFrom: string,
     dateTo: string,
-    territoryId: string | undefined,
     actor: ReportsActor,
   ): Promise<ProductionOutboundReportView> {
     assertReportAccess(actor, "PRODUCTION_OUTBOUND");
     requireRange(dateFrom, dateTo);
-    const territories = await this.database.query<{ id: string; territory_number: number }>(
-      `select id,territory_number from logistics.territory
-       where status='ACTIVE' order by territory_number`,
-    );
-    const selectedTerritory = territoryId
-      ? territories.rows.find((item) => item.id === territoryId)
-      : undefined;
-    if (territoryId && !selectedTerritory) throw new BadRequestException("Территория не найдена");
     const rows = await this.database.transaction((client) =>
-      queryRows(client, "PRODUCTION_OUTBOUND", dateFrom, dateTo, territoryId),
+      queryRows(client, "PRODUCTION_OUTBOUND", dateFrom, dateTo),
     );
     const mappedRows = rows.map((row) => ({
       onHandQuantity: Number(row.onHandQuantity ?? 0),
@@ -237,9 +228,6 @@ export class ReportsRepository {
       dateTo,
       generatedAt: new Date().toISOString(),
       rows: mappedRows,
-      selectedTerritoryId: territoryId ?? null,
-      selectedTerritoryNumber: selectedTerritory?.territory_number ?? null,
-      territories: territories.rows.map((item) => ({ id: item.id, number: item.territory_number })),
       totals: {
         onHandQuantity: mappedRows.reduce((sum, row) => sum + row.onHandQuantity, 0),
         outboundQuantity: mappedRows.reduce((sum, row) => sum + row.outboundQuantity, 0),
@@ -378,7 +366,7 @@ function reportQuery(code: ReportCode, from: string, to: string, scopeId?: strin
     case "PRODUCTION_OUTBOUND":
       return {
         sql: productionOutboundQuery,
-        values: scopedValues,
+        values: [from, to, null],
       };
     case "MOVEMENTS":
       return {

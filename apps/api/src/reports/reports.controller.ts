@@ -42,12 +42,7 @@ export class ReportsController {
     @Query() query: ProductionOutboundQueryDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    return this.service.productionOutbound(
-      query.dateFrom,
-      query.dateTo,
-      query.territoryId,
-      actor(request),
-    );
+    return this.service.productionOutbound(query.dateFrom, query.dateTo, actor(request));
   }
 
   @Post("jobs")

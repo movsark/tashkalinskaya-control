@@ -30,7 +30,6 @@ export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<"PRODUCTION_OUTBOUND" | null>(null);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [territoryId, setTerritoryId] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -76,7 +75,6 @@ export default function ReportsPage() {
         await getProductionOutboundReport({
           dateFrom,
           dateTo,
-          ...(territoryId ? { territoryId } : {}),
         }),
       );
       setActiveReport("PRODUCTION_OUTBOUND");
@@ -96,7 +94,6 @@ export default function ReportsPage() {
         await getProductionOutboundReport({
           dateFrom,
           dateTo,
-          ...(territoryId ? { territoryId } : {}),
         }),
       );
     } catch (caught) {
@@ -112,19 +109,12 @@ export default function ReportsPage() {
     setError("");
     setSuccess("");
     try {
-      const territory = productionOutbound.territories.find(
-        (item) => item.id === productionOutbound.selectedTerritoryId,
-      );
       await createReportJob(
         {
           dateFrom: productionOutbound.dateFrom,
           dateTo: productionOutbound.dateTo,
           format: "XLSX",
           reportCode: "PRODUCTION_OUTBOUND",
-          ...(productionOutbound.selectedTerritoryId
-            ? { scopeId: productionOutbound.selectedTerritoryId }
-            : {}),
-          scopeLabel: territory ? `Территория ${territory.number}` : "Все территории",
         },
         session.csrfToken,
       );
@@ -252,17 +242,6 @@ export default function ReportsPage() {
                 onChange={(event) => setDateTo(event.target.value)}
               />
             </label>
-            <label>
-              Территория
-              <select value={territoryId} onChange={(event) => setTerritoryId(event.target.value)}>
-                <option value="">Все территории</option>
-                {productionOutbound?.territories.map((territory) => (
-                  <option key={territory.id} value={territory.id}>
-                    Территория {territory.number}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button className="primary-button" disabled={busy === "production-outbound"}>
               {busy === "production-outbound" ? "Считаем…" : "Показать"}
             </button>
@@ -271,11 +250,7 @@ export default function ReportsPage() {
           {productionOutbound ? (
             <>
               <div className="production-outbound-caption">
-                <strong>
-                  {productionOutbound.selectedTerritoryNumber
-                    ? `Территория ${productionOutbound.selectedTerritoryNumber}`
-                    : "Все территории"}
-                </strong>
+                <strong>Вся фабрика</strong>
                 <span>
                   {formatDate(productionOutbound.dateFrom)} —{" "}
                   {formatDate(productionOutbound.dateTo)}
@@ -321,12 +296,6 @@ export default function ReportsPage() {
                   </tfoot>
                 </table>
               </div>
-              {productionOutbound.selectedTerritoryId ? (
-                <p className="production-outbound-note">
-                  «Произведено» и «На складе» относятся ко всей фабрике. По выбранной территории
-                  меняется только «Вывезено».
-                </p>
-              ) : null}
             </>
           ) : (
             <p className="warehouse-loading">Загружаем отчёт…</p>

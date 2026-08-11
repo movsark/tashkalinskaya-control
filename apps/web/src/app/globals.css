@@ -9626,7 +9626,7 @@ select:focus {
   border-radius: 18px;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(210px, 1.25fr) auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
   margin: 22px 0;
   padding: 16px;
 }

@@ -13,10 +13,6 @@ export class ProductionOutboundQueryDto {
 
   @IsDateString({ strict: true })
   dateTo!: string;
-
-  @IsOptional()
-  @IsUUID()
-  territoryId?: string;
 }
 
 export class ReportJobQueryDto {
