@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getGoodReturnsWorkspace,
+  getNotificationsWorkspace,
   getSession,
   getSpoilageWorkspace,
   getWarehouseWorkspace,
@@ -20,6 +21,7 @@ export function AppHome() {
   const [returnAttentionCount, setReturnAttentionCount] = useState(0);
   const [spoilageAttentionCount, setSpoilageAttentionCount] = useState(0);
   const [warehouseAttentionCount, setWarehouseAttentionCount] = useState(0);
+  const [driverNotificationCount, setDriverNotificationCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -44,6 +46,29 @@ export function AppHome() {
   const canReviewSettlements = roles.some((role) =>
     ["ADMIN", "MANAGER", "WAREHOUSE_KEEPER"].includes(role),
   );
+  const isDriver = roles.includes("DRIVER");
+
+  useEffect(() => {
+    if (!isDriver) {
+      setDriverNotificationCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const workspace = await getNotificationsWorkspace();
+        if (active) setDriverNotificationCount(workspace.summary.totalUnread);
+      } catch {
+        if (active) setDriverNotificationCount(0);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [isDriver]);
 
   useEffect(() => {
     if (!canSeeWarehouse) {
@@ -139,7 +164,10 @@ export function AppHome() {
       </section>
       <Link
         className={`app-home__primary${
-          primary.href === "/warehouse" && warehouseAttentionCount > 0 ? " has-attention" : ""
+          (primary.href === "/warehouse" && warehouseAttentionCount > 0) ||
+          (primary.href === "/logistics/today" && driverNotificationCount > 0)
+            ? " has-attention"
+            : ""
         }`}
         href={primary.href}
       >
@@ -150,6 +178,12 @@ export function AppHome() {
         </div>
         {primary.href === "/warehouse" ? (
           <WarehouseAttentionBadge count={warehouseAttentionCount} />
+        ) : null}
+        {primary.href === "/logistics/today" ? (
+          <SettlementAttentionBadge
+            count={driverNotificationCount}
+            label="Новые уведомления водителя"
+          />
         ) : null}
         <i aria-hidden="true">›</i>
       </Link>

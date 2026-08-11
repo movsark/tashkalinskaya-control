@@ -1298,8 +1298,17 @@ test.describe("B20 browser and HTTP regression", () => {
         ],
       }),
     );
+    await page.route("**/api/v1/notifications/workspace", (route) =>
+      json(route, {
+        ...notificationWorkspace(),
+        summary: { criticalUnread: 0, highUnread: 2, totalUnread: 3 },
+      }),
+    );
     await page.goto("/");
-    await expect(page.getByText("Моя погрузка", { exact: true })).toBeVisible();
+    const driverPrimary = page.getByRole("link", { name: /Основная работа Моя погрузка/ });
+    await expect(driverPrimary).toBeVisible();
+    await expect(driverPrimary).toHaveClass(/has-attention/u);
+    await expect(driverPrimary.getByLabel("Новые уведомления водителя: 3")).toHaveText("3");
     const driverNavigation = page.getByRole("navigation", { name: "Основная навигация" });
     const loadingTab = driverNavigation.getByRole("link", { name: /Погрузка/u });
     await expect(loadingTab).toBeVisible();
