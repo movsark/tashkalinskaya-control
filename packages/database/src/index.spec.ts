@@ -16,15 +16,16 @@ describe("isDatabaseConfigured", () => {
 });
 
 describe("createDatabasePool", () => {
-  it("overrides only the database name without changing the secret connection string", async () => {
+  it("overrides the database path while preserving the connection credentials", async () => {
     const pool = createDatabasePool({
       applicationName: "database-test",
       connectionString: "postgresql://user:secret@localhost/archive",
       databaseName: "tashkalinskaya_pilot",
     });
 
-    expect(pool.options.connectionString).toBe("postgresql://user:secret@localhost/archive");
-    expect(pool.options.database).toBe("tashkalinskaya_pilot");
+    expect(pool.options.connectionString).toBe(
+      "postgresql://user:secret@localhost/tashkalinskaya_pilot",
+    );
 
     await pool.end();
   });

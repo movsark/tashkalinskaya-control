@@ -18,10 +18,14 @@ export function isDatabaseConfigured(
 }
 
 export function createDatabasePool(options: DatabasePoolOptions): Pool {
+  const selectedConnectionString =
+    options.databaseName === undefined
+      ? options.connectionString
+      : connectionStringWithDatabaseName(options.connectionString, options.databaseName);
   const connectionString =
     options.sslMode === "require"
-      ? connectionStringWithoutSslOverrides(options.connectionString)
-      : options.connectionString;
+      ? connectionStringWithoutSslOverrides(selectedConnectionString)
+      : selectedConnectionString;
   const configuredTlsFingerprint = options.tlsFingerprintSha256 ?? process.env.DATABASE_TLS_SHA256;
   const tlsFingerprintSha256 =
     options.sslMode === "require" && configuredTlsFingerprint !== undefined
@@ -31,7 +35,6 @@ export function createDatabasePool(options: DatabasePoolOptions): Pool {
   return new Pool({
     application_name: options.applicationName,
     connectionString,
-    ...(options.databaseName === undefined ? {} : { database: options.databaseName }),
     max: options.maxConnections ?? 10,
     ...(options.sslMode === "require"
       ? {
@@ -53,6 +56,12 @@ export function createDatabasePool(options: DatabasePoolOptions): Pool {
         }
       : {}),
   });
+}
+
+function connectionStringWithDatabaseName(connectionString: string, databaseName: string): string {
+  const url = new URL(connectionString);
+  url.pathname = `/${encodeURIComponent(databaseName)}`;
+  return url.toString();
 }
 
 export async function checkDatabase(pool: Pool): Promise<void> {
