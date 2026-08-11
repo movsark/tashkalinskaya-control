@@ -41,6 +41,7 @@ export function ProductLoadingRow({
   const shortageQuantity = Math.max(0, product.remainingQuantity - product.freeQuantity);
   const initialTerritory =
     product.territories.find((item) => item.canSend && item.remainingQuantity > 0) ??
+    product.territories.find((item) => item.canSend) ??
     product.territories.find((item) => item.remainingQuantity > 0) ??
     product.territories[0];
   const [selectedTerritoryId, setSelectedTerritoryId] = useState(
@@ -142,7 +143,9 @@ export function ProductLoadingRow({
                   setSelectedTerritoryId(territory.territoryId);
                   onDraft(
                     territory.territoryId,
-                    String(Math.min(product.freeQuantity, territory.remainingQuantity)),
+                    String(
+                      suggestedSendQuantity(product.freeQuantity, territory.remainingQuantity),
+                    ),
                   );
                   setSendDialogOpen(true);
                 }}
@@ -349,8 +352,9 @@ function TerritorySendDialog({
   territory: LoadingProductView["territories"][number];
 }) {
   const quantity = Number(draft);
-  const maximum = Math.min(product.freeQuantity, territory.remainingQuantity);
+  const maximum = product.freeQuantity;
   const valid = Number.isInteger(quantity) && quantity > 0 && quantity <= maximum;
+  const overPlanQuantity = Math.max(0, quantity - territory.remainingQuantity);
   const key = `${product.id}:${territory.territoryId}`;
   const titleId = `send-product-${product.id}`;
   return (
@@ -384,7 +388,8 @@ function TerritorySendDialog({
           </button>
         </header>
         <p className="loading-territory-dialog__limit">
-          Норма: <strong>{territory.remainingQuantity} шт.</strong>
+          Остаток нормы: <strong>{territory.remainingQuantity} шт.</strong> · На складе:{" "}
+          <strong>{product.freeQuantity} шт.</strong>
         </p>
         <label>
           <span>Количество</span>
@@ -411,18 +416,25 @@ function TerritorySendDialog({
           <p className="loading-territory-dialog__message">
             Для этой территории водитель ещё не нажал «Приступил к рейсу».
           </p>
-        ) : territory.remainingQuantity === 0 ? (
-          <p className="loading-territory-dialog__message">Норма этой территории уже передана.</p>
         ) : product.freeQuantity === 0 ? (
           <p className="loading-territory-dialog__message">
             На складе нет доступного количества — передача заблокирована.
           </p>
         ) : draft && !valid ? (
-          <p className="loading-territory-dialog__message">Можно передать не более {maximum} шт.</p>
+          <p className="loading-territory-dialog__message">
+            На складе доступно не более {maximum} шт.
+          </p>
+        ) : overPlanQuantity > 0 ? (
+          <p className="loading-territory-dialog__message">Сверх нормы: {overPlanQuantity} шт.</p>
         ) : null}
       </form>
     </div>
   );
+}
+
+function suggestedSendQuantity(freeQuantity: number, remainingQuantity: number): number {
+  if (freeQuantity < 1) return 0;
+  return Math.min(freeQuantity, Math.max(1, remainingQuantity));
 }
 
 function Status({

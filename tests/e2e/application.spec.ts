@@ -1433,6 +1433,7 @@ test.describe("B20 browser and HTTP regression", () => {
     let sentPayload: Record<string, unknown> | null = null;
     let cancelPayload: Record<string, unknown> | null = null;
     let cancelled = false;
+    let accepted = false;
     let rejected = false;
     await page.setViewportSize({ height: 844, width: 390 });
     await page.route("**/api/v1/auth/session", (route) =>
@@ -1482,7 +1483,7 @@ test.describe("B20 browser and HTTP regression", () => {
                           currentRevisionId: "20000000-0000-4000-8000-000000000092",
                           currentRevisionNo: 1,
                           id: "20000000-0000-4000-8000-000000000088",
-                          isOverPlan: false,
+                          isOverPlan: sentQuantity > 10,
                           newProduction: 0,
                           oneOffQuantity: null,
                           plannedQuantity: 10,
@@ -1490,10 +1491,10 @@ test.describe("B20 browser and HTTP regression", () => {
                           productId,
                           productName: "ТБ Рыжик (0,8кг)",
                           quantity: sentQuantity,
-                          responseDriverName: rejected ? "Тестовый Водитель" : null,
+                          responseDriverName: rejected || accepted ? "Тестовый Водитель" : null,
                           responseReason: rejected ? "Перепутано наименование" : null,
-                          responseType: rejected ? "REJECT" : null,
-                          status: rejected ? "DISPUTED" : "SENT_TO_DRIVER",
+                          responseType: rejected ? "REJECT" : accepted ? "CONFIRM" : null,
+                          status: rejected ? "DISPUTED" : accepted ? "CONFIRMED" : "SENT_TO_DRIVER",
                           version: 1,
                           weeklyNormQuantity: 10,
                         },
@@ -1503,7 +1504,7 @@ test.describe("B20 browser and HTTP regression", () => {
                       territoryName: "Территория 2",
                       territoryNumber: 2,
                       totalQuantity: sentQuantity,
-                      unresolvedLines: 1,
+                      unresolvedLines: accepted ? 0 : 1,
                       version: 1,
                     },
                   ],
@@ -1537,7 +1538,7 @@ test.describe("B20 browser and HTTP regression", () => {
                 canSend: true,
                 driverName: "Тестовый Водитель",
                 plannedQuantity: 10,
-                remainingQuantity: 10 - sentQuantity,
+                remainingQuantity: Math.max(0, 10 - sentQuantity),
                 sentQuantity,
                 territoryId: territoryTwoId,
                 territoryName: "Территория 2",
@@ -1552,6 +1553,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.route("**/api/v1/loading/territories/*/lines", async (route) => {
       sentPayload = route.request().postDataJSON() as Record<string, unknown>;
       sentQuantity += Number(sentPayload.quantity);
+      accepted = false;
       await json(route, {
         lineId: "20000000-0000-4000-8000-000000000088",
         sessionId: "20000000-0000-4000-8000-000000000089",
@@ -1602,7 +1604,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       unavailableDialog.getByText(/водитель ещё не нажал «Приступил к рейсу»/u),
     ).toBeVisible();
-    await expect(unavailableDialog).toContainText("Норма: 18 шт.");
+    await expect(unavailableDialog).toContainText("Остаток нормы: 18 шт.");
     await expect(unavailableDialog.getByRole("spinbutton")).toHaveValue("18");
     await expect(unavailableDialog.getByRole("spinbutton")).toBeDisabled();
     await unavailableDialog.getByRole("button", { name: "Закрыть окно передачи" }).click();
@@ -1612,32 +1614,52 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     await expect(sendDialog).toBeVisible();
     await expect(sendDialog).toContainText("ТБ Рыжик (0,8кг)");
-    await expect(sendDialog).toContainText("Норма: 10 шт.");
+    await expect(sendDialog).toContainText("Остаток нормы: 10 шт.");
+    await expect(sendDialog).toContainText("На складе: 27 шт.");
     await expect(sendDialog.getByRole("spinbutton")).toHaveValue("10");
     await sendDialog.getByRole("spinbutton").fill("28");
     await expect(sendDialog.getByRole("button", { name: "Отправить водителю" })).toBeDisabled();
-    await expect(sendDialog.getByText("Можно передать не более 10 шт.")).toBeVisible();
-    await sendDialog.getByRole("spinbutton").fill("3");
+    await expect(sendDialog.getByText("На складе доступно не более 27 шт.")).toBeVisible();
+    await sendDialog.getByRole("spinbutton").fill("12");
+    await expect(sendDialog.getByText("Сверх нормы: 2 шт.")).toBeVisible();
     await sendDialog.getByRole("button", { name: "Отправить водителю" }).click();
     await expect(sendDialog).toHaveCount(0);
-    await expect.poll(() => sentPayload?.quantity).toBe(3);
-    await expect(productRow).toContainText("На складе24 шт.");
-    await expect(productRow.getByRole("button", { name: /Передано.*3 шт\./u })).toBeVisible();
+    await expect.poll(() => sentPayload?.quantity).toBe(12);
+    await expect(productRow).toContainText("На складе15 шт.");
+    await expect(productRow.getByRole("button", { name: /Передано.*12 шт\./u })).toBeVisible();
     await expect(productRow.locator(".loading-product__metric.is-remaining")).toContainText(
-      "25 шт.",
+      "16 шт.",
     );
-    await productRow.getByRole("button", { name: /Передано.*3 шт\./u }).click();
+    accepted = true;
+    await page.reload();
+    await page.getByRole("searchbox", { name: "Поиск товара" }).fill("Рыжик");
+    const acceptedProductRow = page.locator(".loading-product").filter({ hasText: "ТБ Рыжик" });
+    await acceptedProductRow.getByRole("button", { name: /TB-015 ТБ Рыжик/u }).click();
+    await acceptedProductRow.getByRole("button", { name: /Территория 2/u }).click();
+    const additionalDialog = page.getByRole("dialog", {
+      name: /Передать товар.*Территория 2/u,
+    });
+    await expect(additionalDialog).toContainText("Остаток нормы: 0 шт.");
+    await expect(additionalDialog.getByRole("spinbutton")).toHaveValue("1");
+    await additionalDialog.getByRole("spinbutton").fill("2");
+    await expect(additionalDialog.getByText("Сверх нормы: 2 шт.")).toBeVisible();
+    await additionalDialog.getByRole("button", { name: "Отправить водителю" }).click();
+    await expect.poll(() => sentPayload?.quantity).toBe(2);
+    await expect(acceptedProductRow).toContainText("На складе13 шт.");
+    await acceptedProductRow.getByRole("button", { name: /Передано.*14 шт\./u }).click();
     await expect(
-      productRow.locator(".loading-transfer-item > header strong", { hasText: "Территория 2" }),
+      acceptedProductRow.locator(".loading-transfer-item > header strong", {
+        hasText: "Территория 2",
+      }),
     ).toBeVisible();
-    await expect(productRow.getByText("Ждём приёмку")).toBeVisible();
+    await expect(acceptedProductRow.getByText("Ждём приёмку")).toBeVisible();
     rejected = true;
     await page.reload();
     const rejectedStage = page.getByRole("region", { name: "Водитель отклонил товар" });
     await expect(rejectedStage).toBeVisible();
     await expect(rejectedStage.getByLabel("Отклонено передач: 1")).toBeVisible();
     await rejectedStage
-      .getByRole("button", { name: /ТБ Рыжик.*отклонено 3 шт.*Территория 2/u })
+      .getByRole("button", { name: /ТБ Рыжик.*отклонено 14 шт.*Территория 2/u })
       .click();
     const rejectedDialog = page.getByRole("dialog", { name: "ТБ Рыжик (0,8кг)" });
     await expect(rejectedDialog).toContainText("Перепутано наименование");
