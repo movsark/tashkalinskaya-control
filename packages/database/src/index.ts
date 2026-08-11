@@ -5,6 +5,7 @@ import { Pool } from "pg";
 export interface DatabasePoolOptions {
   readonly applicationName: string;
   readonly connectionString: string;
+  readonly databaseName?: string;
   readonly maxConnections?: number;
   readonly sslMode?: "disable" | "require";
   readonly tlsFingerprintSha256?: string;
@@ -30,6 +31,7 @@ export function createDatabasePool(options: DatabasePoolOptions): Pool {
   return new Pool({
     application_name: options.applicationName,
     connectionString,
+    ...(options.databaseName === undefined ? {} : { database: options.databaseName }),
     max: options.maxConnections ?? 10,
     ...(options.sslMode === "require"
       ? {

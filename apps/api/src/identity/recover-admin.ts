@@ -16,6 +16,9 @@ async function main(): Promise<void> {
   const pool = createDatabasePool({
     applicationName: "tashkalinskaya-break-glass-admin-recovery",
     connectionString,
+    ...(process.env.DATABASE_NAME?.trim()
+      ? { databaseName: process.env.DATABASE_NAME.trim() }
+      : {}),
     maxConnections: 1,
     sslMode: process.env.DATABASE_SSL === "require" ? "require" : "disable",
   });

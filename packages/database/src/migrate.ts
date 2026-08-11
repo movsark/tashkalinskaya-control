@@ -14,6 +14,9 @@ async function main(): Promise<void> {
   const pool = createDatabasePool({
     applicationName: "tashkalinskaya-migrations",
     connectionString,
+    ...(process.env.DATABASE_NAME?.trim()
+      ? { databaseName: process.env.DATABASE_NAME.trim() }
+      : {}),
     maxConnections: 1,
     sslMode: process.env.DATABASE_SSL === "require" ? "require" : "disable",
   });

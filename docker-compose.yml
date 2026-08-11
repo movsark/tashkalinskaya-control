@@ -44,6 +44,7 @@ services:
       - node
       - packages/database/dist/migrate.js
     environment:
+      DATABASE_NAME: tashkalinskaya_pilot
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
       DATABASE_URL: ${DATABASE_URL}
@@ -82,6 +83,7 @@ services:
       BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
       BOOTSTRAP_ADMIN_LOGIN: ${BOOTSTRAP_ADMIN_LOGIN:-}
       BOOTSTRAP_ADMIN_PERSONNEL_NUMBER: ${BOOTSTRAP_ADMIN_PERSONNEL_NUMBER:-}
+      DATABASE_NAME: tashkalinskaya_pilot
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
       DATABASE_URL: ${DATABASE_URL}
@@ -96,6 +98,7 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
+      DATABASE_NAME: tashkalinskaya_pilot
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
       DATABASE_URL: ${DATABASE_URL}
@@ -118,6 +121,7 @@ services:
       CORS_ORIGINS: ${PUBLIC_ORIGIN}
       CSRF_SECRET: ${CSRF_SECRET}
       DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-10}
+      DATABASE_NAME: tashkalinskaya_pilot
       DATABASE_REQUIRED: "true"
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
@@ -161,6 +165,7 @@ services:
         condition: service_completed_successfully
     environment:
       APP_VERSION: ${APP_VERSION}
+      DATABASE_NAME: tashkalinskaya_pilot
       DATABASE_REQUIRED: "true"
       DATABASE_SSL: require
       DATABASE_TLS_SHA256: "93:F8:43:90:A5:E5:04:FD:EE:FF:FC:66:7E:ED:2B:CD:B2:32:15:D6:2F:77:E6:5D:6E:5E:B1:B9:61:EA:FC:35"
