@@ -6,6 +6,7 @@ import type {
   ProductionOutboundReportView,
   ReportJobView,
   ReportsWorkspaceView,
+  TerritoryView,
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -16,6 +17,7 @@ import {
   createReportJob,
   downloadReport,
   getDriverTerritoryReport,
+  getLogisticsSetup,
   getProductionOutboundReport,
   getReportsWorkspace,
   getSession,
@@ -30,6 +32,8 @@ export default function ReportsPage() {
     null,
   );
   const [driverTerritory, setDriverTerritory] = useState<DriverTerritoryReportView | null>(null);
+  const [territories, setTerritories] = useState<readonly TerritoryView[]>([]);
+  const [selectedTerritoryId, setSelectedTerritoryId] = useState("");
   const [activeReport, setActiveReport] = useState<
     "DRIVER_TERRITORY" | "PRODUCTION_OUTBOUND" | null
   >(null);
@@ -49,7 +53,12 @@ export default function ReportsPage() {
       try {
         const current = await getSession();
         setSession(current);
-        await load();
+        const [reports, logistics] = await Promise.all([
+          getReportsWorkspace(),
+          getLogisticsSetup(),
+        ]);
+        setWorkspace(reports);
+        setTerritories(logistics.territories.filter((territory) => territory.status === "ACTIVE"));
       } catch (caught) {
         if (caught instanceof ApiRequestError && caught.status === 401) {
           router.replace(`/login?returnTo=${encodeURIComponent("/reports")}`);
@@ -74,6 +83,31 @@ export default function ReportsPage() {
     () => workspace?.catalog.find((item) => item.code === "DRIVER_TERRITORY") ?? null,
     [workspace],
   );
+  const driverTerritoryOptions = useMemo(
+    () =>
+      territories
+        .map((territory) => ({
+          id: territory.id,
+          label: `Территория ${territory.number}`,
+          number: territory.number,
+        }))
+        .sort((left, right) => left.number - right.number),
+    [territories],
+  );
+  const visibleDriverTerritory = useMemo(() => {
+    if (!driverTerritory) return null;
+    const rows = selectedTerritoryId
+      ? driverTerritory.rows.filter((row) => row.territoryId === selectedTerritoryId)
+      : driverTerritory.rows;
+    return {
+      rows,
+      totals: {
+        goodReturnQuantity: rows.reduce((sum, row) => sum + row.goodReturnQuantity, 0),
+        outboundQuantity: rows.reduce((sum, row) => sum + row.outboundQuantity, 0),
+        spoilageQuantity: rows.reduce((sum, row) => sum + row.spoilageQuantity, 0),
+      },
+    };
+  }, [driverTerritory, selectedTerritoryId]);
 
   async function openProductionOutbound() {
     setBusy("open-production-outbound");
@@ -175,6 +209,14 @@ export default function ReportsPage() {
           dateTo: driverTerritory.dateTo,
           format: "XLSX",
           reportCode: "DRIVER_TERRITORY",
+          ...(selectedTerritoryId
+            ? {
+                scopeId: selectedTerritoryId,
+                scopeLabel:
+                  driverTerritoryOptions.find((item) => item.id === selectedTerritoryId)?.label ??
+                  "Выбранная территория",
+              }
+            : {}),
         },
         session.csrfToken,
       );
@@ -405,7 +447,7 @@ export default function ReportsPage() {
           </header>
 
           <form
-            className="production-outbound-filters"
+            className="production-outbound-filters driver-report-filters"
             onSubmit={(event) => {
               event.preventDefault();
               void refreshDriverTerritory();
@@ -427,33 +469,51 @@ export default function ReportsPage() {
                 onChange={(event) => setDateTo(event.target.value)}
               />
             </label>
+            <label>
+              Территория
+              <select
+                value={selectedTerritoryId}
+                onChange={(event) => setSelectedTerritoryId(event.target.value)}
+              >
+                <option value="">Все территории</option>
+                {driverTerritoryOptions.map((territory) => (
+                  <option key={territory.id} value={territory.id}>
+                    {territory.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button className="primary-button" disabled={busy === "driver-territory"}>
               {busy === "driver-territory" ? "Считаем…" : "Показать"}
             </button>
           </form>
 
-          {driverTerritory ? (
+          {driverTerritory && visibleDriverTerritory ? (
             <>
               <div className="production-outbound-caption">
-                <strong>Все территории</strong>
+                <strong>
+                  {driverTerritoryOptions.find((item) => item.id === selectedTerritoryId)?.label ??
+                    "Все территории"}
+                </strong>
                 <span>
                   {formatDate(driverTerritory.dateFrom)} — {formatDate(driverTerritory.dateTo)}
                 </span>
               </div>
               <div className="driver-report-totals" aria-label="Итоги отчёта">
                 <span>
-                  Вывезено <strong>{quantity(driverTerritory.totals.outboundQuantity)}</strong>
+                  Вывезено{" "}
+                  <strong>{quantity(visibleDriverTerritory.totals.outboundQuantity)}</strong>
                 </span>
                 <span>
                   Годный возврат{" "}
-                  <strong>{quantity(driverTerritory.totals.goodReturnQuantity)}</strong>
+                  <strong>{quantity(visibleDriverTerritory.totals.goodReturnQuantity)}</strong>
                 </span>
                 <span>
-                  Порча <strong>{quantity(driverTerritory.totals.spoilageQuantity)}</strong>
+                  Порча <strong>{quantity(visibleDriverTerritory.totals.spoilageQuantity)}</strong>
                 </span>
               </div>
               <div className="driver-report-groups">
-                {groupDriverRows(driverTerritory.rows).map((group) => (
+                {groupDriverRows(visibleDriverTerritory.rows).map((group) => (
                   <article className="driver-report-group" key={group.key}>
                     <header>
                       <strong>Территория {group.territoryNumber}</strong>
@@ -494,7 +554,7 @@ export default function ReportsPage() {
                     </div>
                   </article>
                 ))}
-                {!driverTerritory.rows.length ? (
+                {!visibleDriverTerritory.rows.length ? (
                   <p className="logistics-empty">За выбранный период операций нет.</p>
                 ) : null}
               </div>

@@ -9746,6 +9746,10 @@ select:focus {
   margin: 12px 0 18px;
 }
 
+.driver-report-filters {
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+}
+
 .driver-report-totals span {
   background: #f4f6f3;
   border: 1px solid #dce2dd;

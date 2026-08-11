@@ -2622,8 +2622,12 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(
       page.getByRole("heading", { name: "Вывоз и возвраты по территориям" }),
     ).toBeVisible();
-    await expect(page.getByText("Территория 2", { exact: true })).toBeVisible();
+    const territoryHeaders = page.locator(".driver-report-group > header strong");
+    await expect(territoryHeaders.getByText("Территория 2", { exact: true })).toBeVisible();
     await expect(page.getByText("Водитель теста", { exact: true })).toBeVisible();
+    await expect(territoryHeaders.getByText("Территория 3", { exact: true })).toBeVisible();
+    await page.getByLabel("Территория").selectOption("20000000-0000-4000-8000-000000000097");
+    await expect(territoryHeaders.getByText("Территория 3", { exact: true })).not.toBeVisible();
     const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
     await expect(ryzhik).toContainText("12 шт.");
     await expect(ryzhik).toContainText("3 шт.");
@@ -2634,6 +2638,8 @@ test.describe("B20 browser and HTTP regression", () => {
     expect(createRequest?.body).toMatchObject({
       format: "XLSX",
       reportCode: "DRIVER_TERRITORY",
+      scopeId: "20000000-0000-4000-8000-000000000097",
+      scopeLabel: "Территория 2",
     });
     expect(
       await page.evaluate(
@@ -3561,6 +3567,33 @@ async function mockReportsApi(
         serverTime: "2026-08-01T10:00:00.000Z",
       });
     }
+    if (path.endsWith("/logistics/setup")) {
+      return json(route, {
+        assignments: [],
+        drivers: [],
+        territories: [
+          {
+            description: null,
+            id: "20000000-0000-4000-8000-000000000097",
+            name: "Территория 2",
+            number: 2,
+            sortOrder: 2,
+            status: "ACTIVE",
+            version: 1,
+          },
+          {
+            description: null,
+            id: "20000000-0000-4000-8000-000000000107",
+            name: "Территория 3",
+            number: 3,
+            sortOrder: 3,
+            status: "ACTIVE",
+            version: 1,
+          },
+        ],
+        vehicles: [],
+      });
+    }
     if (path.endsWith("/reports/production-outbound")) {
       return json(route, {
         dateFrom: url.searchParams.get("dateFrom"),
@@ -3603,10 +3636,23 @@ async function mockReportsApi(
             territoryName: "Территория 2",
             territoryNumber: 2,
           },
+          {
+            driverId: "20000000-0000-4000-8000-000000000106",
+            driverName: "Другой водитель",
+            goodReturnQuantity: 1,
+            outboundQuantity: 4,
+            productCode: "TB-001",
+            productId: "20000000-0000-4000-8000-000000000108",
+            productName: "ТБ Баунти",
+            spoilageQuantity: 0,
+            territoryId: "20000000-0000-4000-8000-000000000107",
+            territoryName: "Территория 3",
+            territoryNumber: 3,
+          },
         ],
         totals: {
-          goodReturnQuantity: 3,
-          outboundQuantity: 12,
+          goodReturnQuantity: 4,
+          outboundQuantity: 16,
           spoilageQuantity: 2,
         },
       });

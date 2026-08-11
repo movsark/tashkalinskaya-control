@@ -408,6 +408,7 @@ function reportQuery(code: ReportCode, from: string, to: string, scopeId?: strin
     case "DRIVER_TERRITORY":
       return {
         sql: driverTerritoryQuery,
+        values: scopedValues,
       };
     case "MOVEMENTS":
       return {
@@ -550,6 +551,7 @@ const driverTerritoryQuery = `with activity as (
   join logistics.territory t on t.id=s.territory_id
   join catalog.product p on p.id=l.product_id
   where s.dispatch_date between $1 and $2 and s.status<>'CANCELLED'
+    and ($3::uuid is null or s.territory_id=$3)
   union all
   select q.territory_id,t.territory_number,t.name,q.source_driver_id,q.source_driver_name_snapshot,
     l.product_id,l.product_code_snapshot,l.product_name_snapshot,l.quantity::int,'GOOD_RETURN'
@@ -557,6 +559,7 @@ const driverTerritoryQuery = `with activity as (
   join returns.good_return_request_line l on l.request_id=q.id
   join logistics.territory t on t.id=q.territory_id
   where q.dispatch_date between $1 and $2 and q.status='ACCEPTED'
+    and ($3::uuid is null or q.territory_id=$3)
   union all
   select w.source_territory_id,t.territory_number,t.name,w.source_driver_id,w.source_driver_name_snapshot,
     w.product_id,w.product_code_snapshot,w.product_name_snapshot,w.quantity::int,'SPOILAGE'
@@ -565,6 +568,7 @@ const driverTerritoryQuery = `with activity as (
   join logistics.territory t on t.id=w.source_territory_id
   where w.source_dispatch_date between $1 and $2
     and w.physical_source_kind='DRIVER'
+    and ($3::uuid is null or w.source_territory_id=$3)
 )
 select a.territory_id "territoryId",
   a.territory_number::int "territoryNumber",
