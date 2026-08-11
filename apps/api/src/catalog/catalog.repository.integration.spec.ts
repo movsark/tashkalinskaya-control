@@ -161,6 +161,61 @@ describe.runIf(hasDatabase)("CatalogRepository with PostgreSQL", () => {
     });
   });
 
+  it("optionally creates one daily norm for every active territory and future plan date", async () => {
+    const targetDate = "2099-08-11";
+    const references = await database.query<{ product_id: string; territory_id: string }>(
+      `select p.id product_id,t.id territory_id
+       from catalog.product p
+       cross join logistics.territory t
+       where p.product_code=$1 and t.status='ACTIVE'
+       order by t.territory_number limit 1`,
+      [productCode],
+    );
+    const reference = references.rows[0]!;
+    await database.query(
+      `insert into planning.territory_daily_norm (
+         id,territory_id,dispatch_date,product_id,quantity,version,reason,created_by,correlation_id
+       ) values ($1,$2,$3,$4,1,1,'B07 test date',$5,$6)`,
+      [
+        randomUUID(),
+        reference.territory_id,
+        targetDate,
+        reference.product_id,
+        employeeId,
+        randomUUID(),
+      ],
+    );
+    const activeTerritories = await database.query<{ count: number }>(
+      "select count(*)::int count from logistics.territory where status='ACTIVE'",
+    );
+
+    const withNorms = await repository.createDirectProduct({
+      actorEmployeeId: employeeId,
+      categoryCode: "BASIC_CAKES",
+      correlationId: randomUUID(),
+      dailyNormQuantity: 7,
+      name: `Товар со всеми нормами ${suffix}`,
+    });
+    const normCount = await database.query<{ count: number }>(
+      `select count(*)::int count from planning.territory_daily_norm
+       where product_id=$1 and dispatch_date=$2 and quantity=7 and is_current`,
+      [withNorms.id, targetDate],
+    );
+    expect(normCount.rows[0]?.count).toBe(activeTerritories.rows[0]?.count);
+
+    const withoutNorms = await repository.createDirectProduct({
+      actorEmployeeId: employeeId,
+      categoryCode: "BASIC_CAKES",
+      correlationId: randomUUID(),
+      name: `Товар без норм ${suffix}`,
+    });
+    const emptyNormCount = await database.query<{ count: number }>(
+      "select count(*)::int count from planning.territory_daily_norm where product_id=$1",
+      [withoutNorms.id],
+    );
+    expect(emptyNormCount.rows[0]?.count).toBe(0);
+  });
+
   it("treats repeated apply as a no-op and keeps the applied batch immutable", async () => {
     await repository.applyImport({
       acknowledgedWarningCodes: [],

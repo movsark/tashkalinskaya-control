@@ -1496,7 +1496,7 @@ export async function previewCatalogImport(
 }
 
 export async function createCatalogProduct(
-  input: { categoryCode: string; name: string },
+  input: { categoryCode: string; dailyNormQuantity?: number; name: string },
   csrfToken: string,
 ): Promise<ProductView> {
   return request("/catalog/products", {

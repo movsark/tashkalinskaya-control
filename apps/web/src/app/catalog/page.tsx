@@ -37,6 +37,9 @@ export default function CatalogPage() {
   const [error, setError] = useState("");
   const [newProductName, setNewProductName] = useState("");
   const [newProductCategory, setNewProductCategory] = useState("BASIC_CAKES");
+  const [addNewProductToNorms, setAddNewProductToNorms] = useState(false);
+  const [newProductNormQuantity, setNewProductNormQuantity] = useState("");
+  const [success, setSuccess] = useState("");
 
   const isAdmin = useMemo(
     () => session?.employee.roles.some((role) => role.roleCode === "ADMIN") ?? false,
@@ -99,15 +102,28 @@ export default function CatalogPage() {
     if (session === null || newProductName.trim() === "") return;
     setBusy(true);
     setError("");
+    setSuccess("");
     try {
+      const dailyNormQuantity = addNewProductToNorms ? Number(newProductNormQuantity) : undefined;
       const product = await createCatalogProduct(
-        { categoryCode: newProductCategory, name: newProductName },
+        {
+          categoryCode: newProductCategory,
+          name: newProductName,
+          ...(dailyNormQuantity !== undefined ? { dailyNormQuantity } : {}),
+        },
         session.csrfToken,
       );
       setProducts((current) =>
         [...current, product].sort((left, right) => left.name.localeCompare(right.name, "ru")),
       );
       setNewProductName("");
+      setAddNewProductToNorms(false);
+      setNewProductNormQuantity("");
+      setSuccess(
+        dailyNormQuantity === undefined
+          ? "Товар добавлен без норм."
+          : `Товар добавлен: по ${dailyNormQuantity} шт. всем территориям на все будущие даты плана.`,
+      );
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -142,6 +158,7 @@ export default function CatalogPage() {
       </section>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {success ? <p className="logistics-success">{success}</p> : null}
 
       {isAdmin ? (
         <section className="import-panel">
@@ -150,7 +167,7 @@ export default function CatalogPage() {
             <h2>Добавить товар</h2>
             <p>Код назначается системой. Цех и штрихкод можно указать позже.</p>
           </div>
-          <form onSubmit={(event) => void createProduct(event)}>
+          <form className="catalog-product-form" onSubmit={(event) => void createProduct(event)}>
             <label>
               Группа продукции
               <select
@@ -172,6 +189,29 @@ export default function CatalogPage() {
                 required
               />
             </label>
+            <label className="catalog-product-norm-toggle">
+              <input
+                checked={addNewProductToNorms}
+                onChange={(event) => setAddNewProductToNorms(event.target.checked)}
+                type="checkbox"
+              />
+              Сразу добавить одинаковое количество всем территориям на все будущие даты уже
+              загруженного плана вывоза
+            </label>
+            {addNewProductToNorms ? (
+              <label>
+                Количество для каждой территории на каждый день
+                <input
+                  inputMode="numeric"
+                  max={100000}
+                  min={1}
+                  onChange={(event) => setNewProductNormQuantity(event.target.value)}
+                  required
+                  type="number"
+                  value={newProductNormQuantity}
+                />
+              </label>
+            ) : null}
             <button className="primary-button" disabled={busy} type="submit">
               Добавить товар
             </button>

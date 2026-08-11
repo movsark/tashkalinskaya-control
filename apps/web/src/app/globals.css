@@ -1162,6 +1162,24 @@ select:focus {
   font-weight: 800;
 }
 
+.catalog-product-form {
+  grid-template-columns: minmax(200px, 0.8fr) minmax(260px, 1.2fr) auto;
+}
+
+.catalog-product-form .catalog-product-norm-toggle {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  grid-column: 1 / -1;
+}
+
+.catalog-product-norm-toggle input {
+  flex: 0 0 auto;
+  height: 22px;
+  width: 22px;
+}
+
 .import-preview__heading,
 .import-apply {
   display: flex;

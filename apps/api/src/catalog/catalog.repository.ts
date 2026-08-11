@@ -370,6 +370,7 @@ export class CatalogRepository {
     actorEmployeeId: string;
     categoryCode: string;
     correlationId: string;
+    dailyNormQuantity?: number;
     name: string;
   }) {
     return this.database.transaction(async (client) => {
@@ -405,6 +406,39 @@ export class CatalogRepository {
       const product = result.rows[0];
       if (product === undefined)
         throw catalogConflict("CATEGORY_UNKNOWN", "Группа продукции недоступна");
+      let dailyNormLineCount = 0;
+      let dailyNormDateCount = 0;
+      let dailyNormTerritoryCount = 0;
+      if (input.dailyNormQuantity !== undefined) {
+        const norms = await client.query<{ dispatch_date: string; territory_id: string }>(
+          `with future_dates as (
+             select distinct dispatch_date
+             from planning.territory_daily_norm
+             where is_current
+               and dispatch_date >= (now() at time zone 'Europe/Moscow')::date
+           )
+           insert into planning.territory_daily_norm (
+             id,territory_id,dispatch_date,product_id,quantity,version,
+             reason,created_by,correlation_id
+           )
+           select gen_random_uuid(),t.id,d.dispatch_date,$1,$2,1,
+             'Товар добавлен во все территории и даты плана',$3,$4
+           from logistics.territory t
+           cross join future_dates d
+           where t.status='ACTIVE'
+           returning territory_id,dispatch_date::text`,
+          [product.id, input.dailyNormQuantity, input.actorEmployeeId, input.correlationId],
+        );
+        if (norms.rows.length === 0) {
+          throw catalogConflict(
+            "DAILY_NORM_DATES_MISSING",
+            "В плане вывоза нет будущих дат. Добавьте товар без нормы или сначала загрузите план.",
+          );
+        }
+        dailyNormLineCount = norms.rows.length;
+        dailyNormDateCount = new Set(norms.rows.map((row) => row.dispatch_date)).size;
+        dailyNormTerritoryCount = new Set(norms.rows.map((row) => row.territory_id)).size;
+      }
       await client.query(
         `insert into catalog.product_version (id,product_id,version,product_code,name,category_name,unit_name,status,source_import_batch_id)
          values ($1,$2,$3,$4,$5,$6,$7,'ACTIVE',null)`,
@@ -420,13 +454,24 @@ export class CatalogRepository {
       );
       await client.query(
         `insert into audit.event (id,occurred_at,actor_employee_id,active_role,action,object_type,object_id,correlation_id,result,metadata)
-         values ($1,now(),$2,'ADMIN','PRODUCT_CREATED','PRODUCT',$3,$4,'SUCCESS',jsonb_build_object('productCode',$5::text))`,
+         values ($1,now(),$2,'ADMIN','PRODUCT_CREATED','PRODUCT',$3,$4,'SUCCESS',
+           jsonb_build_object(
+             'productCode',$5::text,
+             'dailyNormQuantity',$6::int,
+             'dailyNormLineCount',$7::int,
+             'dailyNormDateCount',$8::int,
+             'dailyNormTerritoryCount',$9::int
+           ))`,
         [
           randomUUID(),
           input.actorEmployeeId,
           product.id,
           input.correlationId,
           product.product_code,
+          input.dailyNormQuantity ?? null,
+          dailyNormLineCount,
+          dailyNormDateCount,
+          dailyNormTerritoryCount,
         ],
       );
       await client.query(
@@ -434,6 +479,28 @@ export class CatalogRepository {
          values ($1,'catalog.product.created.v1','PRODUCT',$2,jsonb_build_object('productCode',$3::text),now())`,
         [randomUUID(), product.id, product.product_code],
       );
+      if (dailyNormLineCount > 0) {
+        await client.query(
+          `insert into system.outbox_message (id,event_name,aggregate_type,aggregate_id,payload,occurred_at)
+           values ($1,'planning.product-daily-norms.created','PRODUCT',$2,
+             jsonb_build_object(
+               'productCode',$3::text,
+               'quantity',$4::int,
+               'lineCount',$5::int,
+               'dateCount',$6::int,
+               'territoryCount',$7::int
+             ),now())`,
+          [
+            randomUUID(),
+            product.id,
+            product.product_code,
+            input.dailyNormQuantity,
+            dailyNormLineCount,
+            dailyNormDateCount,
+            dailyNormTerritoryCount,
+          ],
+        );
+      }
       return {
         barcodes: [],
         category: product.category,

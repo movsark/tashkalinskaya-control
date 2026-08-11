@@ -2522,6 +2522,88 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page).toHaveURL(/\/login\?returnTo=%2Freports$/);
   });
 
+  test("admin optionally adds a new product to every territory day", async ({ page }) => {
+    const createBodies: Array<Record<string, unknown>> = [];
+    await page.setViewportSize({ height: 844, width: 390 });
+    await page.route("**/api/v1/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/auth/session")) {
+        return json(route, {
+          csrfToken: "csrf-catalog-product",
+          deviceId: "20000000-0000-4000-8000-000000000202",
+          employee: {
+            accountStatus: "ACTIVE",
+            departmentId: null,
+            employmentStatus: "ACTIVE",
+            fullName: "Администратор каталога",
+            id: "20000000-0000-4000-8000-000000000203",
+            login: "catalog-admin",
+            personnelNumber: "CAT-01",
+            roles: [
+              {
+                id: "20000000-0000-4000-8000-000000000204",
+                roleCode: "ADMIN",
+                scopeId: null,
+                scopeType: "FACTORY",
+              },
+            ],
+            version: 1,
+          },
+          sessionExpiresAt: "2026-08-11T18:00:00.000Z",
+        });
+      }
+      if (path.endsWith("/catalog/products") && request.method() === "GET") {
+        return json(route, { items: [], total: 0 });
+      }
+      if (path.endsWith("/catalog/products") && request.method() === "POST") {
+        const body = request.postDataJSON() as Record<string, unknown>;
+        createBodies.push(body);
+        return json(route, {
+          barcodes: [],
+          category: "Торты Базовые",
+          externalCode: null,
+          id: `20000000-0000-4000-8000-${String(createBodies.length).padStart(12, "0")}`,
+          name: body.name,
+          primaryWorkshop: null,
+          productCode: `TB-${String(createBodies.length).padStart(3, "0")}`,
+          status: "ACTIVE",
+          unit: "шт",
+          version: 1,
+        });
+      }
+      if (path.endsWith("/notifications/workspace")) {
+        return json(route, notificationWorkspace());
+      }
+      return json(route, { code: "E2E_MOCK_MISSING", message: path }, 501);
+    });
+
+    await page.goto("/catalog");
+    await page.getByLabel("Название товара").fill("ТБ Новый торт");
+    await page.getByLabel(/Сразу добавить одинаковое количество/).check();
+    await page.getByLabel("Количество для каждой территории на каждый день").fill("4");
+    await page.getByRole("button", { name: "Добавить товар" }).click();
+    await expect(page.getByText(/по 4 шт\. всем территориям/)).toBeVisible();
+    expect(createBodies[0]).toMatchObject({
+      categoryCode: "BASIC_CAKES",
+      dailyNormQuantity: 4,
+      name: "ТБ Новый торт",
+    });
+
+    await page.getByLabel("Название товара").fill("ТБ Только каталог");
+    await page.getByRole("button", { name: "Добавить товар" }).click();
+    await expect(page.getByText("Товар добавлен без норм.", { exact: true })).toBeVisible();
+    expect(createBodies[1]).toEqual({
+      categoryCode: "BASIC_CAKES",
+      name: "ТБ Только каталог",
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("manager first sees the list with the two implemented reports", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     await mockReportsApi(

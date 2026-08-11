@@ -43,7 +43,20 @@ export class CatalogService {
         message: "Введите название товара",
       });
     }
-    return this.repository.createDirectProduct({ ...dto, name, actorEmployeeId, correlationId });
+    try {
+      return await this.repository.createDirectProduct({
+        ...dto,
+        name,
+        actorEmployeeId,
+        correlationId,
+      });
+    } catch (error) {
+      const catalogCode = readCatalogCode(error);
+      if (catalogCode !== null) {
+        throw new ConflictException({ code: catalogCode, message: (error as Error).message });
+      }
+      throw error;
+    }
   }
 
   async loadTemplate(): Promise<Buffer> {
