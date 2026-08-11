@@ -37,7 +37,6 @@ export default function CatalogPage() {
   const [error, setError] = useState("");
   const [newProductName, setNewProductName] = useState("");
   const [newProductCategory, setNewProductCategory] = useState("BASIC_CAKES");
-  const [addNewProductToNorms, setAddNewProductToNorms] = useState(false);
   const [newProductNormQuantity, setNewProductNormQuantity] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -104,7 +103,8 @@ export default function CatalogPage() {
     setError("");
     setSuccess("");
     try {
-      const dailyNormQuantity = addNewProductToNorms ? Number(newProductNormQuantity) : undefined;
+      const dailyNormQuantity =
+        newProductNormQuantity.trim() === "" ? undefined : Number(newProductNormQuantity);
       const product = await createCatalogProduct(
         {
           categoryCode: newProductCategory,
@@ -117,7 +117,6 @@ export default function CatalogPage() {
         [...current, product].sort((left, right) => left.name.localeCompare(right.name, "ru")),
       );
       setNewProductName("");
-      setAddNewProductToNorms(false);
       setNewProductNormQuantity("");
       setSuccess(
         dailyNormQuantity === undefined
@@ -189,29 +188,22 @@ export default function CatalogPage() {
                 required
               />
             </label>
-            <label className="catalog-product-norm-toggle">
+            <label className="catalog-product-norm-quantity">
+              Количество каждой территории на каждый день
               <input
-                checked={addNewProductToNorms}
-                onChange={(event) => setAddNewProductToNorms(event.target.checked)}
-                type="checkbox"
+                inputMode="numeric"
+                max={100000}
+                min={1}
+                onChange={(event) => setNewProductNormQuantity(event.target.value)}
+                placeholder="Необязательно"
+                type="number"
+                value={newProductNormQuantity}
               />
-              Сразу добавить одинаковое количество всем территориям на все будущие даты уже
-              загруженного плана вывоза
+              <small>
+                Укажите число, чтобы добавить товар всем территориям на все будущие даты плана.
+                Оставьте пустым, чтобы добавить только в каталог.
+              </small>
             </label>
-            {addNewProductToNorms ? (
-              <label>
-                Количество для каждой территории на каждый день
-                <input
-                  inputMode="numeric"
-                  max={100000}
-                  min={1}
-                  onChange={(event) => setNewProductNormQuantity(event.target.value)}
-                  required
-                  type="number"
-                  value={newProductNormQuantity}
-                />
-              </label>
-            ) : null}
             <button className="primary-button" disabled={busy} type="submit">
               Добавить товар
             </button>

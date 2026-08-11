@@ -1166,18 +1166,17 @@ select:focus {
   grid-template-columns: minmax(200px, 0.8fr) minmax(260px, 1.2fr) auto;
 }
 
-.catalog-product-form .catalog-product-norm-toggle {
-  align-items: center;
-  display: flex;
-  font-size: 13px;
-  gap: 10px;
+.catalog-product-form .catalog-product-norm-quantity {
   grid-column: 1 / -1;
 }
 
-.catalog-product-norm-toggle input {
-  flex: 0 0 auto;
-  height: 22px;
-  width: 22px;
+.catalog-product-norm-quantity small {
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 8px;
 }
 
 .import-preview__heading,

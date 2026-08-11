@@ -214,6 +214,12 @@ describe.runIf(hasDatabase)("CatalogRepository with PostgreSQL", () => {
       [withoutNorms.id],
     );
     expect(emptyNormCount.rows[0]?.count).toBe(0);
+
+    await database.query("update catalog.product set status='ARCHIVED' where id=$1", [
+      withoutNorms.id,
+    ]);
+    const visibleProducts = await repository.listProducts();
+    expect(visibleProducts.items.some((product) => product.id === withoutNorms.id)).toBe(false);
   });
 
   it("treats repeated apply as a no-op and keeps the applied batch immutable", async () => {

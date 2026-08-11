@@ -345,8 +345,9 @@ export class CatalogRepository {
         join catalog.unit u on u.code = p.unit_code
         left join identity.department d on d.id = p.primary_workshop_id
         left join catalog.product_barcode pb on pb.product_id = p.id
+        where p.status = 'ACTIVE'
         group by p.id, c.name, u.name, d.name
-        order by p.status, p.name
+        order by p.name
       `,
     );
     return {

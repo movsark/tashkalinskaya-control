@@ -2580,8 +2580,7 @@ test.describe("B20 browser and HTTP regression", () => {
 
     await page.goto("/catalog");
     await page.getByLabel("Название товара").fill("ТБ Новый торт");
-    await page.getByLabel(/Сразу добавить одинаковое количество/).check();
-    await page.getByLabel("Количество для каждой территории на каждый день").fill("4");
+    await page.getByLabel("Количество каждой территории на каждый день").fill("4");
     await page.getByRole("button", { name: "Добавить товар" }).click();
     await expect(page.getByText(/по 4 шт\. всем территориям/)).toBeVisible();
     expect(createBodies[0]).toMatchObject({
@@ -2591,6 +2590,7 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.getByLabel("Название товара").fill("ТБ Только каталог");
+    await expect(page.getByLabel("Количество каждой территории на каждый день")).toHaveValue("");
     await page.getByRole("button", { name: "Добавить товар" }).click();
     await expect(page.getByText("Товар добавлен без норм.", { exact: true })).toBeVisible();
     expect(createBodies[1]).toEqual({
