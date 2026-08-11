@@ -1272,10 +1272,15 @@ async function loadSessions(
      left join loading.session_confirmation c on c.loading_session_id=s.id
      where s.dispatch_date=$1 and (
        $2::uuid is null
-       or exists (
-         select 1 from logistics.driver_route_shift history
-         where history.dispatch_date=s.dispatch_date and history.territory_id=s.territory_id
-           and history.driver_employee_id=$2
+       or (
+         s.status='IN_PROGRESS' and active_route.driver_employee_id=$2
+       )
+       or (
+         s.status<>'IN_PROGRESS' and exists (
+           select 1 from logistics.driver_route_shift history
+           where history.dispatch_date=s.dispatch_date and history.territory_id=s.territory_id
+             and history.driver_employee_id=$2
+         )
        )
      )
      group by s.id,t.territory_number,active_route.driver_employee_id,active_driver.full_name
