@@ -2,9 +2,7 @@
 
 import type {
   AuthenticatedUser,
-  ControlCenterView,
   ProductionOutboundReportView,
-  ReportExportFormat,
   ReportJobView,
   ReportsWorkspaceView,
 } from "@tashkalinskaya/contracts";
@@ -16,7 +14,6 @@ import {
   ApiRequestError,
   createReportJob,
   downloadReport,
-  getControlCenter,
   getProductionOutboundReport,
   getReportsWorkspace,
   getSession,
@@ -27,44 +24,20 @@ export default function ReportsPage() {
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format(new Date());
   const [session, setSession] = useState<AuthenticatedUser | null>(null);
   const [workspace, setWorkspace] = useState<ReportsWorkspaceView | null>(null);
-  const [control, setControl] = useState<ControlCenterView | null>(null);
   const [productionOutbound, setProductionOutbound] = useState<ProductionOutboundReportView | null>(
     null,
   );
-  const [activeTab, setActiveTab] = useState<"main" | "other">("main");
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [activeReport, setActiveReport] = useState<"PRODUCTION_OUTBOUND" | null>(null);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [format, setFormat] = useState<ReportExportFormat>("XLSX");
-  const [selectedReport, setSelectedReport] = useState("");
   const [territoryId, setTerritoryId] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  async function load(showControl = true) {
+  async function load() {
     const reports = await getReportsWorkspace();
-    const canReadProductionOutbound = reports.catalog.some(
-      (item) => item.code === "PRODUCTION_OUTBOUND",
-    );
-    if (!canReadProductionOutbound) setActiveTab("other");
-    const [center, operational] = await Promise.all([
-      showControl ? getControlCenter(selectedDate) : Promise.resolve(control),
-      canReadProductionOutbound
-        ? getProductionOutboundReport({
-            dateFrom,
-            dateTo,
-            ...(territoryId ? { territoryId } : {}),
-          })
-        : Promise.resolve(null),
-    ]);
     setWorkspace(reports);
-    if (center) setControl(center);
-    if (operational) setProductionOutbound(operational);
-    setSelectedReport(
-      (current) =>
-        current || reports.catalog.find((item) => item.code !== "PRODUCTION_OUTBOUND")?.code || "",
-    );
   }
 
   useEffect(() => {
@@ -85,39 +58,28 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (!workspace?.jobs.some((job) => job.status === "QUEUED" || job.status === "RUNNING")) return;
-    const timer = window.setInterval(() => void load(false).catch(() => undefined), 4_000);
+    const timer = window.setInterval(() => void load().catch(() => undefined), 4_000);
     return () => window.clearInterval(timer);
   }, [workspace?.jobs]);
 
-  const selected = useMemo(
-    () => workspace?.catalog.find((item) => item.code === selectedReport) ?? null,
-    [selectedReport, workspace],
+  const productionOutboundCatalogItem = useMemo(
+    () => workspace?.catalog.find((item) => item.code === "PRODUCTION_OUTBOUND") ?? null,
+    [workspace],
   );
 
-  async function refreshControl() {
-    setBusy("control");
-    setError("");
-    try {
-      setControl(await getControlCenter(selectedDate));
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function requestReport() {
-    if (!session || !selected) return;
-    setBusy("report");
+  async function openProductionOutbound() {
+    setBusy("open-production-outbound");
     setError("");
     setSuccess("");
     try {
-      await createReportJob(
-        { dateFrom, dateTo, format, reportCode: selected.code },
-        session.csrfToken,
+      setProductionOutbound(
+        await getProductionOutboundReport({
+          dateFrom,
+          dateTo,
+          ...(territoryId ? { territoryId } : {}),
+        }),
       );
-      await load(false);
-      setSuccess("Отчёт поставлен в очередь. Готовый файл появится в реестре автоматически.");
+      setActiveReport("PRODUCTION_OUTBOUND");
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -175,13 +137,13 @@ export default function ReportsPage() {
     }
   }
 
-  if (!workspace || !session || !control)
+  if (!workspace || !session)
     return (
       <main className="workspace-layout reports-page simple-workspace">
         <header className="workspace-header">
           <AppBrand />
         </header>
-        <p className="warehouse-loading">{error || "Загружаем центр контроля…"}</p>
+        <p className="warehouse-loading">{error || "Загружаем отчёты…"}</p>
       </main>
     );
 
@@ -201,34 +163,53 @@ export default function ReportsPage() {
         <div>
           <p className="eyebrow">Руководитель</p>
           <h1>Отчёты</h1>
-          <p>Проверка производства, вывоза и склада по подтверждённым операциям.</p>
+          <p>Выберите нужный отчёт из списка.</p>
         </div>
       </section>
-
-      {workspace.catalog.some((item) => item.code === "PRODUCTION_OUTBOUND") ? (
-        <nav aria-label="Вкладки отчётов" className="reports-tabs">
-          <button
-            className={activeTab === "main" ? "is-active" : ""}
-            onClick={() => setActiveTab("main")}
-            type="button"
-          >
-            Производство и вывоз
-          </button>
-          <button
-            className={activeTab === "other" ? "is-active" : ""}
-            onClick={() => setActiveTab("other")}
-            type="button"
-          >
-            Другие отчёты
-          </button>
-        </nav>
-      ) : null}
 
       {error ? <p className="form-error reports-notice">{error}</p> : null}
       {success ? <p className="logistics-success reports-notice">{success}</p> : null}
 
-      {activeTab === "main" ? (
+      {!activeReport ? (
+        <section className="reports-list" aria-labelledby="reports-list-title">
+          <div className="reports-list-header">
+            <div>
+              <p className="eyebrow">Доступные формы</p>
+              <h2 id="reports-list-title">Список отчётов</h2>
+            </div>
+            <span>{productionOutboundCatalogItem ? "1 отчёт" : "0 отчётов"}</span>
+          </div>
+          <div className="reports-list-items">
+            {productionOutboundCatalogItem ? (
+              <button
+                className="report-list-card"
+                disabled={busy === "open-production-outbound"}
+                onClick={() => void openProductionOutbound()}
+                type="button"
+              >
+                <span className="report-list-number">01</span>
+                <span>
+                  <strong>{productionOutboundCatalogItem.title}</strong>
+                  <small>
+                    Сколько произведено, вывезено и осталось на обычном складе за выбранный период.
+                  </small>
+                </span>
+                <b aria-hidden="true">→</b>
+              </button>
+            ) : (
+              <p className="logistics-empty">Доступных отчётов пока нет.</p>
+            )}
+          </div>
+        </section>
+      ) : (
         <section className="production-outbound-report">
+          <button
+            className="text-button report-list-back"
+            onClick={() => setActiveReport(null)}
+            type="button"
+          >
+            ← К списку отчётов
+          </button>
           <header>
             <div>
               <p className="eyebrow">Первый отчёт</p>
@@ -351,118 +332,6 @@ export default function ReportsPage() {
             <p className="warehouse-loading">Загружаем отчёт…</p>
           )}
         </section>
-      ) : (
-        <>
-          <form
-            className="reports-control-date"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void refreshControl();
-            }}
-          >
-            <label>
-              Контрольная дата
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-              />
-            </label>
-            <button className="primary-button" disabled={busy === "control"}>
-              Обновить
-            </button>
-          </form>
-
-          <section className="reports-metrics" aria-label="Показатели контроля">
-            {control.metrics.map((metric) => (
-              <Link
-                className={`report-metric is-${metric.status.toLowerCase()}`}
-                href={metric.href}
-                key={metric.code}
-              >
-                <span>{metric.label}</span>
-                <b>{metric.value.toLocaleString("ru-RU")}</b>
-                <small>{unitLabel(metric.unit)}</small>
-              </Link>
-            ))}
-          </section>
-
-          <section className="reports-layout">
-            <div className="reports-catalog">
-              <div className="reports-heading">
-                <div>
-                  <p className="eyebrow">Каталог</p>
-                  <h2>Сформировать файл</h2>
-                </div>
-                <span>{workspace.catalog.length} форм</span>
-              </div>
-              <div className="report-picker">
-                {workspace.catalog
-                  .filter((item) => item.code !== "PRODUCTION_OUTBOUND")
-                  .map((item) => (
-                    <button
-                      className={selectedReport === item.code ? "is-active" : ""}
-                      key={item.code}
-                      onClick={() => setSelectedReport(item.code)}
-                    >
-                      <strong>{item.title}</strong>
-                      <small>{item.description}</small>
-                      {item.personalData ? <em>Персональные данные</em> : null}
-                    </button>
-                  ))}
-              </div>
-            </div>
-
-            <aside className="report-request">
-              <p className="eyebrow">Параметры</p>
-              <h2>{selected?.title}</h2>
-              <p>{selected?.description}</p>
-              <div className="report-dates">
-                <label>
-                  С
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(event) => setDateFrom(event.target.value)}
-                  />
-                </label>
-                <label>
-                  По
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(event) => setDateTo(event.target.value)}
-                  />
-                </label>
-              </div>
-              <fieldset>
-                <legend>Формат</legend>
-                {selected?.formats.map((item) => (
-                  <label key={item}>
-                    <input
-                      checked={format === item}
-                      name="format"
-                      type="radio"
-                      onChange={() => setFormat(item)}
-                    />
-                    {item === "XLSX" ? "Excel" : "PDF · A4"}
-                  </label>
-                ))}
-              </fieldset>
-              <button
-                className="primary-button"
-                disabled={busy === "report" || !selected}
-                onClick={() => void requestReport()}
-              >
-                Сформировать в фоне
-              </button>
-              <small>
-                Файл хранится 365 дней. В нём фиксируются период, автор, время снимка и контрольная
-                сумма.
-              </small>
-            </aside>
-          </section>
-        </>
       )}
 
       <details className="report-registry workspace-more">
@@ -470,7 +339,7 @@ export default function ReportsPage() {
           <span>Готовые файлы</span>
           <small>{workspace.jobs.length} отчётов</small>
         </summary>
-        <button className="text-button report-registry-refresh" onClick={() => void load(false)}>
+        <button className="text-button report-registry-refresh" onClick={() => void load()}>
           Обновить список
         </button>
         <div className="report-job-list">
@@ -517,9 +386,6 @@ function JobCard({ job, onDownload }: { job: ReportJobView; onDownload: () => vo
   );
 }
 
-function unitLabel(unit: ControlCenterView["metrics"][number]["unit"]) {
-  return unit === "PEOPLE" ? "сотрудников" : unit === "PIECES" ? "штук" : "операций";
-}
 function quantity(value: number) {
   return `${value.toLocaleString("ru-RU")} шт.`;
 }

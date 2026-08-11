@@ -9464,6 +9464,104 @@ select:focus {
   padding: 12px 15px;
 }
 
+.reports-list {
+  background: white;
+  border: 1px solid #ded9cf;
+  border-radius: 22px;
+  box-shadow: 0 12px 38px rgb(40 36 28 / 5%);
+  padding: 24px;
+}
+
+.reports-list-header {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.reports-list-header h2 {
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  margin: 0;
+}
+
+.reports-list-header > span {
+  background: #edf1ed;
+  border-radius: 999px;
+  color: #36554c;
+  font-size: 0.8rem;
+  font-weight: 850;
+  padding: 8px 12px;
+}
+
+.reports-list-items {
+  display: grid;
+  gap: 12px;
+}
+
+.report-list-card {
+  align-items: center;
+  background: #faf8f3;
+  border: 1px solid #e2ddd3;
+  border-radius: 16px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 112px;
+  padding: 18px;
+  text-align: left;
+  width: 100%;
+}
+
+.report-list-card:hover,
+.report-list-card:focus-visible {
+  background: #e7efe9;
+  border-color: #5c8275;
+}
+
+.report-list-card:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.report-list-number {
+  align-items: center;
+  background: #175448;
+  border-radius: 14px;
+  color: white;
+  display: flex;
+  font-size: 1rem;
+  font-weight: 900;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.report-list-card > span:nth-child(2) {
+  display: grid;
+  gap: 6px;
+}
+
+.report-list-card strong {
+  font-size: 1.2rem;
+}
+
+.report-list-card small {
+  color: #69716c;
+  line-height: 1.45;
+}
+
+.report-list-card > b {
+  color: #175448;
+  font-size: 1.8rem;
+}
+
+.report-list-back {
+  margin-bottom: 18px;
+}
+
 .reports-tabs {
   background: #e8ece8;
   border-radius: 18px;
@@ -9924,8 +10022,24 @@ select:focus {
   }
   .reports-catalog,
   .report-request,
-  .report-registry {
+  .report-registry,
+  .reports-list {
     padding: 15px;
+  }
+  .reports-list-header {
+    align-items: flex-start;
+  }
+  .report-list-card {
+    gap: 12px;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 14px;
+  }
+  .report-list-card > b {
+    display: none;
+  }
+  .report-list-number {
+    height: 48px;
+    width: 48px;
   }
   .report-job {
     align-items: stretch;

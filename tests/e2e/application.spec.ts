@@ -2522,48 +2522,27 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page).toHaveURL(/\/login\?returnTo=%2Freports$/);
   });
 
-  test("manager can open the control center and queue a report with CSRF", async ({ page }) => {
-    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
-    let jobs: Record<string, unknown>[] = [];
+  test("manager first sees the list with only the implemented report", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     await mockReportsApi(
       page,
-      () => jobs,
-      (request) => {
-        createRequest = request;
-        jobs = [
-          {
-            completedAt: null,
-            dateFrom: "2026-08-01",
-            dateTo: "2026-08-01",
-            errorMessage: null,
-            expiresAt: "2027-08-01T10:00:00.000Z",
-            fileName: null,
-            format: "XLSX",
-            id: "20000000-0000-4000-8000-000000000001",
-            reportCode: "MOVEMENTS",
-            reportTitle: "Движения склада",
-            requestedAt: "2026-08-01T10:00:00.000Z",
-            requestedByName: "Руководитель теста",
-            rowCount: 12,
-            sha256: null,
-            status: "QUEUED",
-          },
-        ];
-      },
+      () => [],
+      () => undefined,
+      true,
     );
 
     await page.goto("/reports");
     await expect(page.getByRole("heading", { name: "Отчёты", exact: true })).toBeVisible();
-    await expect(page.getByText("Свободный склад")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Список отчётов" })).toBeVisible();
+    await expect(page.getByText("1 отчёт", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Производство и вывоз/ })).toBeVisible();
+    await expect(page.getByText("Движения склада", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("Другие отчёты", { exact: true })).not.toBeVisible();
     await expect(page.locator(".report-registry")).not.toHaveAttribute("open");
-    await page.getByRole("button", { name: "Сформировать в фоне" }).click();
-    await expect(page.getByText("Отчёт поставлен в очередь")).toBeVisible();
-    await page.locator(".report-registry > summary").click();
-    await expect(page.locator(".report-job-list")).toBeVisible();
-    expect(createRequest).not.toBeNull();
-    expect(createRequest?.csrf).toBe("csrf-e2e-token");
-    expect(createRequest?.body).toMatchObject({ format: "XLSX", reportCode: "MOVEMENTS" });
+    await page.getByRole("button", { name: /Производство и вывоз/ }).click();
+    await expect(page.getByRole("heading", { name: "Производство и вывоз" })).toBeVisible();
+    await page.getByRole("button", { name: "К списку отчётов" }).click();
+    await expect(page.getByRole("heading", { name: "Список отчётов" })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -2586,6 +2565,7 @@ test.describe("B20 browser and HTTP regression", () => {
     );
 
     await page.goto("/reports");
+    await page.getByRole("button", { name: /Производство и вывоз/ }).click();
     await expect(page.getByRole("heading", { name: "Производство и вывоз" })).toBeVisible();
     const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
     await expect(ryzhik).toContainText("12 шт.");
