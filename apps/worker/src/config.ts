@@ -12,6 +12,7 @@ const environmentSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  DATABASE_NAME: optionalTrimmed(1),
   DATABASE_SSL: z.enum(["disable", "require"]).default("disable"),
   DATABASE_URL: z.string().trim().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "staging", "production"]).default("development"),
@@ -28,6 +29,7 @@ const environmentSchema = z.object({
 export interface WorkerConfig {
   readonly appVersion: string;
   readonly databaseRequired: boolean;
+  readonly databaseName?: string;
   readonly databaseSsl: "disable" | "require";
   readonly databaseUrl?: string;
   readonly nodeEnvironment: "development" | "test" | "staging" | "production";
@@ -67,6 +69,7 @@ export function loadWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
   return {
     appVersion: parsed.APP_VERSION,
     databaseRequired: parsed.DATABASE_REQUIRED,
+    ...(parsed.DATABASE_NAME === undefined ? {} : { databaseName: parsed.DATABASE_NAME }),
     databaseSsl: parsed.DATABASE_SSL,
     ...(databaseUrl === undefined ? {} : { databaseUrl }),
     nodeEnvironment: parsed.NODE_ENV,

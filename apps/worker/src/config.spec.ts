@@ -17,4 +17,10 @@ describe("loadWorkerConfig", () => {
   it("requires a database URL when the database is mandatory", () => {
     expect(() => loadWorkerConfig({ DATABASE_REQUIRED: "true" })).toThrow("DATABASE_URL");
   });
+
+  it("accepts a separate logical database name", () => {
+    expect(loadWorkerConfig({ DATABASE_NAME: "tashkalinskaya_pilot" }).databaseName).toBe(
+      "tashkalinskaya_pilot",
+    );
+  });
 });

@@ -14,6 +14,7 @@ export class HealthService implements OnApplicationShutdown {
       ? createDatabasePool({
           applicationName: "tashkalinskaya-api",
           connectionString: config.databaseUrl,
+          ...(config.databaseName === undefined ? {} : { databaseName: config.databaseName }),
           sslMode: config.databaseSsl,
         })
       : undefined;

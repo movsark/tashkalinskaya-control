@@ -48,6 +48,12 @@ describe("loadApiConfig", () => {
     expect(() => loadApiConfig({ DATABASE_REQUIRED: "true" })).toThrow("DATABASE_URL");
   });
 
+  it("accepts a separate logical database name", () => {
+    expect(loadApiConfig({ DATABASE_NAME: "tashkalinskaya_pilot" }).databaseName).toBe(
+      "tashkalinskaya_pilot",
+    );
+  });
+
   it("accepts a bounded database pool size", () => {
     expect(loadApiConfig({ DATABASE_MAX_CONNECTIONS: "20" }).databaseMaxConnections).toBe(20);
     expect(() => loadApiConfig({ DATABASE_MAX_CONNECTIONS: "0" })).toThrow();

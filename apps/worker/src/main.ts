@@ -23,6 +23,7 @@ if (isDatabaseConfigured(config.databaseUrl)) {
   pool = createDatabasePool({
     applicationName: "tashkalinskaya-worker",
     connectionString: config.databaseUrl,
+    ...(config.databaseName === undefined ? {} : { databaseName: config.databaseName }),
     sslMode: config.databaseSsl,
   });
   notifications = new NotificationProcessor(pool, config);
