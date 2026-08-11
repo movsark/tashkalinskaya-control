@@ -33,6 +33,22 @@ export const REPORT_DEFINITIONS: Readonly<Record<ReportCode, ReportDefinition>> 
       column("onHandQuantity", "На складе", 15, true, true),
     ],
   },
+  DRIVER_TERRITORY: {
+    code: "DRIVER_TERRITORY",
+    title: "Вывоз и возвраты по территориям",
+    description: "Что вывез каждый водитель, вернул годным и передал как порчу.",
+    formats: ["XLSX"],
+    personalData: false,
+    columns: [
+      column("territoryNumber", "Территория", 14),
+      column("driverName", "Водитель", 26),
+      column("productCode", "Код", 14),
+      column("productName", "Наименование", 34),
+      column("outboundQuantity", "Вывезено", 15, true, true),
+      column("goodReturnQuantity", "Годный возврат", 18, true, true),
+      column("spoilageQuantity", "Порча", 15, true, true),
+    ],
+  },
   MOVEMENTS: {
     code: "MOVEMENTS",
     title: "Движение готовой продукции",

@@ -15,6 +15,14 @@ export class ProductionOutboundQueryDto {
   dateTo!: string;
 }
 
+export class DriverTerritoryQueryDto {
+  @IsDateString({ strict: true })
+  dateFrom!: string;
+
+  @IsDateString({ strict: true })
+  dateTo!: string;
+}
+
 export class ReportJobQueryDto {
   @IsOptional()
   @IsDateString({ strict: true })

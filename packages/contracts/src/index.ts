@@ -1466,6 +1466,7 @@ export interface NotificationsWorkspaceView {
 
 export const REPORT_CODES = [
   "PRODUCTION_OUTBOUND",
+  "DRIVER_TERRITORY",
   "MOVEMENTS",
   "PLAN_FACT",
   "DEFECTS",
@@ -1567,6 +1568,32 @@ export interface ProductionOutboundReportView {
     readonly producedQuantity: number;
   };
   readonly warehouseAsOf: string;
+}
+
+export interface DriverTerritoryReportRowView {
+  readonly driverId: string;
+  readonly driverName: string;
+  readonly goodReturnQuantity: number;
+  readonly outboundQuantity: number;
+  readonly productCode: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly spoilageQuantity: number;
+  readonly territoryId: string;
+  readonly territoryName: string;
+  readonly territoryNumber: number;
+}
+
+export interface DriverTerritoryReportView {
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly generatedAt: string;
+  readonly rows: readonly DriverTerritoryReportRowView[];
+  readonly totals: {
+    readonly goodReturnQuantity: number;
+    readonly outboundQuantity: number;
+    readonly spoilageQuantity: number;
+  };
 }
 
 export interface ReportSnapshotColumn {

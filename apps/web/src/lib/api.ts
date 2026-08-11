@@ -52,6 +52,7 @@ import type {
   ProductionWarehouseQueueView,
   ProductionWorkspaceView,
   ControlCenterView,
+  DriverTerritoryReportView,
   ReportCode,
   ReportExportFormat,
   ReportJobView,
@@ -1853,6 +1854,14 @@ export async function getProductionOutboundReport(input: {
 }): Promise<ProductionOutboundReportView> {
   const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
   return request(`/reports/production-outbound?${query.toString()}`);
+}
+
+export async function getDriverTerritoryReport(input: {
+  dateFrom: string;
+  dateTo: string;
+}): Promise<DriverTerritoryReportView> {
+  const query = new URLSearchParams({ dateFrom: input.dateFrom, dateTo: input.dateTo });
+  return request(`/reports/driver-territory?${query.toString()}`);
 }
 
 export async function createReportJob(

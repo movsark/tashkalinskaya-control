@@ -2,6 +2,7 @@
 
 import type {
   AuthenticatedUser,
+  DriverTerritoryReportView,
   ProductionOutboundReportView,
   ReportJobView,
   ReportsWorkspaceView,
@@ -14,6 +15,7 @@ import {
   ApiRequestError,
   createReportJob,
   downloadReport,
+  getDriverTerritoryReport,
   getProductionOutboundReport,
   getReportsWorkspace,
   getSession,
@@ -27,7 +29,10 @@ export default function ReportsPage() {
   const [productionOutbound, setProductionOutbound] = useState<ProductionOutboundReportView | null>(
     null,
   );
-  const [activeReport, setActiveReport] = useState<"PRODUCTION_OUTBOUND" | null>(null);
+  const [driverTerritory, setDriverTerritory] = useState<DriverTerritoryReportView | null>(null);
+  const [activeReport, setActiveReport] = useState<
+    "DRIVER_TERRITORY" | "PRODUCTION_OUTBOUND" | null
+  >(null);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [busy, setBusy] = useState("");
@@ -63,6 +68,10 @@ export default function ReportsPage() {
 
   const productionOutboundCatalogItem = useMemo(
     () => workspace?.catalog.find((item) => item.code === "PRODUCTION_OUTBOUND") ?? null,
+    [workspace],
+  );
+  const driverTerritoryCatalogItem = useMemo(
+    () => workspace?.catalog.find((item) => item.code === "DRIVER_TERRITORY") ?? null,
     [workspace],
   );
 
@@ -127,6 +136,57 @@ export default function ReportsPage() {
     }
   }
 
+  async function openDriverTerritory() {
+    setBusy("open-driver-territory");
+    setError("");
+    setSuccess("");
+    try {
+      setDriverTerritory(await getDriverTerritoryReport({ dateFrom, dateTo }));
+      setActiveReport("DRIVER_TERRITORY");
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function refreshDriverTerritory() {
+    setBusy("driver-territory");
+    setError("");
+    setSuccess("");
+    try {
+      setDriverTerritory(await getDriverTerritoryReport({ dateFrom, dateTo }));
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function exportDriverTerritory() {
+    if (!session || !driverTerritory) return;
+    setBusy("driver-territory-export");
+    setError("");
+    setSuccess("");
+    try {
+      await createReportJob(
+        {
+          dateFrom: driverTerritory.dateFrom,
+          dateTo: driverTerritory.dateTo,
+          format: "XLSX",
+          reportCode: "DRIVER_TERRITORY",
+        },
+        session.csrfToken,
+      );
+      setWorkspace(await getReportsWorkspace());
+      setSuccess("Excel формируется. Готовый файл появится ниже в разделе «Готовые файлы». ");
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (!workspace || !session)
     return (
       <main className="workspace-layout reports-page simple-workspace">
@@ -167,7 +227,10 @@ export default function ReportsPage() {
               <p className="eyebrow">Доступные формы</p>
               <h2 id="reports-list-title">Список отчётов</h2>
             </div>
-            <span>{productionOutboundCatalogItem ? "1 отчёт" : "0 отчётов"}</span>
+            <span>
+              {[productionOutboundCatalogItem, driverTerritoryCatalogItem].filter(Boolean).length}{" "}
+              отчёта
+            </span>
           </div>
           <div className="reports-list-items">
             {productionOutboundCatalogItem ? (
@@ -189,9 +252,24 @@ export default function ReportsPage() {
             ) : (
               <p className="logistics-empty">Доступных отчётов пока нет.</p>
             )}
+            {driverTerritoryCatalogItem ? (
+              <button
+                className="report-list-card"
+                disabled={busy === "open-driver-territory"}
+                onClick={() => void openDriverTerritory()}
+                type="button"
+              >
+                <span className="report-list-number">02</span>
+                <span>
+                  <strong>{driverTerritoryCatalogItem.title}</strong>
+                  <small>По территориям и водителям: вывоз, годный возврат и порча.</small>
+                </span>
+                <b aria-hidden="true">→</b>
+              </button>
+            ) : null}
           </div>
         </section>
-      ) : (
+      ) : activeReport === "PRODUCTION_OUTBOUND" ? (
         <section className="production-outbound-report">
           <button
             className="text-button report-list-back"
@@ -301,6 +379,130 @@ export default function ReportsPage() {
             <p className="warehouse-loading">Загружаем отчёт…</p>
           )}
         </section>
+      ) : (
+        <section className="production-outbound-report driver-territory-report">
+          <button
+            className="text-button report-list-back"
+            onClick={() => setActiveReport(null)}
+            type="button"
+          >
+            ← К списку отчётов
+          </button>
+          <header>
+            <div>
+              <p className="eyebrow">Второй отчёт</p>
+              <h2>Вывоз и возвраты по территориям</h2>
+              <p>По каждому водителю: сколько вывез, вернул годным и передал как порчу.</p>
+            </div>
+            <button
+              className="secondary-button"
+              disabled={busy === "driver-territory-export" || !driverTerritory}
+              onClick={() => void exportDriverTerritory()}
+              type="button"
+            >
+              Выгрузить в Excel
+            </button>
+          </header>
+
+          <form
+            className="production-outbound-filters"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshDriverTerritory();
+            }}
+          >
+            <label>
+              С
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              По
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+              />
+            </label>
+            <button className="primary-button" disabled={busy === "driver-territory"}>
+              {busy === "driver-territory" ? "Считаем…" : "Показать"}
+            </button>
+          </form>
+
+          {driverTerritory ? (
+            <>
+              <div className="production-outbound-caption">
+                <strong>Все территории</strong>
+                <span>
+                  {formatDate(driverTerritory.dateFrom)} — {formatDate(driverTerritory.dateTo)}
+                </span>
+              </div>
+              <div className="driver-report-totals" aria-label="Итоги отчёта">
+                <span>
+                  Вывезено <strong>{quantity(driverTerritory.totals.outboundQuantity)}</strong>
+                </span>
+                <span>
+                  Годный возврат{" "}
+                  <strong>{quantity(driverTerritory.totals.goodReturnQuantity)}</strong>
+                </span>
+                <span>
+                  Порча <strong>{quantity(driverTerritory.totals.spoilageQuantity)}</strong>
+                </span>
+              </div>
+              <div className="driver-report-groups">
+                {groupDriverRows(driverTerritory.rows).map((group) => (
+                  <article className="driver-report-group" key={group.key}>
+                    <header>
+                      <strong>Территория {group.territoryNumber}</strong>
+                      <span>{group.driverName}</span>
+                    </header>
+                    <div className="driver-report-table-wrap">
+                      <table className="driver-report-table">
+                        <thead>
+                          <tr>
+                            <th>Товар</th>
+                            <th>Вывезено</th>
+                            <th>Годный возврат</th>
+                            <th>Порча</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row) => (
+                            <tr key={row.productId}>
+                              <th scope="row">
+                                <small>{row.productCode}</small>
+                                {row.productName}
+                              </th>
+                              <td>{quantity(row.outboundQuantity)}</td>
+                              <td>{quantity(row.goodReturnQuantity)}</td>
+                              <td>{quantity(row.spoilageQuantity)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <th>Итого</th>
+                            <td>{quantity(group.outboundQuantity)}</td>
+                            <td>{quantity(group.goodReturnQuantity)}</td>
+                            <td>{quantity(group.spoilageQuantity)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </article>
+                ))}
+                {!driverTerritory.rows.length ? (
+                  <p className="logistics-empty">За выбранный период операций нет.</p>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="warehouse-loading">Загружаем отчёт…</p>
+          )}
+        </section>
       )}
 
       <details className="report-registry workspace-more">
@@ -358,6 +560,42 @@ function JobCard({ job, onDownload }: { job: ReportJobView; onDownload: () => vo
 function quantity(value: number) {
   return `${value.toLocaleString("ru-RU")} шт.`;
 }
+
+function groupDriverRows(rows: DriverTerritoryReportView["rows"]) {
+  const groups = new Map<
+    string,
+    {
+      driverName: string;
+      goodReturnQuantity: number;
+      key: string;
+      outboundQuantity: number;
+      rows: DriverTerritoryReportView["rows"];
+      spoilageQuantity: number;
+      territoryNumber: number;
+    }
+  >();
+
+  for (const row of rows) {
+    const key = `${row.territoryId}:${row.driverId}`;
+    const current = groups.get(key) ?? {
+      driverName: row.driverName,
+      goodReturnQuantity: 0,
+      key,
+      outboundQuantity: 0,
+      rows: [],
+      spoilageQuantity: 0,
+      territoryNumber: row.territoryNumber,
+    };
+    current.rows = [...current.rows, row];
+    current.outboundQuantity += row.outboundQuantity;
+    current.goodReturnQuantity += row.goodReturnQuantity;
+    current.spoilageQuantity += row.spoilageQuantity;
+    groups.set(key, current);
+  }
+
+  return [...groups.values()];
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(`${value}T12:00:00`));
 }

@@ -9739,6 +9739,107 @@ select:focus {
   font-size: 0.86rem;
 }
 
+.driver-report-totals {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 12px 0 18px;
+}
+
+.driver-report-totals span {
+  background: #f4f6f3;
+  border: 1px solid #dce2dd;
+  border-radius: 14px;
+  color: #626b66;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.driver-report-totals strong {
+  color: #174f43;
+  font-size: 1.35rem;
+}
+
+.driver-report-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.driver-report-group {
+  border: 1px solid #dce2dd;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.driver-report-group > header {
+  align-items: baseline;
+  background: #eef2ef;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.driver-report-group > header strong {
+  color: #174f43;
+  font-size: 1.05rem;
+}
+
+.driver-report-group > header span {
+  color: #5f6863;
+  font-weight: 750;
+}
+
+.driver-report-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.driver-report-table {
+  border-collapse: collapse;
+  min-width: 620px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.driver-report-table th,
+.driver-report-table td {
+  border-bottom: 1px solid #e1e5e2;
+  padding: 13px 14px;
+  text-align: right;
+}
+
+.driver-report-table th:first-child {
+  text-align: left;
+  width: 43%;
+}
+
+.driver-report-table thead th {
+  color: #5a645e;
+  font-size: 0.76rem;
+}
+
+.driver-report-table tbody th small {
+  color: #747c77;
+  display: block;
+  font-weight: 650;
+  margin-bottom: 3px;
+}
+
+.driver-report-table tbody td {
+  font-variant-numeric: tabular-nums;
+}
+
+.driver-report-table tfoot th,
+.driver-report-table tfoot td {
+  background: #175448;
+  border: 0;
+  color: white;
+  font-weight: 850;
+}
+
 .reports-metrics {
   display: grid;
   gap: 12px;
@@ -9992,6 +10093,9 @@ select:focus {
   .production-outbound-table th:nth-child(n + 3) {
     width: 16%;
   }
+  .driver-report-table {
+    min-width: 0;
+  }
   .reports-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -10074,6 +10178,18 @@ select:focus {
   }
   .production-outbound-table tbody th {
     font-size: 0.78rem;
+  }
+  .driver-report-totals {
+    grid-template-columns: 1fr;
+  }
+  .driver-report-table th,
+  .driver-report-table td {
+    font-size: 0.7rem;
+    overflow-wrap: anywhere;
+    padding: 10px 5px;
+  }
+  .driver-report-table th:first-child {
+    width: 40%;
   }
 }
 

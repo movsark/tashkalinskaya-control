@@ -2522,7 +2522,7 @@ test.describe("B20 browser and HTTP regression", () => {
     await expect(page).toHaveURL(/\/login\?returnTo=%2Freports$/);
   });
 
-  test("manager first sees the list with only the implemented report", async ({ page }) => {
+  test("manager first sees the list with the two implemented reports", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
     await mockReportsApi(
       page,
@@ -2534,8 +2534,11 @@ test.describe("B20 browser and HTTP regression", () => {
     await page.goto("/reports");
     await expect(page.getByRole("heading", { name: "Отчёты", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Список отчётов" })).toBeVisible();
-    await expect(page.getByText("1 отчёт", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 отчёта", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Производство и вывоз/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Вывоз и возвраты по территориям/ }),
+    ).toBeVisible();
     await expect(page.getByText("Движения склада", { exact: true })).not.toBeVisible();
     await expect(page.getByText("Другие отчёты", { exact: true })).not.toBeVisible();
     await expect(page.locator(".report-registry")).not.toHaveAttribute("open");
@@ -2593,6 +2596,45 @@ test.describe("B20 browser and HTTP regression", () => {
     });
     expect(createRequest?.body).not.toHaveProperty("scopeId");
     expect(createRequest?.body).not.toHaveProperty("scopeLabel");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("manager sees outbound, accepted good return and accepted spoilage by driver", async ({
+    page,
+  }) => {
+    let createRequest: { body: unknown; csrf: string | undefined } | null = null;
+    await page.setViewportSize({ height: 844, width: 390 });
+    await mockReportsApi(
+      page,
+      () => [],
+      (request) => {
+        createRequest = request;
+      },
+      true,
+    );
+
+    await page.goto("/reports");
+    await page.getByRole("button", { name: /Вывоз и возвраты по территориям/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "Вывоз и возвраты по территориям" }),
+    ).toBeVisible();
+    await expect(page.getByText("Территория 2", { exact: true })).toBeVisible();
+    await expect(page.getByText("Водитель теста", { exact: true })).toBeVisible();
+    const ryzhik = page.getByRole("row", { name: /ТБ Рыжик/ });
+    await expect(ryzhik).toContainText("12 шт.");
+    await expect(ryzhik).toContainText("3 шт.");
+    await expect(ryzhik).toContainText("2 шт.");
+    await page.getByRole("button", { name: "Выгрузить в Excel" }).click();
+    expect(createRequest).not.toBeNull();
+    expect(createRequest?.csrf).toBe("csrf-e2e-token");
+    expect(createRequest?.body).toMatchObject({
+      format: "XLSX",
+      reportCode: "DRIVER_TERRITORY",
+    });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -3498,6 +3540,13 @@ async function mockReportsApi(
                   personalData: false,
                   title: "Производство и вывоз",
                 },
+                {
+                  code: "DRIVER_TERRITORY",
+                  description: "Вывоз, годный возврат и порча по водителям",
+                  formats: ["XLSX"],
+                  personalData: false,
+                  title: "Вывоз и возвраты по территориям",
+                },
               ]
             : []),
           {
@@ -3533,6 +3582,33 @@ async function mockReportsApi(
           producedQuantity: 12,
         },
         warehouseAsOf: url.searchParams.get("dateTo"),
+      });
+    }
+    if (path.endsWith("/reports/driver-territory")) {
+      return json(route, {
+        dateFrom: url.searchParams.get("dateFrom"),
+        dateTo: url.searchParams.get("dateTo"),
+        generatedAt: "2026-08-11T10:00:00.000Z",
+        rows: [
+          {
+            driverId: "20000000-0000-4000-8000-000000000096",
+            driverName: "Водитель теста",
+            goodReturnQuantity: 3,
+            outboundQuantity: 12,
+            productCode: "TB-015",
+            productId: "20000000-0000-4000-8000-000000000098",
+            productName: "ТБ Рыжик",
+            spoilageQuantity: 2,
+            territoryId: "20000000-0000-4000-8000-000000000097",
+            territoryName: "Территория 2",
+            territoryNumber: 2,
+          },
+        ],
+        totals: {
+          goodReturnQuantity: 3,
+          outboundQuantity: 12,
+          spoilageQuantity: 2,
+        },
       });
     }
     if (path.endsWith("/reports/control")) {

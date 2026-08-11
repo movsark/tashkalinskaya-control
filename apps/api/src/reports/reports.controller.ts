@@ -17,6 +17,7 @@ import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
   ControlCenterQueryDto,
   CreateReportJobDto,
+  DriverTerritoryQueryDto,
   ProductionOutboundQueryDto,
 } from "./report.dto";
 import { ReportsService } from "./reports.service";
@@ -43,6 +44,11 @@ export class ReportsController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.productionOutbound(query.dateFrom, query.dateTo, actor(request));
+  }
+
+  @Get("driver-territory")
+  driverTerritory(@Query() query: DriverTerritoryQueryDto, @Req() request: AuthenticatedRequest) {
+    return this.service.driverTerritory(query.dateFrom, query.dateTo, actor(request));
   }
 
   @Post("jobs")
