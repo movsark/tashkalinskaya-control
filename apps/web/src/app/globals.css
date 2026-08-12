@@ -5607,6 +5607,232 @@ select:focus {
   width: 100%;
 }
 
+.territory-production-controls,
+.manual-plan-adjustment {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  padding: 20px;
+}
+
+.inventory-plan-summary,
+.inventory-plan-deduction {
+  border: 1px solid #d7dfdb;
+  border-radius: 28px;
+  background: #fff;
+  padding: 28px;
+}
+
+.inventory-plan-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.inventory-plan-summary h2,
+.inventory-plan-summary p {
+  margin: 6px 0 0;
+}
+
+.inventory-plan-summary > strong {
+  color: #165548;
+}
+
+.inventory-plan-deduction {
+  scroll-margin-top: 24px;
+}
+
+.inventory-plan-deduction__list {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.inventory-plan-deduction__list > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 54px;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  border: 1px solid #d7dfdb;
+  border-radius: 20px;
+  background: #f7f9f8;
+  padding: 18px;
+  color: #202523;
+  text-align: left;
+}
+
+.inventory-plan-deduction__list > button.is-selected {
+  border-color: #86aa9f;
+  background: #eef5f2;
+}
+
+.inventory-plan-deduction__list span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.inventory-plan-deduction__list small,
+.inventory-plan-deduction__list em {
+  color: #737c78;
+  font-style: normal;
+}
+
+.inventory-plan-deduction__list b {
+  white-space: nowrap;
+  font-size: 20px;
+}
+
+.inventory-plan-deduction__list i {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: #c9cfcc;
+}
+
+.inventory-plan-deduction__list i u {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.16s ease;
+}
+
+.inventory-plan-deduction__list > button.is-selected i {
+  background: #165548;
+}
+
+.inventory-plan-deduction__list > button.is-selected i u {
+  transform: translateX(22px);
+}
+
+.inventory-plan-deduction__submit {
+  width: 100%;
+  margin-top: 20px;
+}
+
+.inventory-plan-deduction__applied {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  border-radius: 18px;
+  background: #eef5f2;
+  padding: 18px;
+  color: #165548;
+}
+
+@media (max-width: 720px) {
+  .inventory-plan-summary,
+  .inventory-plan-deduction__applied {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-plan-deduction__list > button {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .inventory-plan-deduction__list i {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .inventory-plan-deduction__list b {
+    grid-column: 1 / -1;
+  }
+}
+
+.territory-production-controls__list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.territory-production-controls__list button {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--sand);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  justify-content: space-between;
+  padding: 14px;
+  text-align: left;
+}
+
+.territory-production-controls__list button > span {
+  display: grid;
+  gap: 4px;
+}
+
+.territory-production-controls__list small {
+  color: var(--ink-soft);
+}
+
+.territory-production-controls__list i {
+  background: #b7bfbb;
+  border-radius: 999px;
+  display: block;
+  height: 28px;
+  padding: 3px;
+  transition: background 160ms ease;
+  width: 50px;
+}
+
+.territory-production-controls__list i b {
+  background: #fff;
+  border-radius: 50%;
+  display: block;
+  height: 22px;
+  transition: transform 160ms ease;
+  width: 22px;
+}
+
+.territory-production-controls__list .is-enabled i {
+  background: var(--forest);
+}
+
+.territory-production-controls__list .is-enabled i b {
+  transform: translateX(22px);
+}
+
+.territory-production-controls__list .is-disabled {
+  background: #f6eeee;
+}
+
+.manual-plan-adjustment__form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 1fr) 180px auto;
+}
+
+.manual-plan-adjustment__form label {
+  display: grid;
+  gap: 7px;
+  font-weight: 760;
+}
+
+@media (max-width: 760px) {
+  .territory-production-controls__list {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-plan-adjustment__form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dispatch-overview {
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -6217,6 +6443,74 @@ select:focus {
 .production-layout {
   background: radial-gradient(circle at 82% 4%, rgb(220 185 118 / 18%), transparent 28rem), #f7f5ef;
   min-height: 100vh;
+}
+
+.production-plan-change-modal {
+  align-items: center;
+  background: rgba(27, 38, 34, 0.62);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.production-plan-change-modal > section {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 24px 70px rgba(16, 35, 28, 0.28);
+  display: grid;
+  gap: 14px;
+  max-height: min(720px, calc(100vh - 36px));
+  max-width: 640px;
+  padding: 24px;
+  width: 100%;
+}
+
+.production-plan-change-modal h2,
+.production-plan-change-modal p {
+  margin: 0;
+}
+
+.production-plan-change-modal__lines {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  max-height: 330px;
+  overflow-y: auto;
+}
+
+.production-plan-change-modal__lines article {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.production-plan-change-modal__lines article + article {
+  border-top: 1px solid var(--line);
+}
+
+.production-plan-change-modal__lines article > span {
+  display: grid;
+  gap: 3px;
+}
+
+.production-plan-change-modal__lines article > span:last-child {
+  align-items: center;
+  display: flex;
+  white-space: nowrap;
+}
+
+.production-plan-change-modal__lines small,
+.production-plan-change-modal__lines del {
+  color: var(--ink-soft);
+}
+
+.production-plan-change-modal .primary-button {
+  width: 100%;
 }
 
 .production-loading,

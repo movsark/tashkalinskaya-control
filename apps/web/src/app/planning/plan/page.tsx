@@ -2,8 +2,11 @@
 
 import type {
   AuthenticatedUser,
+  InventoryWorkspaceView,
   PlanningSetupView,
+  ProductionPlanView,
   TerritoryDailyNormView,
+  TerritoryProductionStatusView,
 } from "@tashkalinskaya/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,10 +15,16 @@ import { useEffect, useMemo, useState } from "react";
 import { AppBrand } from "../../../components/app-brand";
 import {
   ApiRequestError,
+  applyInventoryToPlan,
+  getInventoryWorkspace,
   getPlanningSetup,
+  getProductionPlan,
   getSession,
   getTerritoryDailyNorm,
+  getTerritoryProductionStatuses,
+  overrideProductionPlan,
   saveTerritoryDailyNorm,
+  setTerritoryProductionStatus,
 } from "../../../lib/api";
 
 export default function ProductionPlanPage() {
@@ -24,6 +33,14 @@ export default function ProductionPlanPage() {
   const [setup, setSetup] = useState<PlanningSetupView | null>(null);
   const [overviewNorms, setOverviewNorms] = useState<Record<string, TerritoryDailyNormView>>({});
   const [overviewLoading, setOverviewLoading] = useState(true);
+  const [territoryStatuses, setTerritoryStatuses] = useState<
+    readonly TerritoryProductionStatusView[]
+  >([]);
+  const [productionPlan, setProductionPlan] = useState<ProductionPlanView | null>(null);
+  const [inventory, setInventory] = useState<InventoryWorkspaceView | null>(null);
+  const [inventorySelection, setInventorySelection] = useState<ReadonlySet<string>>(new Set());
+  const [adjustProductId, setAdjustProductId] = useState("");
+  const [adjustQuantity, setAdjustQuantity] = useState(0);
   const [dispatchDate, setDispatchDate] = useState(tomorrow());
   const [territoryId, setTerritoryId] = useState("");
   const [groupCode, setGroupCode] = useState("");
@@ -75,14 +92,20 @@ export default function ProductionPlanPage() {
     if (territories.length === 0) return;
     let cancelled = false;
     setOverviewLoading(true);
-    Promise.all(
-      territories.map(
-        async (territory) =>
-          [territory.id, await getTerritoryDailyNorm(territory.id, dispatchDate)] as const,
+    Promise.all([
+      Promise.all(
+        territories.map(
+          async (territory) =>
+            [territory.id, await getTerritoryDailyNorm(territory.id, dispatchDate)] as const,
+        ),
       ),
-    )
-      .then((entries) => {
-        if (!cancelled) setOverviewNorms(Object.fromEntries(entries));
+      getTerritoryProductionStatuses(dispatchDate),
+    ])
+      .then(([entries, statuses]) => {
+        if (!cancelled) {
+          setOverviewNorms(Object.fromEntries(entries));
+          setTerritoryStatuses(statuses);
+        }
       })
       .catch((caught) => {
         if (!cancelled) setError(messageOf(caught));
@@ -94,6 +117,32 @@ export default function ProductionPlanPage() {
       cancelled = true;
     };
   }, [dispatchDate, territories]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    Promise.all([getProductionPlan(today()), getInventoryWorkspace(today())])
+      .then(([plan, workspace]) => {
+        setProductionPlan(plan);
+        setInventory(workspace);
+        setInventorySelection(
+          new Set(
+            workspace.session?.lines
+              .filter(
+                (line) =>
+                  (line.actualQuantity ?? 0) > 0 &&
+                  plan.productionLines.some(
+                    (planLine) => planLine.productId === line.productId && planLine.quantity > 0,
+                  ),
+              )
+              .map((line) => line.productId) ?? [],
+          ),
+        );
+      })
+      .catch(() => {
+        setProductionPlan(null);
+        setInventory(null);
+      });
+  }, [isAdmin]);
 
   useEffect(() => {
     if (territoryId === "") {
@@ -135,6 +184,98 @@ export default function ProductionPlanPage() {
       setOverviewNorms((current) => ({ ...current, [selectedTerritory.id]: saved }));
       setQuantities(Object.fromEntries(saved.lines.map((line) => [line.productId, line.quantity])));
       setMessage(`Норма сохранена: территория ${selectedTerritory.number}, ${selectedGroup.name}.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleTerritory(status: TerritoryProductionStatusView) {
+    if (!session) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await setTerritoryProductionStatus(
+        status.territoryId,
+        {
+          effectiveFrom: dispatchDate,
+          enabled: !status.enabled,
+          reason: status.enabled
+            ? `Территория ${status.territoryNumber} временно не выезжает`
+            : `Территория ${status.territoryNumber} снова включена`,
+        },
+        session.csrfToken,
+      );
+      setTerritoryStatuses((current) =>
+        current.map((item) => (item.territoryId === saved.territoryId ? saved : item)),
+      );
+      const enabledNorm = saved.enabled
+        ? await getTerritoryDailyNorm(saved.territoryId, dispatchDate)
+        : null;
+      setOverviewNorms((current) => ({
+        ...current,
+        [saved.territoryId]: enabledNorm ?? {
+          dispatchDate,
+          lines: [],
+          territoryId: saved.territoryId,
+        },
+      }));
+      setMessage(
+        saved.enabled
+          ? `Территория ${saved.territoryNumber} включена в норму.`
+          : `Территория ${saved.territoryNumber} исключена из нормы с ${shortDate(dispatchDate)}.`,
+      );
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyManualAdjustment() {
+    if (!session || !productionPlan || !adjustProductId) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const next = await overrideProductionPlan(
+        productionPlan.productionDate,
+        {
+          productId: adjustProductId,
+          quantity: adjustQuantity,
+          reason: "Ручная корректировка нормы администратором",
+        },
+        session.csrfToken,
+      );
+      setProductionPlan(next);
+      setMessage(`Производственный план обновлён. Версия ${next.version}.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyInventoryDeduction() {
+    if (!session || !productionPlan || !inventory?.session || inventorySelection.size === 0) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const next = await applyInventoryToPlan(
+        inventory.session.id,
+        {
+          idempotencyKey: crypto.randomUUID(),
+          productIds: [...inventorySelection],
+          productionDate: productionPlan.productionDate,
+        },
+        session.csrfToken,
+      );
+      setProductionPlan(next);
+      setInventory(await getInventoryWorkspace(inventory.session.businessDate));
+      setMessage(`Остатки учтены. Производственный план обновлён до версии ${next.version}.`);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -184,6 +325,15 @@ export default function ProductionPlanPage() {
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="logistics-success">{message}</p> : null}
 
+      {isAdmin ? (
+        <TerritoryProductionControls
+          busy={busy}
+          date={dispatchDate}
+          onToggle={(status) => void toggleTerritory(status)}
+          statuses={territoryStatuses}
+        />
+      ) : null}
+
       <DispatchOverview
         dispatchDate={dispatchDate}
         loading={overviewLoading}
@@ -191,6 +341,43 @@ export default function ProductionPlanPage() {
         products={setup?.products ?? []}
         productGroups={setup?.productGroups ?? []}
       />
+
+      {isAdmin && productionPlan ? (
+        <>
+          {inventory?.session && inventory.session.status !== "DRAFT" ? (
+            <InventoryPlanDeduction
+              busy={busy}
+              inventory={inventory}
+              onApply={() => void applyInventoryDeduction()}
+              onToggle={(productId) =>
+                setInventorySelection((current) => {
+                  const next = new Set(current);
+                  if (next.has(productId)) next.delete(productId);
+                  else next.add(productId);
+                  return next;
+                })
+              }
+              plan={productionPlan}
+              selected={inventorySelection}
+            />
+          ) : null}
+          <ManualPlanAdjustment
+            busy={busy}
+            onApply={() => void applyManualAdjustment()}
+            onProductChange={(productId) => {
+              setAdjustProductId(productId);
+              setAdjustQuantity(
+                productionPlan.productionLines.find((line) => line.productId === productId)
+                  ?.quantity ?? 0,
+              );
+            }}
+            onQuantityChange={setAdjustQuantity}
+            plan={productionPlan}
+            productId={adjustProductId}
+            quantity={adjustQuantity}
+          />
+        </>
+      ) : null}
 
       <nav className="territory-norm-breadcrumbs" aria-label="Путь выбора">
         <button
@@ -289,6 +476,209 @@ export default function ProductionPlanPage() {
         </section>
       )}
     </main>
+  );
+}
+
+function InventoryPlanDeduction({
+  busy,
+  inventory,
+  onApply,
+  onToggle,
+  plan,
+  selected,
+}: {
+  busy: boolean;
+  inventory: InventoryWorkspaceView;
+  onApply: () => void;
+  onToggle: (productId: string) => void;
+  plan: ProductionPlanView;
+  selected: ReadonlySet<string>;
+}) {
+  const session = inventory.session!;
+  const planQuantity = new Map(plan.productionLines.map((line) => [line.productId, line.quantity]));
+  const candidates = session.lines.filter(
+    (line) => (line.actualQuantity ?? 0) > 0 && (planQuantity.get(line.productId) ?? 0) > 0,
+  );
+  const selectedQuantity = candidates.reduce(
+    (sum, line) =>
+      selected.has(line.productId)
+        ? sum + Math.min(line.actualQuantity ?? 0, planQuantity.get(line.productId) ?? 0)
+        : sum,
+    0,
+  );
+  return (
+    <section className="inventory-plan-deduction" id="inventory-deduction">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Подтверждено складом</p>
+          <h2>Вычесть остатки из производства</h2>
+          <p>Отключите товар, который сегодня не нужно учитывать.</p>
+        </div>
+        <strong>{selectedQuantity} шт.</strong>
+      </div>
+      {inventory.planDeduction ? (
+        <div className="inventory-plan-deduction__applied">
+          <strong>Остатки уже учтены в версии {inventory.planDeduction.newPlanVersion}</strong>
+          <span>
+            {inventory.planDeduction.selectedProductCount} поз. ·{" "}
+            {inventory.planDeduction.totalDeductedQuantity} шт.
+          </span>
+        </div>
+      ) : candidates.length ? (
+        <>
+          <div className="inventory-plan-deduction__list">
+            {candidates.map((line) => {
+              const oldQuantity = planQuantity.get(line.productId) ?? 0;
+              const actualQuantity = line.actualQuantity ?? 0;
+              const enabled = selected.has(line.productId);
+              return (
+                <button
+                  aria-pressed={enabled}
+                  className={enabled ? "is-selected" : ""}
+                  key={line.productId}
+                  onClick={() => onToggle(line.productId)}
+                  type="button"
+                >
+                  <span>
+                    <small>{line.productCode}</small>
+                    <strong>{line.productName}</strong>
+                    <em>На складе {actualQuantity} шт.</em>
+                  </span>
+                  <b>
+                    {oldQuantity} →{" "}
+                    {enabled ? Math.max(0, oldQuantity - actualQuantity) : oldQuantity}
+                  </b>
+                  <i aria-hidden="true">
+                    <u />
+                  </i>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            className="primary-button inventory-plan-deduction__submit"
+            disabled={busy || selected.size === 0}
+            onClick={onApply}
+            type="button"
+          >
+            {busy ? "Пересчитываем…" : `Вычесть выбранные остатки · ${selectedQuantity} шт.`}
+          </button>
+        </>
+      ) : (
+        <p>В подтверждённом пересчёте нет остатков, которые входят в сегодняшний план.</p>
+      )}
+    </section>
+  );
+}
+
+function TerritoryProductionControls({
+  busy,
+  date,
+  onToggle,
+  statuses,
+}: {
+  busy: boolean;
+  date: string;
+  onToggle: (status: TerritoryProductionStatusView) => void;
+  statuses: readonly TerritoryProductionStatusView[];
+}) {
+  const enabledCount = statuses.filter((status) => status.enabled).length;
+  return (
+    <section className="territory-production-controls">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Управление производственной нормой</p>
+          <h2>Территории на {shortDate(date)}</h2>
+          <p>Выключенная территория не входит в общий объём производства.</p>
+        </div>
+        <strong>
+          {enabledCount} из {statuses.length} включены
+        </strong>
+      </div>
+      <div className="territory-production-controls__list">
+        {statuses.map((status) => (
+          <button
+            aria-pressed={status.enabled}
+            className={status.enabled ? "is-enabled" : "is-disabled"}
+            disabled={busy}
+            key={status.territoryId}
+            onClick={() => onToggle(status)}
+            type="button"
+          >
+            <span>
+              <strong>Территория {status.territoryNumber}</strong>
+              <small>{status.enabled ? "Включена в норму" : "Не выезжает"}</small>
+            </span>
+            <i aria-hidden="true">
+              <b />
+            </i>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ManualPlanAdjustment({
+  busy,
+  onApply,
+  onProductChange,
+  onQuantityChange,
+  plan,
+  productId,
+  quantity,
+}: {
+  busy: boolean;
+  onApply: () => void;
+  onProductChange: (productId: string) => void;
+  onQuantityChange: (quantity: number) => void;
+  plan: ProductionPlanView;
+  productId: string;
+  quantity: number;
+}) {
+  const selected = plan.productionLines.find((line) => line.productId === productId);
+  return (
+    <section className="manual-plan-adjustment">
+      <div className="planning-section-heading">
+        <div>
+          <p className="eyebrow">Ручная корректировка</p>
+          <h2>Изменить норму на сегодня</h2>
+        </div>
+        <span>Версия {plan.version}</span>
+      </div>
+      <div className="manual-plan-adjustment__form">
+        <label>
+          Товар
+          <select value={productId} onChange={(event) => onProductChange(event.target.value)}>
+            <option value="">Выберите товар</option>
+            {plan.productionLines.map((line) => (
+              <option key={line.productId} value={line.productId}>
+                {line.productName} · сейчас {line.quantity} шт.
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Новое количество
+          <input
+            disabled={!productId}
+            inputMode="numeric"
+            min="0"
+            onChange={(event) => onQuantityChange(Math.max(0, Number(event.target.value) || 0))}
+            type="number"
+            value={quantity}
+          />
+        </label>
+        <button
+          className="primary-button"
+          disabled={busy || !selected || selected.quantity === quantity}
+          onClick={onApply}
+          type="button"
+        >
+          {busy ? "Сохраняем…" : "Применить изменение"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -463,6 +853,15 @@ function tomorrow(): string {
     ),
   );
   return value.toISOString().slice(0, 10);
+}
+
+function today(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).format(new Date());
 }
 
 function productCountLabel(value: number): string {

@@ -399,8 +399,13 @@ export class CatalogRepository {
         unit: string;
         version: number;
       }>(
-        `insert into catalog.product (id,product_code,name,category_id,unit_code,status)
-         select $1,$2,$3,c.id,'PCS','ACTIVE' from catalog.category c where c.code=$4 and c.status='ACTIVE'
+        `insert into catalog.product (
+           id,product_code,name,category_id,unit_code,primary_workshop_id,status
+         )
+         select $1,$2,$3,c.id,'PCS',d.id,'ACTIVE'
+         from catalog.category c
+         join identity.department d on d.code='MVP-PRODUCTION' and d.status='ACTIVE'
+         where c.code=$4 and c.status='ACTIVE'
          returning id,product_code,name,(select name from catalog.category where id=category_id) category,'шт' unit,version`,
         [productId, productCode, input.name, input.categoryCode],
       );
@@ -651,7 +656,15 @@ async function applyProduct(
         case when $8::boolean then 'ACTIVE' else 'ARCHIVED' end
       from catalog.category c
       join catalog.unit u on u.name = $5 and u.status = 'ACTIVE'
-      left join identity.department d on d.code = $6 and d.status = 'ACTIVE'
+      left join identity.department d
+        on d.code = coalesce(
+          $6,
+          case when c.code in (
+            'BASIC_CAKES', 'PREMIUM_CAKES', 'PIES_AND_PASTRIES',
+            'DESSERTS', 'DRY_BAKERY'
+          ) then 'MVP-PRODUCTION' end
+        )
+       and d.status = 'ACTIVE'
       where c.name = $4 and c.status = 'ACTIVE'
       on conflict (product_code) do update set
         name = excluded.name,

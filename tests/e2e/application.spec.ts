@@ -2010,6 +2010,8 @@ test.describe("B20 browser and HTTP regression", () => {
   }) => {
     const productId = "20000000-0000-4000-8000-000000000100";
     const dryProductId = "20000000-0000-4000-8000-000000000107";
+    let inventoryApplied = false;
+    let inventoryApplyBody: Record<string, unknown> | null = null;
     const territories = Array.from({ length: 9 }, (_, index) => ({
       description: null,
       id: `20000000-0000-4000-8000-${String(index + 110).padStart(12, "0")}`,
@@ -2125,6 +2127,19 @@ test.describe("B20 browser and HTTP regression", () => {
         territoryId: territories[2].id,
       }),
     );
+    await page.route("**/api/v1/planning/territory-production-status?*", (route) =>
+      json(
+        route,
+        territories.map((territory) => ({
+          effectiveFrom: "2026-08-01",
+          enabled: true,
+          territoryId: territory.id,
+          territoryNumber: territory.number,
+          updatedAt: null,
+          version: 0,
+        })),
+      ),
+    );
     await page.route("**/api/v1/planning/requests", (route) =>
       json(route, [
         {
@@ -2209,6 +2224,95 @@ test.describe("B20 browser and HTTP regression", () => {
         warnings: ["INVENTORY_NOT_CONFIRMED"],
       }),
     );
+    await page.route("**/api/v1/inventory/workspace?*", (route) =>
+      json(route, {
+        discrepancies: [],
+        movementSources: [],
+        planDeduction: inventoryApplied
+          ? {
+              appliedAt: "2026-08-12T09:15:00.000Z",
+              appliedByName: "Администратор плана",
+              id: "20000000-0000-4000-8000-000000000198",
+              newPlanId: "20000000-0000-4000-8000-000000000199",
+              newPlanVersion: 3,
+              productionDate: "2026-08-05",
+              selectedProductCount: 1,
+              totalDeductedQuantity: 4,
+            }
+          : null,
+        serverTime: "2026-08-12T09:10:00.000Z",
+        session: {
+          businessDate: "2026-08-12",
+          countedLines: 1,
+          discrepancyCount: 0,
+          dueAt: "2026-08-12T10:00:00.000Z",
+          id: "20000000-0000-4000-8000-000000000197",
+          isCurrent: true,
+          lines: [
+            {
+              actualQuantity: 4,
+              barcodes: [],
+              countedAt: "2026-08-12T09:00:00.000Z",
+              countedByName: "Кладовщик",
+              differenceQuantity: 0,
+              id: "20000000-0000-4000-8000-000000000196",
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              snapshotBlocked: 0,
+              snapshotFree: 4,
+              snapshotReservedLoading: 0,
+              snapshotReservedStore: 0,
+              snapshotReturnAllocated: 0,
+              snapshotReturnPool: 0,
+              snapshotReturnReserved: 0,
+              systemQuantity: 4,
+              version: 2,
+            },
+          ],
+          openedAt: "2026-08-12T08:45:00.000Z",
+          openedByName: "Кладовщик",
+          openReason: null,
+          postSnapshotDocumentCount: 0,
+          snapshotAt: "2026-08-12T08:45:00.000Z",
+          snapshotHash: "inventory-hash",
+          status: "RESOLVED",
+          submittedAt: "2026-08-12T09:05:00.000Z",
+          submittedByName: "Кладовщик",
+          totalLines: 1,
+          version: 3,
+          versionNo: 1,
+        },
+        versions: [],
+        warehouseName: "Основной склад",
+      }),
+    );
+    await page.route("**/api/v1/inventory/sessions/*/apply-to-plan", async (route) => {
+      inventoryApplyBody = route.request().postDataJSON() as Record<string, unknown>;
+      inventoryApplied = true;
+      return json(route, {
+        attempts: 1,
+        demandLines: [],
+        inputHash: "abcdef1234567890",
+        planId: "20000000-0000-4000-8000-000000000199",
+        productionDate: "2026-08-05",
+        productionLines: [
+          {
+            productCode: "T-001",
+            productId,
+            productName: "Торт тестовый",
+            quantity: 8,
+            workshopId: "20000000-0000-4000-8000-000000000105",
+            workshopName: "Основной цех",
+          },
+        ],
+        publishedAt: "2026-08-12T09:15:00.000Z",
+        resultHash: "inventory-result-hash",
+        status: "PUBLISHED",
+        version: 3,
+        warnings: [],
+      });
+    });
 
     await page.goto("/planning");
     await expect(page.locator(".planning-requester-comment")).toContainText(
@@ -2241,6 +2345,17 @@ test.describe("B20 browser and HTTP regression", () => {
         exact: true,
       }),
     ).toBeVisible();
+    const deduction = page.locator("#inventory-deduction");
+    await expect(
+      deduction.getByRole("heading", { name: "Вычесть остатки из производства" }),
+    ).toBeVisible();
+    await expect(deduction.getByText("12 → 8")).toBeVisible();
+    await deduction.getByRole("button", { name: /Вычесть выбранные остатки/u }).click();
+    await expect(deduction).toContainText("Остатки уже учтены в версии 3");
+    expect(inventoryApplyBody).toMatchObject({
+      productIds: [productId],
+      productionDate: "2026-08-05",
+    });
     await expect(page.getByRole("heading", { name: "По водителям" })).toHaveCount(0);
     await expect(page.getByText("План производства по цехам", { exact: true })).toHaveCount(0);
     const overviewDryGroup = page
@@ -2254,7 +2369,10 @@ test.describe("B20 browser and HTTP regression", () => {
       }),
     ).toBeVisible();
     await expect(page.locator(".territory-norm-grid button")).toHaveCount(9);
-    await page.getByRole("button", { name: /Территория 3/ }).click();
+    await page
+      .locator(".territory-norm-grid")
+      .getByRole("button", { name: /Территория 3/ })
+      .click();
     await expect(page.locator(".territory-product-group-grid button")).toHaveCount(5);
     await page
       .locator(".territory-product-group-grid")
@@ -2324,6 +2442,19 @@ test.describe("B20 browser and HTTP regression", () => {
         availableTransferWorkshops: [],
         employees: [],
         normDemand: {
+          change: {
+            changedAt: "2026-08-09T10:15:00.000Z",
+            id: "20000000-0000-4000-8000-000000000193",
+            lines: [
+              {
+                newQuantity: 12,
+                oldQuantity: 15,
+                productCode: "TB-001",
+                productId: "20000000-0000-4000-8000-000000000184",
+                productName: "Торт тестовый",
+              },
+            ],
+          },
           dispatchDates: ["2026-08-10"],
           lines: [
             {
@@ -2386,6 +2517,9 @@ test.describe("B20 browser and HTTP regression", () => {
               workshopName: "Цех сухой выпечки",
             },
           ],
+          planId: "20000000-0000-4000-8000-000000000193",
+          planVersion: 2,
+          publishedAt: "2026-08-09T10:15:00.000Z",
           source: "NEXT_DAY_FALLBACK",
         },
         productionDate: "2026-08-09",
@@ -2501,6 +2635,15 @@ test.describe("B20 browser and HTTP regression", () => {
     );
 
     await page.goto("/production");
+
+    const planChangeDialog = page.getByRole("dialog");
+    await expect(planChangeDialog).toContainText("Норма изменилась");
+    await expect(planChangeDialog).toContainText("15");
+    await expect(planChangeDialog).toContainText("12 шт.");
+    await planChangeDialog
+      .getByRole("button", { name: "Понятно, открыть обновлённый план" })
+      .click();
+    await expect(planChangeDialog).toHaveCount(0);
 
     await expect(page.getByLabel("Производственный день")).toContainText("Сегодня");
     await expect(page.getByLabel("Производственная дата")).toHaveCount(0);

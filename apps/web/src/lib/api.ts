@@ -62,6 +62,7 @@ import type {
   RoleAssignmentView,
   TerminalSessionView,
   TerritoryDailyNormView,
+  TerritoryProductionStatusView,
   TerritoryDefaultAssignmentView,
   TerritoryNormWeekView,
   TerritoryRunView,
@@ -1059,6 +1060,24 @@ export async function saveTerritoryDailyNorm(
   });
 }
 
+export async function getTerritoryProductionStatuses(
+  effectiveDate: string,
+): Promise<readonly TerritoryProductionStatusView[]> {
+  return request(`/planning/territory-production-status?date=${encodeURIComponent(effectiveDate)}`);
+}
+
+export async function setTerritoryProductionStatus(
+  territoryId: string,
+  input: { effectiveFrom: string; enabled: boolean; reason: string },
+  csrfToken: string,
+): Promise<TerritoryProductionStatusView> {
+  return request(`/planning/territory-production-status/${territoryId}`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
 export async function listNormChangeRequests(): Promise<readonly NormChangeRequestView[]> {
   return request("/planning/requests");
 }
@@ -2015,6 +2034,18 @@ export async function submitInventory(
   csrfToken: string,
 ): Promise<{ discrepancyCount: number; sessionId: string; status: string }> {
   return request(`/inventory/sessions/${sessionId}/submit`, {
+    body: JSON.stringify(input),
+    headers: { "x-csrf-token": csrfToken },
+    method: "POST",
+  });
+}
+
+export async function applyInventoryToPlan(
+  sessionId: string,
+  input: { idempotencyKey: string; productIds: readonly string[]; productionDate: string },
+  csrfToken: string,
+): Promise<ProductionPlanView> {
+  return request(`/inventory/sessions/${sessionId}/apply-to-plan`, {
     body: JSON.stringify(input),
     headers: { "x-csrf-token": csrfToken },
     method: "POST",

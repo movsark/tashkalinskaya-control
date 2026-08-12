@@ -11,12 +11,14 @@ import type {
   NormChangeRequestView,
   PlanningSetupView,
   TerritoryDailyNormView,
+  TerritoryProductionStatusView,
   TerritoryNormWeekView,
   WeeklyNormView,
 } from "@tashkalinskaya/contracts";
 import {
   currentPublishedPlan,
   overridePublishedPlan,
+  overridePublishedPlanBatch,
   publishScheduledPlan,
   type PlanRunResult,
   type PublishedPlanView,
@@ -82,7 +84,16 @@ interface SaveTerritoryDailyNormCommand {
   readonly dispatchDate: string;
   readonly lines: ReadonlyArray<{ productId: string; quantity: number }>;
   readonly reason: string;
+  readonly replaceExisting?: boolean;
   readonly territoryId: string;
+}
+
+interface AppliedDailyNormChange {
+  readonly dispatchDate: string;
+  readonly from: number;
+  readonly productId: string;
+  readonly territoryId: string;
+  readonly to: number;
 }
 
 const requestSelect = `
@@ -219,23 +230,371 @@ export class PlanningRepository {
     command: SaveTerritoryDailyNormCommand,
   ): Promise<TerritoryDailyNormView> {
     await this.database.transaction(async (client) => {
-      await this.saveTerritoryDailyNormWithClient(client, command);
+      const changes = await this.saveTerritoryDailyNormWithClient(client, command);
+      await this.adjustPublishedPlansForDailyNormChanges(client, command, changes);
     });
     return this.getTerritoryDailyNorm(command.territoryId, command.dispatchDate);
   }
 
   async saveTerritoryDailyNorms(commands: readonly SaveTerritoryDailyNormCommand[]): Promise<void> {
     await this.database.transaction(async (client) => {
+      const changes: AppliedDailyNormChange[] = [];
       for (const command of commands) {
-        await this.saveTerritoryDailyNormWithClient(client, command);
+        changes.push(...(await this.saveTerritoryDailyNormWithClient(client, command)));
+      }
+      const first = commands[0];
+      if (first !== undefined) {
+        await this.adjustPublishedPlansForDailyNormChanges(client, first, changes);
       }
     });
+  }
+
+  private async adjustPublishedPlansForDailyNormChanges(
+    client: PoolClient,
+    command: Pick<SaveTerritoryDailyNormCommand, "actorEmployeeId" | "correlationId" | "reason">,
+    changes: readonly AppliedDailyNormChange[],
+  ): Promise<void> {
+    if (changes.length === 0) return;
+    const deltas = await client.query<{
+      delta: number;
+      plan_id: string;
+      product_id: string;
+      production_date: string;
+    }>(
+      `with input as (
+         select * from jsonb_to_recordset($1::jsonb) as i(
+           territory_id uuid, dispatch_date date, product_id uuid, delta integer
+         )
+       ), candidate_links as (
+         select i.*, l.production_date, v.version_number,
+                (l.territory_id is not null) as specific
+         from input i
+         join planning.production_dispatch_link l
+           on l.dispatch_date = i.dispatch_date
+          and (l.territory_id = i.territory_id or l.territory_id is null)
+         join planning.calendar_version v on v.id = l.calendar_version_id
+         left join lateral (
+           select enabled from planning.territory_production_status s
+           where s.territory_id = i.territory_id
+             and s.effective_from <= i.dispatch_date
+           order by s.effective_from desc, s.version desc limit 1
+         ) territory_state on true
+         where coalesce(territory_state.enabled, true)
+       ), effective_links as (
+         select distinct on (territory_id, dispatch_date, product_id)
+                territory_id, dispatch_date, product_id, delta, production_date
+         from candidate_links
+         order by territory_id, dispatch_date, product_id, specific desc, version_number desc
+       ), eligible as (
+         select e.* from effective_links e
+         where not exists (
+           select 1 from planning.one_off_norm_override o
+           where o.territory_id = e.territory_id
+             and o.dispatch_date = e.dispatch_date
+             and o.product_id = e.product_id and o.is_current
+         )
+       )
+       select p.id as plan_id, p.production_date::text, e.product_id,
+              sum(e.delta)::integer as delta
+       from eligible e
+       join planning.production_plan p
+         on p.production_date = e.production_date and p.is_current
+       group by p.id, p.production_date, e.product_id
+       having sum(e.delta) <> 0`,
+      [
+        JSON.stringify(
+          changes.map((change) => ({
+            delta: change.to - change.from,
+            dispatch_date: change.dispatchDate,
+            product_id: change.productId,
+            territory_id: change.territoryId,
+          })),
+        ),
+      ],
+    );
+    const byProductionDate = new Map<string, typeof deltas.rows>();
+    for (const delta of deltas.rows) {
+      const current = byProductionDate.get(delta.production_date) ?? [];
+      current.push(delta);
+      byProductionDate.set(delta.production_date, current);
+    }
+    for (const [productionDate, planDeltas] of byProductionDate) {
+      const currentLines = await client.query<{ product_id: string; quantity: number }>(
+        `select product_id, sum(quantity)::integer as quantity
+         from planning.production_plan_line
+         where plan_id = $1 group by product_id`,
+        [planDeltas[0]!.plan_id],
+      );
+      const currentByProduct = new Map(
+        currentLines.rows.map((line) => [line.product_id, line.quantity]),
+      );
+      const planChanges = planDeltas
+        .map((delta) => ({
+          newQuantity: Math.max(0, (currentByProduct.get(delta.product_id) ?? 0) + delta.delta),
+          productId: delta.product_id,
+        }))
+        .filter((change) => change.newQuantity !== (currentByProduct.get(change.productId) ?? 0));
+      if (planChanges.length === 0) continue;
+      await overridePublishedPlanBatch(client, {
+        actorEmployeeId: command.actorEmployeeId,
+        changes: planChanges,
+        correlationId: command.correlationId,
+        idempotencyKey: `daily-norm:${command.correlationId}:${productionDate}`,
+        productionDate,
+        reason: command.reason,
+      });
+    }
+  }
+
+  async getTerritoryProductionStatuses(
+    effectiveDate: string,
+  ): Promise<readonly TerritoryProductionStatusView[]> {
+    const result = await this.database.query<{
+      effective_from: string | null;
+      enabled: boolean | null;
+      territory_id: string;
+      territory_number: number;
+      version: number | null;
+    }>(
+      `select t.id as territory_id, t.territory_number,
+              coalesce(s.enabled, true) as enabled,
+              s.effective_from::text, coalesce(s.version, 0) as version
+       from logistics.territory t
+       left join lateral (
+         select enabled, effective_from, version
+         from planning.territory_production_status
+         where territory_id = t.id and effective_from <= $1::date
+         order by effective_from desc, version desc
+         limit 1
+       ) s on true
+       where t.status = 'ACTIVE'
+       order by t.sort_order, t.territory_number`,
+      [effectiveDate],
+    );
+    return result.rows.map((row) => ({
+      effectiveFrom: row.effective_from ?? effectiveDate,
+      enabled: row.enabled ?? true,
+      territoryId: row.territory_id,
+      territoryNumber: row.territory_number,
+      version: row.version ?? 0,
+    }));
+  }
+
+  async setTerritoryProductionStatus(command: {
+    actorEmployeeId: string;
+    correlationId: string;
+    effectiveFrom: string;
+    enabled: boolean;
+    reason: string;
+    territoryId: string;
+  }): Promise<TerritoryProductionStatusView> {
+    await this.database.transaction(async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `planning:territory-production-status:${command.territoryId}`,
+      ]);
+      const territory = await client.query<{ territory_number: number }>(
+        `select territory_number from logistics.territory
+         where id = $1 and status = 'ACTIVE'`,
+        [command.territoryId],
+      );
+      if (territory.rows[0] === undefined) {
+        throw new NotFoundException("Активная территория не найдена");
+      }
+      const current = await client.query<{ enabled: boolean; version: number }>(
+        `select enabled, version from planning.territory_production_status
+         where territory_id = $1 and effective_from <= $2::date
+         order by effective_from desc, version desc limit 1`,
+        [command.territoryId, command.effectiveFrom],
+      );
+      if ((current.rows[0]?.enabled ?? true) === command.enabled) return;
+      const next = await client.query<{ version: number }>(
+        `select coalesce(max(version), 0) + 1 as version
+         from planning.territory_production_status where territory_id = $1`,
+        [command.territoryId],
+      );
+      const statusId = randomUUID();
+      await client.query(
+        `insert into planning.territory_production_status (
+           id, territory_id, effective_from, enabled, version, reason,
+           created_by, correlation_id
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          statusId,
+          command.territoryId,
+          command.effectiveFrom,
+          command.enabled,
+          next.rows[0]!.version,
+          command.reason,
+          command.actorEmployeeId,
+          command.correlationId,
+        ],
+      );
+      await insertAudit(
+        client,
+        command,
+        command.enabled ? "TERRITORY_PRODUCTION_ENABLED" : "TERRITORY_PRODUCTION_DISABLED",
+        "TERRITORY_PRODUCTION_STATUS",
+        statusId,
+        {
+          effectiveFrom: command.effectiveFrom,
+          enabled: command.enabled,
+          reason: command.reason,
+          territoryId: command.territoryId,
+        },
+      );
+      await insertOutbox(client, "planning.territory-production-status.changed", statusId, {
+        effectiveFrom: command.effectiveFrom,
+        enabled: command.enabled,
+        territoryId: command.territoryId,
+      });
+      await this.adjustPublishedPlanForTerritoryStatus(client, {
+        ...command,
+        statusId,
+      });
+    });
+    const statuses = await this.getTerritoryProductionStatuses(command.effectiveFrom);
+    return statuses.find((status) => status.territoryId === command.territoryId)!;
+  }
+
+  private async adjustPublishedPlanForTerritoryStatus(
+    client: PoolClient,
+    command: {
+      actorEmployeeId: string;
+      correlationId: string;
+      effectiveFrom: string;
+      enabled: boolean;
+      reason: string;
+      statusId: string;
+      territoryId: string;
+    },
+  ): Promise<void> {
+    const currentPlan = await client.query<{
+      id: string;
+      production_date: string;
+      snapshot_id: string;
+    }>(
+      `with candidate_links as (
+         select l.production_date, v.version_number,
+                (l.territory_id is not null) as specific
+         from planning.production_dispatch_link l
+         join planning.calendar_version v on v.id = l.calendar_version_id
+         where l.dispatch_date = $2::date
+           and (l.territory_id = $1 or l.territory_id is null)
+       ), effective_link as (
+         select production_date
+         from candidate_links
+         order by specific desc, version_number desc
+         limit 1
+       )
+       select p.id, p.production_date::text, p.snapshot_id
+       from effective_link l
+       join planning.production_plan p on p.production_date = l.production_date
+       where p.is_current
+       for update`,
+      [command.territoryId, command.effectiveFrom],
+    );
+    const plan = currentPlan.rows[0];
+    if (plan === undefined) return;
+
+    const snapshotContribution = await client.query<{
+      product_id: string;
+      quantity: number;
+    }>(
+      `select product_id, sum(new_production)::integer as quantity
+       from planning.plan_demand_line
+       where snapshot_id = $1 and territory_id = $2 and dispatch_date = $3::date
+       group by product_id
+       having sum(new_production) > 0`,
+      [plan.snapshot_id, command.territoryId, command.effectiveFrom],
+    );
+
+    let deltas = snapshotContribution.rows;
+    if (command.enabled) {
+      const previousDisabled = await client.query<{ id: string }>(
+        `select id from planning.territory_production_status
+         where territory_id = $1 and enabled = false and id <> $2
+           and effective_from <= $3::date
+         order by effective_from desc, version desc limit 1`,
+        [command.territoryId, command.statusId, command.effectiveFrom],
+      );
+      const previousAdjustment =
+        previousDisabled.rows[0] === undefined
+          ? { rows: [] as Array<{ changes: Array<{ productId: string; quantity: number }> }> }
+          : await client.query<{ changes: Array<{ productId: string; quantity: number }> }>(
+              `select changes from planning.territory_plan_adjustment
+               where territory_status_id = $1 and direction = 'SUBTRACT'`,
+              [previousDisabled.rows[0].id],
+            );
+      if (previousAdjustment.rows[0] !== undefined) {
+        deltas = previousAdjustment.rows[0].changes.map((change) => ({
+          product_id: change.productId,
+          quantity: change.quantity,
+        }));
+      } else if (snapshotContribution.rowCount !== 0) {
+        // The plan still contains this territory (for example, a switch was
+        // tested before automatic plan adjustment existed), so adding would
+        // duplicate the norm.
+        return;
+      } else {
+        const effectiveNorm = await client.query<{ product_id: string; quantity: number }>(
+          `select product_id, sum(quantity)::integer as quantity
+           from planning.effective_territory_norms($2::date, array[$1::uuid])
+           group by product_id having sum(quantity) > 0`,
+          [command.territoryId, command.effectiveFrom],
+        );
+        deltas = effectiveNorm.rows;
+      }
+    }
+    if (deltas.length === 0) return;
+
+    const currentLines = await client.query<{ product_id: string; quantity: number }>(
+      `select product_id, sum(quantity)::integer as quantity
+       from planning.production_plan_line where plan_id = $1 group by product_id`,
+      [plan.id],
+    );
+    const currentByProduct = new Map(
+      currentLines.rows.map((line) => [line.product_id, line.quantity]),
+    );
+    const changes = deltas.map((delta) => ({
+      newQuantity: command.enabled
+        ? (currentByProduct.get(delta.product_id) ?? 0) + delta.quantity
+        : Math.max(0, (currentByProduct.get(delta.product_id) ?? 0) - delta.quantity),
+      productId: delta.product_id,
+    }));
+    const changed = changes.filter(
+      (change) => change.newQuantity !== (currentByProduct.get(change.productId) ?? 0),
+    );
+    if (changed.length === 0) return;
+
+    const nextPlan = await overridePublishedPlanBatch(client, {
+      actorEmployeeId: command.actorEmployeeId,
+      changes: changed,
+      correlationId: command.correlationId,
+      idempotencyKey: `territory-status:${command.statusId}`,
+      productionDate: plan.production_date,
+      reason: command.reason,
+    });
+    await client.query(
+      `insert into planning.territory_plan_adjustment (
+         id, territory_status_id, previous_plan_id, new_plan_id, direction, changes
+       ) values ($1, $2, $3, $4, $5, $6)`,
+      [
+        randomUUID(),
+        command.statusId,
+        plan.id,
+        nextPlan.planId,
+        command.enabled ? "ADD" : "SUBTRACT",
+        JSON.stringify(
+          deltas.map((delta) => ({ productId: delta.product_id, quantity: delta.quantity })),
+        ),
+      ],
+    );
   }
 
   private async saveTerritoryDailyNormWithClient(
     client: PoolClient,
     command: SaveTerritoryDailyNormCommand,
-  ): Promise<void> {
+  ): Promise<AppliedDailyNormChange[]> {
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [
       `planning:territory-daily-norm:${command.territoryId}:${command.dispatchDate}`,
     ]);
@@ -261,13 +620,20 @@ export class PlanningRepository {
       `select id, product_id, quantity, version
        from planning.territory_daily_norm
        where territory_id = $1 and dispatch_date = $2
-         and product_id = any($3::uuid[]) and is_current
+         and ($4::boolean or product_id = any($3::uuid[])) and is_current
        for update`,
-      [command.territoryId, command.dispatchDate, productIds],
+      [command.territoryId, command.dispatchDate, productIds, command.replaceExisting === true],
     );
     const currentByProduct = new Map(current.rows.map((row) => [row.product_id, row]));
     const changes: Array<{ from: number; productId: string; to: number }> = [];
-    for (const line of command.lines) {
+    const lines = command.replaceExisting
+      ? command.lines.concat(
+          current.rows
+            .filter((row) => !productIds.includes(row.product_id))
+            .map((row) => ({ productId: row.product_id, quantity: 0 })),
+        )
+      : command.lines;
+    for (const line of lines) {
       const previous = currentByProduct.get(line.productId);
       if (previous?.quantity === line.quantity) continue;
       if (previous !== undefined) {
@@ -315,6 +681,11 @@ export class PlanningRepository {
         territoryId: command.territoryId,
       });
     }
+    return changes.map((change) => ({
+      ...change,
+      dispatchDate: command.dispatchDate,
+      territoryId: command.territoryId,
+    }));
   }
 
   async canDriverViewTerritory(
