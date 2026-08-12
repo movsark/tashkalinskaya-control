@@ -198,6 +198,76 @@ describe.runIf(hasDatabase)("InventoryRepository with PostgreSQL", () => {
     expect(balance.rows[0]?.quantity).toBe(18);
   });
 
+  it("subtracts selected confirmed stock in one immutable plan version", async () => {
+    const runId = randomUUID();
+    const snapshotId = randomUUID();
+    const planId = randomUUID();
+    await database.query(
+      `insert into planning.plan_run(
+         id,production_date,trigger_source,status,correlation_id,created_by
+       ) values($1,$2,'ADMIN_RETRY','PUBLISHED',$3,$4)`,
+      [runId, businessDate, randomUUID(), adminId],
+    );
+    await database.query(
+      `insert into planning.plan_input_snapshot(
+         id,plan_run_id,production_date,engine_version,input_hash,payload,warnings
+       ) values($1,$2,$3,'inventory-test',$4,'{}','[]')`,
+      [snapshotId, runId, businessDate, "a".repeat(64)],
+    );
+    await database.query(
+      `insert into planning.production_plan(
+         id,production_date,version,status,source_run_id,snapshot_id,result_hash,created_by,correlation_id
+       ) values($1,$2,1,'PUBLISHED',$3,$4,$5,$6,$7)`,
+      [planId, businessDate, runId, snapshotId, "b".repeat(64), adminId, randomUUID()],
+    );
+    await database.query(
+      `insert into planning.production_plan_line(id,plan_id,product_id,workshop_id,quantity)
+       values($1,$2,$3,$4,30)`,
+      [randomUUID(), planId, productId, departmentId],
+    );
+    await database.query(`update planning.plan_run set snapshot_id=$2,plan_id=$3 where id=$1`, [
+      runId,
+      snapshotId,
+      planId,
+    ]);
+
+    const key = `inventory-plan-${seed}`;
+    const applied = await repository.applyToPlan({
+      actor: admin,
+      correlationId: randomUUID(),
+      idempotencyKey: key,
+      productIds: [productId],
+      productionDate: businessDate,
+      sessionId,
+    });
+    const repeated = await repository.applyToPlan({
+      actor: admin,
+      correlationId: randomUUID(),
+      idempotencyKey: key,
+      productIds: [productId],
+      productionDate: businessDate,
+      sessionId,
+    });
+    expect(applied).toMatchObject({ version: 2 });
+    expect(repeated.planId).toBe(applied.planId);
+    expect(applied.productionLines.find((line) => line.productId === productId)?.quantity).toBe(12);
+    expect((await repository.workspace(businessDate, admin)).planDeduction).toMatchObject({
+      newPlanVersion: 2,
+      selectedProductCount: 1,
+      totalDeductedQuantity: 18,
+    });
+    await expect(
+      repository.applyToPlan({
+        actor: admin,
+        correlationId: randomUUID(),
+        idempotencyKey: `inventory-plan-again-${seed}`,
+        productIds: [productId],
+        productionDate: businessDate,
+        sessionId,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
   it("allows only an administrator to open a late version", async () => {
     await expect(
       repository.open({

@@ -580,6 +580,14 @@ export interface TerritoryDailyNormView {
   readonly territoryId: string;
 }
 
+export interface TerritoryProductionStatusView {
+  readonly effectiveFrom: string;
+  readonly enabled: boolean;
+  readonly territoryId: string;
+  readonly territoryNumber: number;
+  readonly version: number;
+}
+
 export interface TerritoryNormWeekView {
   readonly calendar: readonly CalendarLinkView[];
   readonly norms: readonly WeeklyNormView[];
@@ -836,8 +844,22 @@ export interface ProductionNormDemandLineView {
 }
 
 export interface ProductionNormDemandView {
+  readonly change: {
+    readonly changedAt: string;
+    readonly id: string;
+    readonly lines: readonly {
+      readonly newQuantity: number;
+      readonly oldQuantity: number;
+      readonly productCode: string;
+      readonly productId: string;
+      readonly productName: string;
+    }[];
+  } | null;
   readonly dispatchDates: readonly string[];
   readonly lines: readonly ProductionNormDemandLineView[];
+  readonly planId: string | null;
+  readonly planVersion: number | null;
+  readonly publishedAt: string | null;
   readonly source: "CALENDAR" | "NEXT_DAY_FALLBACK";
 }
 
@@ -1022,11 +1044,23 @@ export interface InventorySessionView {
 
 export interface InventoryWorkspaceView {
   readonly discrepancies: readonly InventoryDiscrepancyView[];
+  readonly planDeduction: InventoryPlanDeductionView | null;
   readonly movementSources: readonly InventoryMovementSourceView[];
   readonly serverTime: string;
   readonly session: InventorySessionView | null;
   readonly versions: readonly Omit<InventorySessionView, "lines">[];
   readonly warehouseName: string;
+}
+
+export interface InventoryPlanDeductionView {
+  readonly appliedAt: string;
+  readonly appliedByName: string;
+  readonly id: string;
+  readonly newPlanId: string;
+  readonly newPlanVersion: number;
+  readonly productionDate: string;
+  readonly selectedProductCount: number;
+  readonly totalDeductedQuantity: number;
 }
 
 export interface LoadingPlanSnapshotView {

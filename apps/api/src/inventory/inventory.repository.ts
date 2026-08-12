@@ -14,6 +14,7 @@ import type {
   RoleAssignmentView,
   RoleCode,
 } from "@tashkalinskaya/contracts";
+import { overridePublishedPlanBatch, type PublishedPlanView } from "@tashkalinskaya/database";
 import type { PoolClient } from "pg";
 
 import { DatabaseService } from "../database.service";
@@ -319,6 +320,152 @@ export class InventoryRepository {
     });
   }
 
+  applyToPlan(command: {
+    actor: InventoryActor;
+    correlationId: string;
+    idempotencyKey: string;
+    productIds: readonly string[];
+    productionDate: string;
+    sessionId: string;
+  }): Promise<PublishedPlanView> {
+    assertRole(command.actor, ["ADMIN"]);
+    return this.database.transaction(async (client) => {
+      const selectedIds = [...new Set(command.productIds)];
+      if (selectedIds.length !== command.productIds.length)
+        throw new ConflictException("Один товар выбран несколько раз");
+
+      const repeated = await client.query<{ new_plan_id: string }>(
+        `select new_plan_id from planning.inventory_plan_deduction
+         where applied_by=$1 and idempotency_key=$2`,
+        [command.actor.employeeId, command.idempotencyKey],
+      );
+      if (repeated.rows[0]) {
+        const plan = await client.query<{ production_date: string }>(
+          `select production_date::text from planning.production_plan where id=$1`,
+          [repeated.rows[0].new_plan_id],
+        );
+        return overridePublishedPlanBatch(client, {
+          actorEmployeeId: command.actor.employeeId,
+          changes: [],
+          correlationId: command.correlationId,
+          idempotencyKey: command.idempotencyKey,
+          productionDate: plan.rows[0]!.production_date,
+          reason: "Повторное чтение применения инвентаризации",
+        });
+      }
+
+      const session = await client.query<{
+        business_date: string;
+        status: InventorySessionView["status"];
+      }>(
+        `select business_date::text,status from warehouse.inventory_session
+         where id=$1 and is_current for update`,
+        [command.sessionId],
+      );
+      const inventory = session.rows[0];
+      if (!inventory) throw new NotFoundException("Текущий пересчёт не найден");
+      if (inventory.status === "DRAFT")
+        throw new ConflictException("Сначала кладовщик должен подтвердить пересчёт");
+      const alreadyApplied = await client.query(
+        `select 1 from planning.inventory_plan_deduction where inventory_session_id=$1`,
+        [command.sessionId],
+      );
+      if (alreadyApplied.rowCount)
+        throw new ConflictException("Этот пересчёт уже учтён в производственном плане");
+
+      const previous = await client.query<{ id: string }>(
+        `select id from planning.production_plan
+         where production_date=$1 and is_current for update`,
+        [command.productionDate],
+      );
+      if (!previous.rows[0]) throw new ConflictException("План на выбранную дату не опубликован");
+      const lines = await client.query<{
+        actual_quantity: number;
+        old_plan_quantity: number;
+        product_id: string;
+      }>(
+        `select l.product_id,l.actual_quantity,
+                coalesce(sum(pl.quantity),0)::int old_plan_quantity
+         from warehouse.inventory_line l
+         left join planning.production_plan_line pl
+           on pl.plan_id=$3 and pl.product_id=l.product_id
+         where l.inventory_session_id=$1 and l.product_id=any($2::uuid[])
+         group by l.product_id,l.actual_quantity`,
+        [command.sessionId, selectedIds, previous.rows[0].id],
+      );
+      if (lines.rows.length !== selectedIds.length)
+        throw new ConflictException("В пересчёте отсутствует выбранный товар");
+      const effective = lines.rows.filter(
+        (line) => line.actual_quantity > 0 && line.old_plan_quantity > 0,
+      );
+      if (effective.length === 0)
+        throw new ConflictException("У выбранных товаров нет количества для уменьшения плана");
+      const changes = effective.map((line) => ({
+        newQuantity: Math.max(0, line.old_plan_quantity - line.actual_quantity),
+        productId: line.product_id,
+      }));
+      const plan = await overridePublishedPlanBatch(client, {
+        actorEmployeeId: command.actor.employeeId,
+        changes,
+        correlationId: command.correlationId,
+        idempotencyKey: command.idempotencyKey,
+        productionDate: command.productionDate,
+        reason: `Вычтены подтверждённые остатки инвентаризации за ${inventory.business_date}`,
+      });
+      const deductionId = randomUUID();
+      await client.query(
+        `insert into planning.inventory_plan_deduction(
+           id,inventory_session_id,previous_plan_id,new_plan_id,production_date,
+           applied_by,idempotency_key,correlation_id
+         ) values($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          deductionId,
+          command.sessionId,
+          previous.rows[0].id,
+          plan.planId,
+          command.productionDate,
+          command.actor.employeeId,
+          command.idempotencyKey,
+          command.correlationId,
+        ],
+      );
+      for (const line of effective) {
+        await client.query(
+          `insert into planning.inventory_plan_deduction_line(
+             id,deduction_id,product_id,inventory_quantity,old_plan_quantity,new_plan_quantity
+           ) values($1,$2,$3,$4,$5,$6)`,
+          [
+            randomUUID(),
+            deductionId,
+            line.product_id,
+            line.actual_quantity,
+            line.old_plan_quantity,
+            Math.max(0, line.old_plan_quantity - line.actual_quantity),
+          ],
+        );
+      }
+      await audit(
+        client,
+        command.actor,
+        command.correlationId,
+        "INVENTORY_APPLIED_TO_PLAN",
+        deductionId,
+        {
+          inventorySessionId: command.sessionId,
+          newPlanId: plan.planId,
+          productionDate: command.productionDate,
+          selectedProductCount: effective.length,
+        },
+      );
+      await outbox(client, "warehouse.inventory.applied-to-plan", deductionId, {
+        inventorySessionId: command.sessionId,
+        newPlanId: plan.planId,
+        productionDate: command.productionDate,
+      });
+      return plan;
+    });
+  }
+
   resolve(command: {
     actor: InventoryActor;
     comment: string;
@@ -477,8 +624,43 @@ async function loadWorkspace(client: PoolClient, date: string): Promise<Inventor
       )
     : { rows: [] as { document_count: number; document_type: string; quantity: number }[] };
   const mappedVersions = sessions.rows.map((row) => mapSession(row, []));
+  const planDeduction = current
+    ? await client.query<{
+        applied_at: Date;
+        applied_by_name: string;
+        id: string;
+        new_plan_id: string;
+        new_plan_version: number;
+        production_date: string;
+        selected_product_count: number;
+        total_deducted_quantity: number;
+      }>(
+        `select d.id,d.new_plan_id,d.production_date::text,d.applied_at,e.full_name applied_by_name,
+                p.version new_plan_version,count(l.id)::int selected_product_count,
+                coalesce(sum(l.old_plan_quantity-l.new_plan_quantity),0)::int total_deducted_quantity
+         from planning.inventory_plan_deduction d
+         join identity.employee e on e.id=d.applied_by
+         join planning.production_plan p on p.id=d.new_plan_id
+         join planning.inventory_plan_deduction_line l on l.deduction_id=d.id
+         where d.inventory_session_id=$1
+         group by d.id,e.full_name,p.version`,
+        [current.id],
+      )
+    : { rows: [] };
   return {
     discrepancies: discrepancies.rows.map(mapDiscrepancy),
+    planDeduction: planDeduction.rows[0]
+      ? {
+          appliedAt: planDeduction.rows[0].applied_at.toISOString(),
+          appliedByName: planDeduction.rows[0].applied_by_name,
+          id: planDeduction.rows[0].id,
+          newPlanId: planDeduction.rows[0].new_plan_id,
+          newPlanVersion: planDeduction.rows[0].new_plan_version,
+          productionDate: planDeduction.rows[0].production_date,
+          selectedProductCount: planDeduction.rows[0].selected_product_count,
+          totalDeductedQuantity: planDeduction.rows[0].total_deducted_quantity,
+        }
+      : null,
     movementSources: movementSources.rows.map((row) => ({
       documentCount: row.document_count,
       documentType: row.document_type,

@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -151,4 +152,16 @@ export class OverrideProductionPlanDto {
   @IsString()
   @Length(8, 100)
   idempotencyKey!: string;
+}
+
+export class SetTerritoryProductionStatusDto {
+  @IsDateString()
+  effectiveFrom!: string;
+
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
 }

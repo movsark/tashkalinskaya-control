@@ -24,6 +24,7 @@ import {
   OverrideProductionPlanDto,
   RunProductionPlanDto,
   SaveTerritoryDailyNormDto,
+  SetTerritoryProductionStatusDto,
 } from "./planning.dto";
 import { PlanningService } from "./planning.service";
 
@@ -98,6 +99,27 @@ export class PlanningController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.planning.saveTerritoryDailyNorm(
+      territoryId,
+      dto,
+      requireActorId(request),
+      requireCorrelationId(request),
+    );
+  }
+
+  @Get("territory-production-status")
+  @RequireRoles("ADMIN", "MANAGER", "WAREHOUSE_KEEPER", "WORKSHOP_MANAGER")
+  territoryProductionStatuses(@Query("date") effectiveDate: string) {
+    return this.planning.territoryProductionStatuses(effectiveDate);
+  }
+
+  @Post("territory-production-status/:territoryId")
+  @RequireRoles("ADMIN")
+  setTerritoryProductionStatus(
+    @Param("territoryId", ParseUUIDPipe) territoryId: string,
+    @Body() dto: SetTerritoryProductionStatusDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.planning.setTerritoryProductionStatus(
       territoryId,
       dto,
       requireActorId(request),

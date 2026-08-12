@@ -50,6 +50,8 @@ export default function ProductionPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [confectionerView, setConfectionerView] = useState<"PLAN" | "WORK">("PLAN");
+  const [pendingPlanChange, setPendingPlanChange] =
+    useState<ProductionWorkspaceView["normDemand"]["change"]>(null);
 
   const roles = useMemo(
     () => new Set(session?.employee.roles.map((role) => role.roleCode) ?? []),
@@ -141,6 +143,15 @@ export default function ProductionPage() {
     return () => window.clearInterval(timer);
   }, [date, isConfectionerOnly, session]);
 
+  useEffect(() => {
+    const change = workspace?.normDemand.change;
+    if (!isConfectionerOnly || session === null || change === null || change === undefined) return;
+    const acknowledgementKey = `production-plan-change:${session.employee.id}:${change.id}`;
+    if (window.localStorage.getItem(acknowledgementKey) !== "acknowledged") {
+      setPendingPlanChange(change);
+    }
+  }, [isConfectionerOnly, session, workspace?.normDemand.change]);
+
   async function reload(nextMessage?: string) {
     const next = await getProductionWorkspace(date, workshopId || undefined);
     setWorkspace(next);
@@ -169,9 +180,22 @@ export default function ProductionPage() {
     });
   }
 
+  function acknowledgePlanChange() {
+    if (session === null || pendingPlanChange === null) return;
+    window.localStorage.setItem(
+      `production-plan-change:${session.employee.id}:${pendingPlanChange.id}`,
+      "acknowledged",
+    );
+    setPendingPlanChange(null);
+    setConfectionerView("PLAN");
+  }
+
   if (workspace === null) {
     return (
       <main className="workspace-layout production-layout">
+        {isConfectionerOnly && pendingPlanChange ? (
+          <PlanChangeModal change={pendingPlanChange} onAcknowledge={acknowledgePlanChange} />
+        ) : null}
         <header className="workspace-header">
           <AppBrand />
         </header>
@@ -184,6 +208,9 @@ export default function ProductionPage() {
 
   return (
     <main className="workspace-layout production-layout simple-workspace">
+      {isConfectionerOnly && pendingPlanChange ? (
+        <PlanChangeModal change={pendingPlanChange} onAcknowledge={acknowledgePlanChange} />
+      ) : null}
       <header className="workspace-header">
         <AppBrand />
         <div className="workspace-user">
@@ -1628,6 +1655,42 @@ function WarehouseQueue({ queue }: { queue: ProductionWarehouseQueueView }) {
         )}
       </div>
     </section>
+  );
+}
+
+function PlanChangeModal({
+  change,
+  onAcknowledge,
+}: {
+  change: NonNullable<ProductionWorkspaceView["normDemand"]["change"]>;
+  onAcknowledge: () => void;
+}) {
+  return (
+    <div aria-modal="true" className="production-plan-change-modal" role="dialog">
+      <section>
+        <p className="eyebrow">Норма изменилась · {dateTimeLabel(change.changedAt)}</p>
+        <h2>Откройте обновлённый план</h2>
+        <p>Администратор изменил сегодняшнюю производственную норму.</p>
+        <div className="production-plan-change-modal__lines">
+          {change.lines.map((line) => (
+            <article key={line.productId}>
+              <span>
+                <small>{line.productCode}</small>
+                <strong>{line.productName}</strong>
+              </span>
+              <span>
+                <del>{line.oldQuantity}</del>
+                <b aria-hidden="true">→</b>
+                <strong>{line.newQuantity} шт.</strong>
+              </span>
+            </article>
+          ))}
+        </div>
+        <button className="primary-button" onClick={onAcknowledge} type="button">
+          Понятно, открыть обновлённый план
+        </button>
+      </section>
+    </div>
   );
 }
 

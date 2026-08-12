@@ -546,6 +546,26 @@ export async function overridePublishedPlanBatch(
     previousPlanId: previous.id,
     productionDate: command.productionDate,
   });
+  const notificationWindow = await client.query<{ notify: boolean }>(
+    `select (
+       $1::date = (now() at time zone 'Europe/Moscow')::date
+       and (now() at time zone 'Europe/Moscow')::time >= time '09:00'
+       and (now() at time zone 'Europe/Moscow')::time < time '19:00'
+     ) as notify`,
+    [command.productionDate],
+  );
+  if (notificationWindow.rows[0]?.notify) {
+    await insertOutbox(client, "planning.production-plan.changed-in-shift", planId, {
+      changes: command.changes.map((change) => ({
+        newQuantity: change.newQuantity,
+        oldQuantity: oldQuantities.get(change.productId) ?? 0,
+        productId: change.productId,
+      })),
+      planId,
+      previousPlanId: previous.id,
+      productionDate: command.productionDate,
+    });
+  }
   return loadPlan(client, planId);
 }
 
@@ -586,6 +606,14 @@ async function buildSnapshot(
        join planning.calendar_version v on v.id = l.calendar_version_id
        join logistics.territory t on t.status = 'ACTIVE'
          and (l.territory_id is null or l.territory_id = t.id)
+       left join lateral (
+         select enabled
+         from planning.territory_production_status s
+         where s.territory_id = t.id and s.effective_from <= l.dispatch_date
+         order by s.effective_from desc, s.version desc
+         limit 1
+       ) territory_state on true
+       where coalesce(territory_state.enabled, true)
      ), effective_links as (
        select distinct on (dispatch_date, territory_id)
               production_date, dispatch_date, territory_id, territory_number

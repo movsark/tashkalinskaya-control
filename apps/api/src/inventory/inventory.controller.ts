@@ -15,6 +15,7 @@ import { ApiTags } from "@nestjs/swagger";
 import { CsrfGuard, RequireRoles, RolesGuard, SessionAuthGuard } from "../identity/identity.guards";
 import type { AuthenticatedRequest } from "../identity/identity.types";
 import {
+  ApplyInventoryToPlanDto,
   CountInventoryLineDto,
   InventoryDateDto,
   OpenInventoryDto,
@@ -59,6 +60,16 @@ export class InventoryController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.service.submit(id, dto, actor(request), correlationId(request));
+  }
+
+  @Post("sessions/:id/apply-to-plan")
+  @RequireRoles("ADMIN")
+  applyToPlan(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: ApplyInventoryToPlanDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.service.applyToPlan(id, dto, actor(request), correlationId(request));
   }
 
   @Post("discrepancies/:id/resolve")

@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import type { AuthenticatedActor } from "../identity/identity.types";
 import type {
+  ApplyInventoryToPlanDto,
   CountInventoryLineDto,
   OpenInventoryDto,
   ResolveInventoryDiscrepancyDto,
@@ -45,6 +46,22 @@ export class InventoryService {
       idempotencyKey: dto.idempotencyKey,
       sessionId: id,
       version: dto.version,
+    });
+  }
+
+  applyToPlan(
+    id: string,
+    dto: ApplyInventoryToPlanDto,
+    actor: AuthenticatedActor,
+    correlationId: string,
+  ) {
+    return this.repository.applyToPlan({
+      actor: toActor(actor),
+      correlationId,
+      idempotencyKey: dto.idempotencyKey,
+      productIds: dto.productIds,
+      productionDate: dto.productionDate,
+      sessionId: id,
     });
   }
 

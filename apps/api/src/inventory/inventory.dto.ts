@@ -1,4 +1,17 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Max,
+  Min,
+} from "class-validator";
 
 export class InventoryDateDto {
   @IsDateString() date!: string;
@@ -18,6 +31,16 @@ export class CountInventoryLineDto {
 
 export class SubmitInventoryDto {
   @IsInt() @Min(1) version!: number;
+  @IsString() @Length(8, 100) idempotencyKey!: string;
+}
+
+export class ApplyInventoryToPlanDto {
+  @IsDateString() productionDate!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsUUID("4", { each: true })
+  productIds!: string[];
   @IsString() @Length(8, 100) idempotencyKey!: string;
 }
 

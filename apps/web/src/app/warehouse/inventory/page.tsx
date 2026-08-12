@@ -242,6 +242,30 @@ export default function InventoryPage() {
             <Metric label="Движений после снимка" value={inventory.postSnapshotDocumentCount} />
           </section>
 
+          {isAdmin && inventory.status !== "DRAFT" ? (
+            <section className="inventory-plan-summary">
+              <div>
+                <p className="eyebrow">Пересчёт получен</p>
+                <h2>Остатки готовы для производственного плана</h2>
+                <p>
+                  Фактически {sumActual(inventory.lines)} шт. · совпало{" "}
+                  {inventory.totalLines - inventory.discrepancyCount} поз. · расхождений{" "}
+                  {inventory.discrepancyCount}
+                </p>
+              </div>
+              {data.planDeduction ? (
+                <strong>
+                  Учтено в версии {data.planDeduction.newPlanVersion} ·{" "}
+                  {data.planDeduction.totalDeductedQuantity} шт.
+                </strong>
+              ) : (
+                <Link className="primary-button" href="/planning/plan#inventory-deduction">
+                  Выбрать остатки для плана
+                </Link>
+              )}
+            </section>
+          ) : null}
+
           {inventory.postSnapshotDocumentCount > 0 ? (
             <p className="inventory-warning">
               После открытия были складские движения: {inventory.postSnapshotDocumentCount}. Снимок

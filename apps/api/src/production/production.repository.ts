@@ -1526,6 +1526,79 @@ async function loadWorkspace(
      order by c.name, p.name, p.product_code`,
     [productionDate, normDemandWorkshopIds],
   );
+  const publishedNormDemand = await client.query<{
+    dispatch_dates: string[];
+    plan_id: string;
+    plan_version: number;
+    product_code: string;
+    product_group: string;
+    product_id: string;
+    product_name: string;
+    published_at: Date;
+    quantity: number;
+    workshop_id: string | null;
+    workshop_name: string | null;
+  }>(
+    `select p.id as plan_id, p.version as plan_version, p.published_at,
+            coalesce((
+              select array_agg(distinct d.dispatch_date::text order by d.dispatch_date::text)
+              from planning.plan_demand_line d where d.snapshot_id = p.snapshot_id
+            ), array[]::text[]) as dispatch_dates,
+            product.id as product_id, product.product_code, product.name as product_name,
+            category.name as product_group, line.workshop_id,
+            workshop.name as workshop_name, sum(line.quantity)::integer as quantity
+     from planning.production_plan p
+     join planning.production_plan_line line on line.plan_id = p.id
+     join catalog.product product on product.id = line.product_id
+     join catalog.category category on category.id = product.category_id
+     left join identity.department workshop on workshop.id = line.workshop_id
+     where p.production_date = $1 and p.is_current
+       and ($2::uuid[] is null or line.workshop_id = any($2::uuid[]))
+       and exists (
+         select 1 from planning.plan_demand_line demand
+         where demand.snapshot_id = p.snapshot_id
+       )
+     group by p.id, p.version, p.published_at, p.snapshot_id,
+              product.id, product.product_code, product.name, category.name,
+              line.workshop_id, workshop.name
+     order by category.name, product.name, product.product_code`,
+    [productionDate, normDemandWorkshopIds],
+  );
+  const currentPlan = publishedNormDemand.rows[0];
+  const currentPlanChange =
+    currentPlan === undefined
+      ? {
+          rows: [] as Array<{
+            changed_at: Date;
+            new_quantity: number;
+            old_quantity: number;
+            product_code: string;
+            product_id: string;
+            product_name: string;
+          }>,
+        }
+      : await client.query<{
+          changed_at: Date;
+          new_quantity: number;
+          old_quantity: number;
+          product_code: string;
+          product_id: string;
+          product_name: string;
+        }>(
+          `select o.created_at as changed_at, o.product_id, product.product_code,
+                  product.name as product_name, o.old_quantity, o.new_quantity
+           from planning.plan_override o
+           join catalog.product product on product.id = o.product_id
+           join planning.production_plan p on p.id = o.new_plan_id
+           where o.new_plan_id = $1
+             and p.production_date = (now() at time zone 'Europe/Moscow')::date
+             and (o.created_at at time zone 'Europe/Moscow')::time >= time '09:00'
+             and (o.created_at at time zone 'Europe/Moscow')::time < time '19:00'
+           order by product.name, product.product_code`,
+          [currentPlan.plan_id],
+        );
+  const displayedNormDemand =
+    publishedNormDemand.rowCount === 0 ? normDemand.rows : publishedNormDemand.rows;
   const normDemandWork = await client.query<NormDemandWorkRow>(
     `select distinct on (t.product_id)
             t.product_id, t.id as task_id, t.target_quantity, t.status, t.version,
@@ -1593,8 +1666,22 @@ async function loadWorkspace(
       personnelNumber: row.personnel_number,
     })),
     normDemand: {
-      dispatchDates: [...new Set(normDemand.rows.flatMap((row) => row.dispatch_dates))].sort(),
-      lines: normDemand.rows.map((row) => {
+      change:
+        currentPlan === undefined || currentPlanChange.rows.length === 0
+          ? null
+          : {
+              changedAt: currentPlanChange.rows[0]!.changed_at.toISOString(),
+              id: currentPlan.plan_id,
+              lines: currentPlanChange.rows.map((row) => ({
+                newQuantity: row.new_quantity,
+                oldQuantity: row.old_quantity,
+                productCode: row.product_code,
+                productId: row.product_id,
+                productName: row.product_name,
+              })),
+            },
+      dispatchDates: [...new Set(displayedNormDemand.flatMap((row) => row.dispatch_dates))].sort(),
+      lines: displayedNormDemand.map((row) => {
         const work = workMap.get(row.product_id);
         return {
           productCode: row.product_code,
@@ -1629,6 +1716,9 @@ async function loadWorkspace(
           workshopName: row.workshop_name,
         };
       }),
+      planId: currentPlan?.plan_id ?? null,
+      planVersion: currentPlan?.plan_version ?? null,
+      publishedAt: currentPlan?.published_at.toISOString() ?? null,
       source: calendarState.rows[0]?.has_links ? "CALENDAR" : "NEXT_DAY_FALLBACK",
     },
     productionDate,

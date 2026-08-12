@@ -15,6 +15,7 @@ import type {
   OverrideProductionPlanDto,
   RunProductionPlanDto,
   SaveTerritoryDailyNormDto,
+  SetTerritoryProductionStatusDto,
 } from "./planning.dto";
 import { PlanningRepository } from "./planning.repository";
 import { parseMonthlyPlan } from "./monthly-plan.parser";
@@ -66,10 +67,19 @@ export class PlanningService {
     if (missing.length > 0)
       throw new BadRequestException(`Не найдены товары: ${missing.join(", ")}`);
     const territories = new Map(setup.territories.map((item) => [item.number, item.id]));
+    const dates = [...new Set(parsed.rows.map((row) => row.dispatchDate))];
+    const importedTerritoryNumbers = [...new Set(parsed.rows.map((row) => row.territoryNumber))];
     const grouped = new Map<
       string,
       { date: string; lines: { productId: string; quantity: number }[]; territoryId: string }
     >();
+    for (const territoryNumber of importedTerritoryNumbers) {
+      const territoryId = territories.get(territoryNumber);
+      if (!territoryId) throw new BadRequestException("Не найдена территория");
+      for (const date of dates) {
+        grouped.set(`${territoryId}:${date}`, { date, lines: [], territoryId });
+      }
+    }
     for (const row of parsed.rows) {
       const territoryId = territories.get(row.territoryNumber);
       const productId = products.get(row.productName);
@@ -87,13 +97,14 @@ export class PlanningService {
         dispatchDate: group.date,
         lines: group.lines,
         reason: "Импорт месячного плана",
+        replaceExisting: true,
         territoryId: group.territoryId,
       })),
     );
     return {
-      dates: new Set(parsed.rows.map((row) => row.dispatchDate)).size,
+      dates: dates.length,
       lines: parsed.rows.length,
-      territories: new Set(parsed.rows.map((row) => row.territoryNumber)).size,
+      territories: importedTerritoryNumbers.length,
     };
   }
 
@@ -277,6 +288,27 @@ export class PlanningService {
     const plan = await this.repository.getProductionPlan(productionDate);
     if (plan === null) throw new NotFoundException("План на эту дату еще не опубликован");
     return plan;
+  }
+
+  territoryProductionStatuses(effectiveDate: string) {
+    assertDate(effectiveDate);
+    return this.repository.getTerritoryProductionStatuses(effectiveDate);
+  }
+
+  setTerritoryProductionStatus(
+    territoryId: string,
+    dto: SetTerritoryProductionStatusDto,
+    actorEmployeeId: string,
+    correlationId: string,
+  ) {
+    return this.repository.setTerritoryProductionStatus({
+      actorEmployeeId,
+      correlationId,
+      effectiveFrom: dto.effectiveFrom,
+      enabled: dto.enabled,
+      reason: dto.reason.trim(),
+      territoryId,
+    });
   }
 
   overrideProductionPlan(

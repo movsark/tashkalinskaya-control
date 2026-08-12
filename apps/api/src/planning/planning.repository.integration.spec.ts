@@ -157,6 +157,25 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       productionDate: wednesday,
       territoryNumber: 9,
     });
+    await repository.createCalendarLink({
+      actorEmployeeId: adminId,
+      comment: "Территория 1 выезжает в пятницу с производства среды",
+      correlationId: randomUUID(),
+      cutoffAt: `${tuesday}T10:00:00+03:00`,
+      dispatchDate: friday,
+      exceptionType: "EXTRA_WORK",
+      productionDate: wednesday,
+      reasonCode: "TERRITORY_1_FRIDAY",
+      territoryId: territoryOneId,
+    });
+    await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      dispatchDate: friday,
+      lines: [{ productId, quantity: 4 }],
+      reason: "Норма Территории 1 для производственного плана",
+      territoryId: territoryOneId,
+    });
   });
 
   it("versions a daily territory norm without a driver assignment in the norm", async () => {
@@ -219,6 +238,33 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       [monthlyImportDate, productId],
     );
     expect(saved.rows[0]?.count).toBe("0");
+  });
+
+  it("clears an omitted current norm when a monthly import replaces the territory day", async () => {
+    await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId,
+      dispatchDate: monthlyImportDate,
+      lines: [{ productId, quantity: 7 }],
+      reason: "Старая дневная норма",
+      territoryId: territoryOneId,
+    });
+    await repository.saveTerritoryDailyNorms([
+      {
+        actorEmployeeId: adminId,
+        correlationId,
+        dispatchDate: monthlyImportDate,
+        lines: [],
+        reason: "Импорт месячного плана",
+        replaceExisting: true,
+        territoryId: territoryOneId,
+      },
+    ]);
+    expect(await repository.getTerritoryDailyNorm(territoryOneId, monthlyImportDate)).toMatchObject(
+      {
+        lines: [{ productId, quantity: 0, version: 2 }],
+      },
+    );
   });
 
   it("creates and atomically approves a permanent driver request", async () => {
@@ -642,7 +688,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     expect(published).toMatchObject({ attempts: 2, status: "PUBLISHED", version: 1 });
     expect(published.warnings).not.toContain("INVENTORY_NOT_CONFIRMED");
     expect(published.productionLines).toContainEqual(
-      expect.objectContaining({ productId, quantity: 9, workshopId }),
+      expect.objectContaining({ productId, quantity: 13, workshopId }),
     );
 
     const repeated = await repository.runProductionPlan({
@@ -652,6 +698,50 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       productionDate: wednesday,
     });
     expect(repeated).toMatchObject({ planId: published.planId, version: 1 });
+
+    const disabled = await repository.setTerritoryProductionStatus({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      effectiveFrom: friday,
+      enabled: false,
+      reason: "Территория не выезжает",
+      territoryId: territoryNineId,
+    });
+    expect(disabled).toMatchObject({ enabled: false, territoryNumber: 9, version: 1 });
+    const planWithoutTerritory = await repository.getProductionPlan(wednesday);
+    expect(planWithoutTerritory).toMatchObject({ version: 2 });
+    expect(planWithoutTerritory?.productionLines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 4 }),
+    );
+
+    const enabled = await repository.setTerritoryProductionStatus({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      effectiveFrom: friday,
+      enabled: true,
+      reason: "Территория снова выезжает",
+      territoryId: territoryNineId,
+    });
+    expect(enabled).toMatchObject({ enabled: true, territoryNumber: 9, version: 2 });
+    const restoredPlan = await repository.getProductionPlan(wednesday);
+    expect(restoredPlan).toMatchObject({ version: 3 });
+    expect(restoredPlan?.productionLines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 13 }),
+    );
+
+    await repository.saveTerritoryDailyNorm({
+      actorEmployeeId: adminId,
+      correlationId: randomUUID(),
+      dispatchDate: friday,
+      lines: [{ productId, quantity: 6 }],
+      reason: "Импорт уточнённого месячного плана",
+      territoryId: territoryOneId,
+    });
+    const planAfterMonthlyNorm = await repository.getProductionPlan(wednesday);
+    expect(planAfterMonthlyNorm).toMatchObject({ version: 4 });
+    expect(planAfterMonthlyNorm?.productionLines).toContainEqual(
+      expect.objectContaining({ productId, quantity: 15 }),
+    );
 
     await expect(
       database.query(
@@ -671,7 +761,7 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       productionDate: wednesday,
       reason: "Подтвержденная корректировка администратора",
     });
-    expect(overridden).toMatchObject({ version: 2 });
+    expect(overridden).toMatchObject({ version: 5 });
     expect(overridden.productionLines).toContainEqual(
       expect.objectContaining({ productId, quantity: 12 }),
     );
