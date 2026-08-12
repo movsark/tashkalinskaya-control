@@ -1554,6 +1554,10 @@ async function loadWorkspace(
      left join identity.department workshop on workshop.id = line.workshop_id
      where p.production_date = $1 and p.is_current
        and ($2::uuid[] is null or line.workshop_id = any($2::uuid[]))
+       and exists (
+         select 1 from planning.plan_demand_line demand
+         where demand.snapshot_id = p.snapshot_id
+       )
      group by p.id, p.version, p.published_at, p.snapshot_id,
               product.id, product.product_code, product.name, category.name,
               line.workshop_id, workshop.name
