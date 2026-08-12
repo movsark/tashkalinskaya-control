@@ -89,6 +89,21 @@ describe.runIf(hasDatabase)("IdentityRepository with PostgreSQL", () => {
     });
   });
 
+  it("offers the internal MVP production scope for confectioner invitations", async () => {
+    const options = await repository.employeeInvitationOptions();
+    const confectioner = options.roles.find((role) => role.roleCode === "CONFECTIONER");
+
+    expect(confectioner).toMatchObject({
+      scopeType: "WORKSHOP",
+      scopes: expect.arrayContaining([
+        {
+          id: "10000000-0000-4000-8000-000000000054",
+          name: "Производство",
+        },
+      ]),
+    });
+  });
+
   it("allows separate active sessions on multiple personal devices", async () => {
     await database.query(
       `
