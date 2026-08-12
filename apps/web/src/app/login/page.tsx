@@ -99,8 +99,8 @@ export default function LoginPage() {
             </button>
           </form>
           <div className="auth-card__footer">
-            <span>Первый вход?</span>
-            <Link href="/activate">Активировать доступ</Link>
+            <span>Получили одноразовый код?</span>
+            <Link href="/register">Зарегистрироваться</Link>
           </div>
           <div className="auth-card__footer">
             <span>Телефон заменен или потерян?</span>

@@ -140,6 +140,10 @@ export default function ActivatePage() {
             </button>
           </form>
           <div className="auth-card__footer">
+            <span>Код выдал администратор при добавлении сотрудника?</span>
+            <Link href="/register">Перейти к регистрации</Link>
+          </div>
+          <div className="auth-card__footer">
             <span>Устройство уже привязано?</span>
             <Link href="/login">Вернуться ко входу</Link>
           </div>
