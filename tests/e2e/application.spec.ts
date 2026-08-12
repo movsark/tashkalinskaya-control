@@ -64,6 +64,9 @@ test.describe("B20 browser and HTTP regression", () => {
       await page.goto("/");
       await expect(page.getByRole("heading", { level: 1 })).toContainText("Ташкалинская");
       await expect(page.getByRole("link", { name: "Войти" })).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Регистрация по одноразовому коду" }),
+      ).toHaveAttribute("href", "/register");
       const dimensions = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
@@ -940,6 +943,22 @@ test.describe("B20 browser and HTTP regression", () => {
       platformFamily: "OTHER",
     });
     expect(registrationRequest?.deviceId).toMatch(/^[0-9a-f-]{36}$/u);
+  });
+
+  test("employee invitation links lead to registration instead of device activation", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("link", { name: "Зарегистрироваться" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
+
+    await page.goto("/activate");
+    await expect(page.getByRole("link", { name: "Перейти к регистрации" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
   });
 
   test("an employee without a shift sees an actionable setup message instead of a network error", async ({

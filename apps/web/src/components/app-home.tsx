@@ -116,8 +116,8 @@ export function AppHome() {
           <Link className="primary-link" href="/login">
             Войти
           </Link>
-          <Link className="text-link" href="/activate">
-            Первый вход сотрудника
+          <Link className="text-link" href="/register">
+            Регистрация по одноразовому коду
           </Link>
         </section>
       </main>
