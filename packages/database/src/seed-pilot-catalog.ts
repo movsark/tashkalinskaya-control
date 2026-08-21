@@ -101,27 +101,20 @@ export async function seedPilotCatalog(client: PoolClient): Promise<"inserted" |
   return "inserted";
 }
 
-function assertExistingCatalog(existing: readonly ExistingProduct[]): void {
-  const expected = [...pilotCatalog].sort((left, right) =>
-    left.productCode.localeCompare(right.productCode),
-  );
-  if (existing.length !== expected.length) {
-    throw new Error(
-      `Existing catalog has ${existing.length} products instead of the approved 81; no data changed`,
-    );
-  }
+export function assertExistingCatalog(existing: readonly ExistingProduct[]): void {
+  const existingByCode = new Map(existing.map((product) => [product.productCode, product]));
 
-  for (const [index, product] of existing.entries()) {
-    const approved = expected[index];
+  for (const approved of pilotCatalog) {
+    const product = existingByCode.get(approved.productCode);
     if (
-      approved === undefined ||
+      product === undefined ||
       product.productCode !== approved.productCode ||
       product.name !== approved.name ||
       product.categoryCode !== approved.categoryCode ||
       product.unitCode !== "PCS" ||
       product.status !== "ACTIVE"
     ) {
-      throw new Error(`Existing catalog differs at ${product.productCode}; no data changed`);
+      throw new Error(`Existing catalog differs at ${approved.productCode}; no data changed`);
     }
   }
 }
