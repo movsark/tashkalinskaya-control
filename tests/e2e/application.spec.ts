@@ -124,6 +124,25 @@ test.describe("B20 browser and HTTP regression", () => {
     ).toBe(true);
   });
 
+  test("a single failed connection check does not show an offline warning", async ({ page }) => {
+    let healthChecks = 0;
+    await page.route("**/api/v1/health/live", (route) => {
+      healthChecks += 1;
+      if (healthChecks === 1) return route.abort("failed");
+      return json(route, {
+        service: "api",
+        state: "healthy",
+        timestamp: "2026-08-21T13:00:00.000Z",
+        version: "test",
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.locator(".connection-status.is-offline")).toHaveCount(0);
+    await expect.poll(() => healthChecks).toBeGreaterThanOrEqual(2);
+    await expect(page.locator(".connection-status.is-offline")).toHaveCount(0);
+  });
+
   test("an installed icon opens the saved administrator session without another login", async ({
     page,
   }) => {
