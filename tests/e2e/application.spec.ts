@@ -2177,6 +2177,13 @@ test.describe("B20 browser and HTTP regression", () => {
               productName: "СВ Печенье тестовое",
               proposedQuantity: 9,
             },
+            {
+              baseQuantity: 10,
+              productCode: "T-001",
+              productId,
+              productName: "Торт тестовый",
+              proposedQuantity: 12,
+            },
           ],
           requesterComment: "Нужно увеличить на две штуки",
           requesterEmployeeId: "20000000-0000-4000-8000-000000000109",
@@ -2334,6 +2341,11 @@ test.describe("B20 browser and HTTP regression", () => {
     });
 
     await page.goto("/planning");
+    await expect(page.locator(".planning-request-card")).toHaveCount(1);
+    await expect(page.locator(".planning-request-card")).toContainText(
+      "СВ Печенье тестовое: 7 → 9",
+    );
+    await expect(page.locator(".planning-request-card")).toContainText("Торт тестовый: 10 → 12");
     await expect(page.locator(".planning-requester-comment")).toContainText(
       "Комментарий водителя: Нужно увеличить на две штуки",
     );
