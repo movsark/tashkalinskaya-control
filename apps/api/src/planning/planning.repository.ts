@@ -924,7 +924,7 @@ export class PlanningRepository {
     lines: ReadonlyArray<{ productId: string; quantity: number }>;
     territoryId: string;
   }): Promise<NormChangeRequestView> {
-    const requestId = randomUUID();
+    let requestId: string = randomUUID();
     await this.database.transaction(async (client) => {
       await client.query("select pg_advisory_xact_lock(hashtext($1))", [
         `planning:request:${command.actorEmployeeId}:${command.territoryId}`,
@@ -953,21 +953,118 @@ export class PlanningRepository {
         [authorization.cutoffAt],
       );
       const missedCutoff = cutoffState.rows[0]?.missed ?? false;
-      if (!missedCutoff) {
-        const replaced = await client.query<{ id: string }>(
-          `update planning.norm_change_request r
-           set status = 'STALE', decision_comment = 'Заменён водителем',
-               decided_at = now(), version = version + 1
-           where r.requester_employee_id = $1 and r.territory_id = $2
-             and r.status = 'SUBMITTED'
-             and exists (
-               select 1 from planning.norm_change_request_line l
-               where l.request_id = r.id and l.product_id = any($3::uuid[])
-             )
-           returning r.id`,
-          [command.actorEmployeeId, command.territoryId, productIds],
+      const pending = missedCutoff
+        ? { rows: [] }
+        : await client.query<{ id: string; requester_comment: string | null }>(
+            `select id, requester_comment
+             from planning.norm_change_request
+             where requester_employee_id = $1 and territory_id = $2
+               and status = 'SUBMITTED' and request_kind = $3
+               and dispatch_weekday is not distinct from $4::smallint
+               and dispatch_date is not distinct from $5::date
+               and effective_from is not distinct from $6::date
+               and effective_until is not distinct from $7::date
+             order by submitted_at, id
+             for update`,
+            [
+              command.actorEmployeeId,
+              command.territoryId,
+              command.kind,
+              command.dispatchWeekday,
+              command.dispatchDate,
+              command.effectiveFrom,
+              command.effectiveUntil,
+            ],
+          );
+
+      if (pending.rows.length === 1) {
+        const current = pending.rows[0]!;
+        const existingProducts = await client.query<{ product_id: string }>(
+          `select product_id from planning.norm_change_request_line where request_id = $1`,
+          [current.id],
         );
-        for (const previous of replaced.rows) {
+        const hasReplacement = existingProducts.rows.some((line) =>
+          productIds.includes(line.product_id),
+        );
+        if (!hasReplacement) {
+          for (const line of command.lines) {
+            const base = baseByProduct.get(line.productId);
+            await client.query(
+              `insert into planning.norm_change_request_line (
+                 id, request_id, product_id, base_norm_id, base_daily_norm_id,
+                 base_override_id, base_quantity, proposed_quantity
+               ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                randomUUID(),
+                current.id,
+                line.productId,
+                base?.weeklyNormId ?? null,
+                base?.dailyNormId ?? null,
+                base?.overrideId ?? null,
+                base?.quantity ?? 0,
+                line.quantity,
+              ],
+            );
+          }
+          await client.query(
+            `update planning.norm_change_request
+             set requester_comment = case
+                   when $2::text is null or trim($2::text) = '' then requester_comment
+                   when requester_comment is null or trim(requester_comment) = '' then $2::text
+                   when requester_comment = $2::text then requester_comment
+                   else left(requester_comment || E'\n' || $2::text, 500)
+                 end,
+                 version = version + 1
+             where id = $1`,
+            [current.id, command.comment],
+          );
+          await insertAudit(
+            client,
+            command,
+            "NORM_REQUEST_LINES_ADDED",
+            "NORM_CHANGE_REQUEST",
+            current.id,
+            { productIds, territoryId: command.territoryId },
+          );
+          requestId = current.id;
+          return;
+        }
+      }
+
+      const carriedLines =
+        pending.rows.length === 0
+          ? { rows: [] }
+          : await client.query<{
+              base_daily_norm_id: string | null;
+              base_norm_id: string | null;
+              base_override_id: string | null;
+              base_quantity: number;
+              product_id: string;
+              proposed_quantity: number;
+            }>(
+              `select distinct on (l.product_id)
+                 l.product_id, l.base_norm_id, l.base_daily_norm_id, l.base_override_id,
+                 l.base_quantity, l.proposed_quantity
+               from planning.norm_change_request_line l
+               join planning.norm_change_request r on r.id = l.request_id
+               where l.request_id = any($1::uuid[])
+               order by l.product_id, r.submitted_at desc, r.id desc`,
+              [pending.rows.map((request) => request.id)],
+            );
+      const carriedByProduct = new Map(
+        carriedLines.rows.map((line) => [line.product_id, line] as const),
+      );
+      for (const line of command.lines) carriedByProduct.delete(line.productId);
+
+      if (!missedCutoff) {
+        for (const previous of pending.rows) {
+          await client.query(
+            `update planning.norm_change_request
+             set status = 'STALE', decision_comment = 'Заменён водителем',
+                 decided_at = now(), version = version + 1
+             where id = $1`,
+            [previous.id],
+          );
           await insertAudit(
             client,
             command,
@@ -1003,10 +1100,28 @@ export class PlanningRepository {
           authorization.runId,
           missedCutoff ? "MISSED_CUTOFF" : "SUBMITTED",
           command.actorEmployeeId,
-          command.comment,
+          command.comment ?? pending.rows.at(-1)?.requester_comment ?? null,
           command.correlationId,
         ],
       );
+      for (const line of carriedByProduct.values()) {
+        await client.query(
+          `insert into planning.norm_change_request_line (
+             id, request_id, product_id, base_norm_id, base_daily_norm_id,
+             base_override_id, base_quantity, proposed_quantity
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            randomUUID(),
+            requestId,
+            line.product_id,
+            line.base_norm_id,
+            line.base_daily_norm_id,
+            line.base_override_id,
+            line.base_quantity,
+            line.proposed_quantity,
+          ],
+        );
+      }
       for (const line of command.lines) {
         const current = baseByProduct.get(line.productId);
         await client.query(
@@ -1034,7 +1149,7 @@ export class PlanningRepository {
         requestId,
         { kind: command.kind, territoryId: command.territoryId },
       );
-      if (!missedCutoff) {
+      if (!missedCutoff && pending.rows.length === 0) {
         await insertOutbox(client, "planning.norm-request.submitted", requestId, {
           requestId,
           territoryId: command.territoryId,

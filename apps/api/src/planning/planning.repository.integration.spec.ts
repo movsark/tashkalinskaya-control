@@ -16,6 +16,7 @@ const driverId = randomUUID();
 const homeDriverId = randomUUID();
 const otherDriverId = randomUUID();
 const productId = randomUUID();
+const secondProductId = randomUUID();
 const workshopId = randomUUID();
 const vehicleId = randomUUID();
 const correlationId = randomUUID();
@@ -130,9 +131,18 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
     await database.query(
       `insert into catalog.product (
          id, product_code, name, category_id, unit_code, primary_workshop_id
-       ) values ($1, $2, 'Тестовый торт B09',
-         '11000000-0000-4000-8000-000000000001', 'PCS', $3)`,
-      [productId, `B09-${adminId.slice(0, 8).toUpperCase()}`, workshopId],
+       ) values
+         ($1, $2, 'Тестовый торт B09',
+          '11000000-0000-4000-8000-000000000001', 'PCS', $3),
+         ($4, $5, 'Второй тестовый торт B09',
+          '11000000-0000-4000-8000-000000000001', 'PCS', $3)`,
+      [
+        productId,
+        `B09-${adminId.slice(0, 8).toUpperCase()}`,
+        workshopId,
+        secondProductId,
+        `B09-2-${adminId.slice(0, 8).toUpperCase()}`,
+      ],
     );
   });
 
@@ -332,6 +342,96 @@ describe.runIf(hasDatabase)("PlanningRepository with PostgreSQL", () => {
       status: "SUBMITTED",
       lines: [expect.objectContaining({ proposedQuantity: 12 })],
     });
+  });
+
+  it("keeps different products from one driver and period in one pending request", async () => {
+    const dispatchDate = addDays(weekStart, 14);
+    const first = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: null,
+      correlationId: randomUUID(),
+      dispatchDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId, quantity: 6 }],
+      territoryId: territoryOneId,
+    });
+    const combined = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: null,
+      correlationId: randomUUID(),
+      dispatchDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId: secondProductId, quantity: 8 }],
+      territoryId: territoryOneId,
+    });
+
+    expect(combined).toMatchObject({ id: first.id, status: "SUBMITTED", version: 2 });
+    expect(combined.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId, proposedQuantity: 6 }),
+        expect.objectContaining({ productId: secondProductId, proposedQuantity: 8 }),
+      ]),
+    );
+
+    const submittedEvents = await database.query<{ count: string }>(
+      `select count(*)::text as count
+       from system.outbox_message
+       where event_name = 'planning.norm-request.submitted' and aggregate_id = $1`,
+      [first.id],
+    );
+    expect(submittedEvents.rows[0]?.count).toBe("1");
+  });
+
+  it("carries all other products into a replacement of one pending line", async () => {
+    const dispatchDate = addDays(weekStart, 15);
+    const first = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: null,
+      correlationId: randomUUID(),
+      dispatchDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [
+        { productId, quantity: 5 },
+        { productId: secondProductId, quantity: 7 },
+      ],
+      territoryId: territoryOneId,
+    });
+    const replacement = await repository.createRequest({
+      activeRole: "DRIVER",
+      actorEmployeeId: driverId,
+      comment: null,
+      correlationId: randomUUID(),
+      dispatchDate,
+      dispatchWeekday: null,
+      effectiveFrom: null,
+      effectiveUntil: null,
+      kind: "ONE_OFF",
+      lines: [{ productId, quantity: 9 }],
+      territoryId: territoryOneId,
+    });
+
+    expect(replacement.id).not.toBe(first.id);
+    expect(replacement.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId, proposedQuantity: 9 }),
+        expect.objectContaining({ productId: secondProductId, proposedQuantity: 7 }),
+      ]),
+    );
+    expect(
+      (await repository.listRequests(territoryOneId)).find((request) => request.id === first.id),
+    ).toMatchObject({ status: "STALE" });
   });
 
   it("applies one approved weekday request only through the selected month", async () => {
